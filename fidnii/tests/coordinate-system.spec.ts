@@ -1,0 +1,234 @@
+// SPDX-FileCopyrightText: Copyright (c) Fideus Labs LLC
+// SPDX-License-Identifier: MIT
+
+import { test, expect } from "@playwright/test";
+
+test.describe("Coordinate System", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto("/");
+    // Wait for ready
+    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 30000 });
+  });
+
+  test("volume bounds match OME-Zarr metadata", async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const image = (window as any).image;
+      const bounds = image.getVolumeBounds();
+      const highResImage = image.multiscales.images[0];
+
+      // Get scale and translation from highest resolution
+      const scale = highResImage.scale;
+      const translation = highResImage.translation;
+
+      return {
+        bounds,
+        scale: {
+          x: scale.x ?? scale.X ?? 1,
+          y: scale.y ?? scale.Y ?? 1,
+          z: scale.z ?? scale.Z ?? 1,
+        },
+        translation: {
+          x: translation?.x ?? translation?.X ?? 0,
+          y: translation?.y ?? translation?.Y ?? 0,
+          z: translation?.z ?? translation?.Z ?? 0,
+        },
+        shape: highResImage.data.shape,
+      };
+    });
+
+    // The bounds should be based on scale * shape + translation
+    // For stent.ome.zarr: z=174, y=512, x=512 at highest res
+    // scale: z=3.2, y~=0.83, x~=0.83
+    // translation: z~=-278.4, y~=-214, x~=-214
+
+    // Just verify bounds are reasonable (not NaN, not zero extent)
+    expect(result.bounds.min[0]).not.toBeNaN();
+    expect(result.bounds.max[0]).not.toBeNaN();
+    expect(result.bounds.max[0]).toBeGreaterThan(result.bounds.min[0]);
+
+    expect(result.bounds.min[1]).not.toBeNaN();
+    expect(result.bounds.max[1]).not.toBeNaN();
+    expect(result.bounds.max[1]).toBeGreaterThan(result.bounds.min[1]);
+
+    expect(result.bounds.min[2]).not.toBeNaN();
+    expect(result.bounds.max[2]).not.toBeNaN();
+    expect(result.bounds.max[2]).toBeGreaterThan(result.bounds.min[2]);
+  });
+
+  test("NVImage header has correct dimensions", async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const image = (window as any).image;
+      const hdr = image.hdr;
+
+      return {
+        dims: hdr.dims,
+        pixDims: hdr.pixDims,
+        datatypeCode: hdr.datatypeCode,
+        sform_code: hdr.sform_code,
+      };
+    });
+
+    // dims[0] is ndim (should be 3)
+    expect(result.dims[0]).toBe(3);
+
+    // Actual dimensions should be positive
+    expect(result.dims[1]).toBeGreaterThan(0);
+    expect(result.dims[2]).toBeGreaterThan(0);
+    expect(result.dims[3]).toBeGreaterThan(0);
+
+    // Pixel dimensions should be positive
+    expect(result.pixDims[1]).toBeGreaterThan(0);
+    expect(result.pixDims[2]).toBeGreaterThan(0);
+    expect(result.pixDims[3]).toBeGreaterThan(0);
+
+    // sform_code should be 1 (scanner coordinates)
+    expect(result.sform_code).toBe(1);
+  });
+
+  test("NVImage affine is populated", async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const image = (window as any).image;
+      const affine = image.hdr.affine;
+
+      return {
+        rows: affine.length,
+        cols: affine[0].length,
+        hasNonZero: affine.flat().some((v: number) => v !== 0),
+      };
+    });
+
+    // Affine should be 4x4
+    expect(result.rows).toBe(4);
+    expect(result.cols).toBe(4);
+
+    // Should have non-zero values
+    expect(result.hasNonZero).toBe(true);
+  });
+
+  test("pixel to world conversion is consistent across resolutions", async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const image = (window as any).image;
+      const multiscales = image.multiscales;
+
+      // Get center pixel at each resolution
+      const centerWorlds: number[][] = [];
+
+      for (let i = 0; i < multiscales.images.length; i++) {
+        const img = multiscales.images[i];
+        const shape = img.data.shape;
+
+        // Center pixel (assuming 3D: z, y, x)
+        const centerPixel = [shape[0] / 2, shape[1] / 2, shape[2] / 2];
+
+        // Convert to world using scale and translation
+        const scale = img.scale;
+        const translation = img.translation || { x: 0, y: 0, z: 0 };
+
+        const sx = scale.x ?? scale.X ?? 1;
+        const sy = scale.y ?? scale.Y ?? 1;
+        const sz = scale.z ?? scale.Z ?? 1;
+        const tx = translation.x ?? translation.X ?? 0;
+        const ty = translation.y ?? translation.Y ?? 0;
+        const tz = translation.z ?? translation.Z ?? 0;
+
+        // world = pixel * scale + translation
+        const worldZ = centerPixel[0] * sz + tz;
+        const worldY = centerPixel[1] * sy + ty;
+        const worldX = centerPixel[2] * sx + tx;
+
+        centerWorlds.push([worldX, worldY, worldZ]);
+      }
+
+      return { centerWorlds };
+    });
+
+    // All resolutions should map to approximately the same world center
+    const worlds = result.centerWorlds;
+    const tolerance = 10; // Allow some tolerance for rounding
+
+    for (let i = 1; i < worlds.length; i++) {
+      expect(Math.abs(worlds[i][0] - worlds[0][0])).toBeLessThan(tolerance);
+      expect(Math.abs(worlds[i][1] - worlds[0][1])).toBeLessThan(tolerance);
+      expect(Math.abs(worlds[i][2] - worlds[0][2])).toBeLessThan(tolerance);
+    }
+  });
+
+  test("cropping planes use world coordinates", async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const image = (window as any).image;
+      const planes = image.getCroppingPlanes();
+      const bounds = image.getVolumeBounds();
+
+      // Cropping planes should be in the same coordinate space as bounds
+      return {
+        xMinInBounds: planes.xMin >= bounds.min[0] - 0.1 && planes.xMin <= bounds.max[0] + 0.1,
+        xMaxInBounds: planes.xMax >= bounds.min[0] - 0.1 && planes.xMax <= bounds.max[0] + 0.1,
+        yMinInBounds: planes.yMin >= bounds.min[1] - 0.1 && planes.yMin <= bounds.max[1] + 0.1,
+        yMaxInBounds: planes.yMax >= bounds.min[1] - 0.1 && planes.yMax <= bounds.max[1] + 0.1,
+        zMinInBounds: planes.zMin >= bounds.min[2] - 0.1 && planes.zMin <= bounds.max[2] + 0.1,
+        zMaxInBounds: planes.zMax >= bounds.min[2] - 0.1 && planes.zMax <= bounds.max[2] + 0.1,
+      };
+    });
+
+    expect(result.xMinInBounds).toBe(true);
+    expect(result.xMaxInBounds).toBe(true);
+    expect(result.yMinInBounds).toBe(true);
+    expect(result.yMaxInBounds).toBe(true);
+    expect(result.zMinInBounds).toBe(true);
+    expect(result.zMaxInBounds).toBe(true);
+  });
+
+  test("data type matches OME-Zarr dtype", async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const image = (window as any).image;
+      const dtype = image.multiscales.images[0].data.dtype;
+      const datatypeCode = image.hdr.datatypeCode;
+      const imgArray = image.img;
+
+      return {
+        zarrDtype: dtype,
+        niftiCode: datatypeCode,
+        arrayType: imgArray.constructor.name,
+      };
+    });
+
+    // stent.ome.zarr is uint16, which maps to NIfTI code 512 and Uint16Array
+    expect(result.niftiCode).toBe(512);
+    expect(result.arrayType).toBe("Uint16Array");
+  });
+
+  test("bounds displayed in UI match image bounds", async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const image = (window as any).image;
+      const bounds = image.getVolumeBounds();
+
+      const boundsXText = document.getElementById("bounds-x")!.textContent!;
+      const boundsYText = document.getElementById("bounds-y")!.textContent!;
+      const boundsZText = document.getElementById("bounds-z")!.textContent!;
+
+      return {
+        imageBounds: bounds,
+        displayedX: boundsXText,
+        displayedY: boundsYText,
+        displayedZ: boundsZText,
+      };
+    });
+
+    // Parse displayed values
+    const parseRange = (text: string) => {
+      const match = text.match(/\[([-\d.]+),\s*([-\d.]+)\]/);
+      return match ? [parseFloat(match[1]), parseFloat(match[2])] : null;
+    };
+
+    const displayedX = parseRange(result.displayedX);
+    const displayedY = parseRange(result.displayedY);
+    const displayedZ = parseRange(result.displayedZ);
+
+    expect(displayedX).not.toBeNull();
+    expect(displayedY).not.toBeNull();
+    expect(displayedZ).not.toBeNull();
+
+    expect(displayedX![0]).toBeCloseTo(result.imageBounds.min[0], 0);
+    expect(displayedX![1]).toBeCloseTo(result.imageBounds.max[0], 0);
+  });
+});

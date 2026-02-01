@@ -1,0 +1,13 @@
+{
+  "name": "@fideus-labs/fidnii-monorepo",
+  "private": true,
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm -r dev",
+    "test": "pnpm -r test"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.3"
+  },
+  "packageManager": "pnpm@9.0.0"
+}
