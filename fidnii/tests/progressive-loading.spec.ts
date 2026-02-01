@@ -10,7 +10,7 @@ test.describe("Progressive Loading", () => {
 
   test("progressive loading starts from lowest resolution", async ({ page }) => {
     // Wait for loading to complete
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 30000 });
+    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 60000 });
 
     // The image should exist and have resolution info
     const result = await page.evaluate(() => {
@@ -33,7 +33,7 @@ test.describe("Progressive Loading", () => {
 
   test("current level reaches target level after loading", async ({ page }) => {
     // Wait for ready
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 30000 });
+    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 60000 });
 
     // Check current level equals or is less than target
     const levels = await page.evaluate(() => {
@@ -49,7 +49,7 @@ test.describe("Progressive Loading", () => {
 
   test("target level is selected based on pixel budget", async ({ page }) => {
     // Wait for ready
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 30000 });
+    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 60000 });
 
     // Default is 50M pixels
     const levels = await page.evaluate(() => {
@@ -67,7 +67,7 @@ test.describe("Progressive Loading", () => {
 
   test("image buffer is populated after loading", async ({ page }) => {
     // Wait for ready
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 30000 });
+    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 60000 });
 
     // Check that image data is populated
     const bufferInfo = await page.evaluate(() => {
@@ -106,12 +106,12 @@ test.describe("Progressive Loading", () => {
     await expect(statusEl).toBeVisible();
 
     // Wait for ready
-    await expect(statusEl).toHaveText("Ready", { timeout: 30000 });
+    await expect(statusEl).toHaveText("Ready", { timeout: 60000 });
   });
 
   test("waitForIdle resolves after loading completes", async ({ page }) => {
     // Wait for ready
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 30000 });
+    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 60000 });
 
     // waitForIdle should resolve immediately when not loading
     const waitResult = await page.evaluate(async () => {

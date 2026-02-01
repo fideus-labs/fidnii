@@ -7,10 +7,13 @@ import type { Niivue } from "@niivue/niivue";
 import type { Multiscales, NgffImage } from "@fideus-labs/ngff-zarr";
 
 import type {
-  CroppingPlanes,
+  ClipPlane,
+  ClipPlanes,
   OMEZarrNVImageOptions,
   ZarrDtype,
   PixelRegion,
+  ChunkAlignedRegion,
+  VolumeBounds,
 } from "./types.js";
 import {
   parseZarritaDtype,
@@ -21,23 +24,22 @@ import { BufferManager } from "./BufferManager.js";
 import { RegionCoalescer } from "./RegionCoalescer.js";
 import {
   selectResolution,
-  getAspectRatio,
-  getChunkShape,
   getVolumeShape,
 } from "./ResolutionSelector.js";
 import {
-  createDefaultCroppingPlanes,
-  worldToPixelRegion,
+  createDefaultClipPlanes,
+  clipPlanesToPixelRegion,
+  clipPlanesToNiivue,
   alignToChunks,
-  croppingPlanesToNiivueClipPlanes,
-} from "./CroppingPlanes.js";
+  validateClipPlanes,
+  normalizeVector,
+  MAX_CLIP_PLANES,
+} from "./ClipPlanes.js";
 import {
   createAffineFromNgffImage,
   calculateWorldBounds,
   affineToNiftiSrows,
-  getPixelDimensions,
 } from "./utils/affine.js";
-import { upsampleNearestNeighbor } from "./utils/upsample.js";
 
 const DEFAULT_MAX_PIXELS = 50_000_000;
 
@@ -45,9 +47,9 @@ const DEFAULT_MAX_PIXELS = 50_000_000;
  * OMEZarrNVImage extends NVImage to support rendering OME-Zarr images in NiiVue.
  *
  * Features:
- * - Progressive multi-resolution loading from lowest to target resolution
- * - Six axis-aligned cropping planes in world space
- * - Pre-allocated pixel buffer for efficient memory usage
+ * - Progressive loading: quick preview from lowest resolution, then target resolution
+ * - Arbitrary clip planes defined by point + normal (up to 6)
+ * - Dynamic buffer sizing to match fetched data exactly (no upsampling)
  * - Request coalescing for efficient chunk fetching
  * - Automatic metadata updates to reflect OME-Zarr coordinate transforms
  */
@@ -61,14 +63,14 @@ export class OMEZarrNVImage extends NVImage {
   /** Reference to NiiVue instance */
   private readonly niivue: Niivue;
 
-  /** Buffer manager for pre-allocated pixel data */
+  /** Buffer manager for dynamically-sized pixel data */
   private readonly bufferManager: BufferManager;
 
   /** Region coalescer for efficient chunk fetching */
   private readonly coalescer: RegionCoalescer;
 
-  /** Current cropping planes in world space */
-  private _croppingPlanes: CroppingPlanes;
+  /** Current clip planes in world space */
+  private _clipPlanes: ClipPlanes;
 
   /** Target resolution level index (based on maxPixels) */
   private targetLevelIndex: number;
@@ -83,10 +85,10 @@ export class OMEZarrNVImage extends NVImage {
   private readonly dtype: ZarrDtype;
 
   /** Full volume bounds in world space */
-  private readonly volumeBounds: {
-    min: [number, number, number];
-    max: [number, number, number];
-  };
+  private readonly _volumeBounds: VolumeBounds;
+
+  /** Current buffer bounds in world space (may differ from full volume when clipped) */
+  private _currentBufferBounds: VolumeBounds;
 
   /** Previous clip plane change handler (to restore later) */
   private previousOnClipPlaneChange?: (clipPlane: number[]) => void;
@@ -103,43 +105,44 @@ export class OMEZarrNVImage extends NVImage {
     this.niivue = options.niivue;
     this.coalescer = new RegionCoalescer();
 
-    // Initialize cropping planes to full volume extent
-    this._croppingPlanes = createDefaultCroppingPlanes(this.multiscales);
+    // Initialize clip planes to empty (full volume visible)
+    this._clipPlanes = createDefaultClipPlanes(this.multiscales);
 
     // Get data type from highest resolution image
     const highResImage = this.multiscales.images[0];
     this.dtype = parseZarritaDtype(highResImage.data.dtype);
 
+    // Calculate volume bounds from highest resolution for most accurate bounds
+    const highResAffine = createAffineFromNgffImage(highResImage);
+    const highResShape = getVolumeShape(highResImage);
+    this._volumeBounds = calculateWorldBounds(highResAffine, highResShape);
+    
+    // Initially, buffer bounds = full volume bounds (no clipping yet)
+    this._currentBufferBounds = { ...this._volumeBounds };
+
     // Calculate target resolution based on pixel budget
     const selection = selectResolution(
       this.multiscales,
       this.maxPixels,
-      this._croppingPlanes
+      this._clipPlanes,
+      this._volumeBounds
     );
     this.targetLevelIndex = selection.levelIndex;
     this.currentLevelIndex = this.multiscales.images.length - 1;
 
-    // Get aspect ratio from middle resolution
-    const middleIndex = Math.floor(this.multiscales.images.length / 2);
-    const middleImage = this.multiscales.images[middleIndex];
-    const aspectRatio = getAspectRatio(middleImage);
-    const chunkShape = getChunkShape(middleImage);
+    // Create buffer manager (dynamic sizing, no pre-allocation)
+    this.bufferManager = new BufferManager(this.maxPixels, this.dtype);
 
-    // Create buffer manager
-    this.bufferManager = new BufferManager(
-      this.maxPixels,
-      aspectRatio,
-      chunkShape,
-      this.dtype
-    );
+    console.log("[fidnii] OMEZarrNVImage created:", {
+      numLevels: this.multiscales.images.length,
+      targetLevel: this.targetLevelIndex,
+      maxPixels: this.maxPixels,
+      dtype: this.dtype,
+      volumeBounds: this._volumeBounds,
+    });
 
-    // Calculate volume bounds
-    const targetImage = this.multiscales.images[this.targetLevelIndex];
-    const affine = createAffineFromNgffImage(targetImage);
-    const targetShape = getVolumeShape(targetImage);
-    this.volumeBounds = calculateWorldBounds(affine, targetShape);
-
-    // Initialize NVImage properties
+    // Initialize NVImage properties with placeholder values
+    // Actual values will be set when data is first loaded
     this.initializeNVImageProperties();
   }
 
@@ -159,47 +162,37 @@ export class OMEZarrNVImage extends NVImage {
       if (image.previousOnClipPlaneChange) {
         image.previousOnClipPlaneChange(clipPlane);
       }
-      // Handle clip plane change for cropping
-      image.onClipPlaneChange(clipPlane);
+      // Handle clip plane change
+      image.onNiivueClipPlaneChange(clipPlane);
     };
 
     return image;
   }
 
   /**
-   * Initialize NVImage properties from OME-Zarr metadata.
+   * Initialize NVImage properties with placeholder values.
+   * Actual values will be set by loadResolutionLevel() after first data fetch.
    */
   private initializeNVImageProperties(): void {
-    const bufferDims = this.bufferManager.getDimensions();
-    const targetImage = this.multiscales.images[this.targetLevelIndex];
-
-    // Create NIfTI header
+    // Create NIfTI header with placeholder values
     const hdr = new NIFTI1();
     this.hdr = hdr;
 
-    // Set dimensions [ndim, x, y, z, t, ...]
-    // NIfTI uses [x, y, z] order, OME-Zarr uses [z, y, x]
-    hdr.dims = [3, bufferDims[2], bufferDims[1], bufferDims[0], 1, 1, 1, 1];
+    // Placeholder dimensions (will be updated when data loads)
+    hdr.dims = [3, 1, 1, 1, 1, 1, 1, 1];
 
     // Set data type
     hdr.datatypeCode = getNiftiDataType(this.dtype);
     hdr.numBitsPerVoxel = getBytesPerPixel(this.dtype) * 8;
 
-    // Set pixel dimensions from OME-Zarr scale
-    const scale = targetImage.scale;
-    const sx = scale.x ?? scale.X ?? 1;
-    const sy = scale.y ?? scale.Y ?? 1;
-    const sz = scale.z ?? scale.Z ?? 1;
-    hdr.pixDims = [1, sx, sy, sz, 0, 0, 0, 0];
+    // Placeholder pixel dimensions
+    hdr.pixDims = [1, 1, 1, 1, 0, 0, 0, 0];
 
-    // Set affine from OME-Zarr coordinate transforms
-    const affine = createAffineFromNgffImage(targetImage);
-    const srows = affineToNiftiSrows(affine);
-
+    // Placeholder affine (identity)
     hdr.affine = [
-      srows.srow_x,
-      srows.srow_y,
-      srows.srow_z,
+      [1, 0, 0, 0],
+      [0, 1, 0, 0],
+      [0, 0, 1, 0],
       [0, 0, 0, 1],
     ];
 
@@ -208,12 +201,9 @@ export class OMEZarrNVImage extends NVImage {
     // Set name
     this.name = this.multiscales.metadata?.name ?? "OME-Zarr";
 
-    // Initialize the image buffer
-    // Cast to any because NiiVue's TypedVoxelArray is a subset of our TypedArray
-    this.img = this.bufferManager.getTypedArray() as any;
-
-    // Calculate RAS orientation
-    this.calculateRAS();
+    // Initialize with empty typed array (will be replaced when data loads)
+    // We need at least 1 element to avoid issues
+    this.img = this.bufferManager.resize([1, 1, 1]) as any;
 
     // Set default colormap
     this._colormap = "gray";
@@ -221,13 +211,11 @@ export class OMEZarrNVImage extends NVImage {
   }
 
   /**
-   * Progressively populate the volume from lowest to target resolution.
+   * Populate the volume with data.
    *
-   * This method:
-   * 1. Fetches data starting from the lowest resolution
-   * 2. Upsamples and fills the buffer
-   * 3. Updates NiiVue at each step for progressive refinement
-   * 4. Continues until target resolution is reached
+   * Loading strategy:
+   * 1. Load lowest resolution first for quick preview
+   * 2. Jump directly to target resolution (skip intermediate levels)
    */
   async populateVolume(): Promise<void> {
     if (this.isLoading) {
@@ -237,16 +225,26 @@ export class OMEZarrNVImage extends NVImage {
 
     try {
       const numLevels = this.multiscales.images.length;
+      const lowestLevel = numLevels - 1;
 
-      // Progressive loading from lowest to target resolution
-      for (
-        let level = numLevels - 1;
-        level >= this.targetLevelIndex;
-        level--
-      ) {
-        await this.loadResolutionLevel(level, "progressive-load");
-        this.currentLevelIndex = level;
+      console.log("[fidnii] populateVolume starting:", {
+        lowestLevel,
+        targetLevel: this.targetLevelIndex,
+      });
+
+      // Quick preview from lowest resolution (if different from target)
+      if (lowestLevel !== this.targetLevelIndex) {
+        await this.loadResolutionLevel(lowestLevel, "preview");
+        this.currentLevelIndex = lowestLevel;
       }
+
+      // Final quality at target resolution
+      await this.loadResolutionLevel(this.targetLevelIndex, "target");
+      this.currentLevelIndex = this.targetLevelIndex;
+
+      console.log("[fidnii] populateVolume complete:", {
+        currentLevel: this.currentLevelIndex,
+      });
     } finally {
       this.isLoading = false;
     }
@@ -254,6 +252,12 @@ export class OMEZarrNVImage extends NVImage {
 
   /**
    * Load data at a specific resolution level.
+   *
+   * With dynamic buffer sizing:
+   * 1. Fetch data for the aligned region
+   * 2. Resize buffer to match fetched data exactly (no upsampling)
+   * 3. Update header with correct dimensions and voxel sizes
+   * 4. Refresh NiiVue
    *
    * @param levelIndex - Resolution level index
    * @param requesterId - ID for request coalescing
@@ -263,11 +267,35 @@ export class OMEZarrNVImage extends NVImage {
     requesterId: string
   ): Promise<void> {
     const ngffImage = this.multiscales.images[levelIndex];
-    const bufferDims = this.bufferManager.getDimensions();
 
-    // Get the pixel region for current cropping planes
-    const pixelRegion = worldToPixelRegion(this._croppingPlanes, ngffImage);
+    // Get the pixel region for current clip planes
+    const pixelRegion = clipPlanesToPixelRegion(
+      this._clipPlanes,
+      this._volumeBounds,
+      ngffImage
+    );
     const alignedRegion = alignToChunks(pixelRegion, ngffImage);
+
+    // Calculate the shape of data to fetch
+    const fetchedShape: [number, number, number] = [
+      alignedRegion.chunkAlignedEnd[0] - alignedRegion.chunkAlignedStart[0],
+      alignedRegion.chunkAlignedEnd[1] - alignedRegion.chunkAlignedStart[1],
+      alignedRegion.chunkAlignedEnd[2] - alignedRegion.chunkAlignedStart[2],
+    ];
+
+    // Get voxel size from this resolution level
+    const scale = ngffImage.scale;
+    const sx = scale.x ?? scale.X ?? 1;
+    const sy = scale.y ?? scale.Y ?? 1;
+    const sz = scale.z ?? scale.Z ?? 1;
+
+    console.log("[fidnii] loadResolutionLevel:", {
+      levelIndex,
+      requesterId,
+      fetchedShape,
+      regionStart: alignedRegion.chunkAlignedStart,
+      voxelSize: [sx, sy, sz],
+    });
 
     // Fetch the data
     const fetchRegion: PixelRegion = {
@@ -282,40 +310,20 @@ export class OMEZarrNVImage extends NVImage {
       requesterId
     );
 
-    // Calculate the shape of fetched data
-    const fetchedShape: [number, number, number] = [
-      fetchRegion.end[0] - fetchRegion.start[0],
-      fetchRegion.end[1] - fetchRegion.start[1],
-      fetchRegion.end[2] - fetchRegion.start[2],
-    ];
+    // Resize buffer to match fetched data exactly (no upsampling!)
+    const targetData = this.bufferManager.resize(fetchedShape);
 
-    // Upsample if needed to fill buffer
-    const targetData = this.bufferManager.getTypedArray();
+    // Direct copy of fetched data
+    targetData.set(result.data);
 
-    if (
-      fetchedShape[0] === bufferDims[0] &&
-      fetchedShape[1] === bufferDims[1] &&
-      fetchedShape[2] === bufferDims[2]
-    ) {
-      // Direct copy if shapes match
-      targetData.set(result.data);
-    } else {
-      // Upsample to fill buffer
-      upsampleNearestNeighbor(
-        result.data,
-        fetchedShape,
-        bufferDims,
-        targetData
-      );
-    }
+    // Update this.img to point to the (possibly new) buffer
+    this.img = this.bufferManager.getTypedArray() as any;
 
-    // Update NVImage header to reflect actual loaded region
-    this.updateHeaderForRegion(ngffImage, alignedRegion);
+    // Update NVImage header with correct dimensions and transforms
+    this.updateHeaderForRegion(ngffImage, alignedRegion, fetchedShape);
 
-    // Set clip planes if region doesn't align with cropping planes
-    if (alignedRegion.needsClipping) {
-      this.updateNiivueClipPlanes(alignedRegion, ngffImage);
-    }
+    // Update NiiVue clip planes
+    this.updateNiivueClipPlanes();
 
     // Refresh NiiVue
     this.niivue.updateGLVolume();
@@ -323,16 +331,48 @@ export class OMEZarrNVImage extends NVImage {
 
   /**
    * Update NVImage header for a loaded region.
+   *
+   * With dynamic buffer sizing, the buffer dimensions equal the fetched dimensions.
+   * We set pixDims directly from the resolution level's voxel size (no upsampling correction).
+   * The affine translation is adjusted to account for the region offset.
+   *
+   * @param ngffImage - The NgffImage at the current resolution level
+   * @param region - The chunk-aligned region that was loaded
+   * @param fetchedShape - The shape of the fetched data [z, y, x]
    */
   private updateHeaderForRegion(
     ngffImage: NgffImage,
-    _region: PixelRegion
+    region: ChunkAlignedRegion,
+    fetchedShape: [number, number, number]
   ): void {
     if (!this.hdr) return;
 
-    const affine = createAffineFromNgffImage(ngffImage);
-    const srows = affineToNiftiSrows(affine);
+    // Get voxel size from this resolution level (no upsampling adjustment needed!)
+    const scale = ngffImage.scale;
+    const sx = scale.x ?? scale.X ?? 1;
+    const sy = scale.y ?? scale.Y ?? 1;
+    const sz = scale.z ?? scale.Z ?? 1;
 
+    // Set pixDims directly from resolution's voxel size
+    this.hdr.pixDims = [1, sx, sy, sz, 0, 0, 0, 0];
+
+    // Set dims to match fetched data (buffer now equals fetched size)
+    // NIfTI dims: [ndim, x, y, z, t, ...]
+    this.hdr.dims = [3, fetchedShape[2], fetchedShape[1], fetchedShape[0], 1, 1, 1, 1];
+
+    // Build affine with offset for region start
+    const affine = createAffineFromNgffImage(ngffImage);
+
+    // Adjust translation for region offset
+    // Buffer pixel [0,0,0] corresponds to source pixel region.chunkAlignedStart
+    const regionStart = region.chunkAlignedStart;
+    // regionStart is [z, y, x], affine translation is [x, y, z] (indices 12, 13, 14)
+    affine[12] += regionStart[2] * sx; // x offset
+    affine[13] += regionStart[1] * sy; // y offset
+    affine[14] += regionStart[0] * sz; // z offset
+
+    // Update affine in header
+    const srows = affineToNiftiSrows(affine);
     this.hdr.affine = [
       srows.srow_x,
       srows.srow_y,
@@ -340,29 +380,61 @@ export class OMEZarrNVImage extends NVImage {
       [0, 0, 0, 1],
     ];
 
-    // Update pixel dimensions
-    const pixDims = getPixelDimensions(affine);
-    this.hdr.pixDims = [1, pixDims[0], pixDims[1], pixDims[2], 0, 0, 0, 0];
+    // Update current buffer bounds
+    // Buffer starts at region.chunkAlignedStart and has extent fetchedShape
+    this._currentBufferBounds = {
+      min: [
+        affine[12],  // x offset (world coord of buffer origin)
+        affine[13],  // y offset
+        affine[14],  // z offset
+      ],
+      max: [
+        affine[12] + fetchedShape[2] * sx,
+        affine[13] + fetchedShape[1] * sy,
+        affine[14] + fetchedShape[0] * sz,
+      ],
+    };
 
-    // Recalculate RAS
+    console.log("[fidnii] updateHeaderForRegion:", {
+      dims: this.hdr.dims,
+      pixDims: this.hdr.pixDims,
+      affineTranslation: [affine[12], affine[13], affine[14]],
+      physicalExtent: [
+        fetchedShape[2] * sx,
+        fetchedShape[1] * sy,
+        fetchedShape[0] * sz,
+      ],
+      currentBufferBounds: this._currentBufferBounds,
+    });
+
+    // Recalculate RAS orientation
     this.calculateRAS();
   }
 
   /**
-   * Update NiiVue clip planes to hide pixels beyond cropping planes.
+   * Update NiiVue clip planes from current _clipPlanes.
+   * 
+   * Clip planes are converted relative to the CURRENT BUFFER bounds,
+   * not the full volume bounds. This is because NiiVue's shader works
+   * in texture coordinates of the currently loaded data.
    */
-  private updateNiivueClipPlanes(
-    _alignedRegion: PixelRegion,
-    ngffImage: NgffImage
-  ): void {
-    const clipPlanes = croppingPlanesToNiivueClipPlanes(
-      this._croppingPlanes,
-      ngffImage,
-      this.volumeBounds
-    );
+  private updateNiivueClipPlanes(): void {
+    // Use current buffer bounds for clip plane conversion
+    // This ensures clip planes are relative to the currently loaded data
+    const niivueClipPlanes = clipPlanesToNiivue(this._clipPlanes, this._currentBufferBounds);
 
-    if (clipPlanes.length > 0) {
-      this.niivue.scene.clipPlaneDepthAziElevs = clipPlanes;
+    console.log("[fidnii] updateNiivueClipPlanes:", {
+      numPlanes: this._clipPlanes.length,
+      fullVolumeBounds: this._volumeBounds,
+      currentBufferBounds: this._currentBufferBounds,
+      niivueClipPlanes,
+    });
+
+    if (niivueClipPlanes.length > 0) {
+      this.niivue.scene.clipPlaneDepthAziElevs = niivueClipPlanes;
+    } else {
+      // Clear clip planes - set to "disabled" state (depth > 1.8)
+      this.niivue.scene.clipPlaneDepthAziElevs = [[2, 0, 0]];
     }
   }
 
@@ -370,62 +442,132 @@ export class OMEZarrNVImage extends NVImage {
    * Handle clip plane change from NiiVue.
    * This is called when the user interacts with clip planes in NiiVue.
    */
-  private onClipPlaneChange(_clipPlane: number[]): void {
-    // For now, we don't update cropping planes from NiiVue clip planes
+  private onNiivueClipPlaneChange(_clipPlane: number[]): void {
+    // For now, we don't update our clip planes from NiiVue interactions
     // This could be extended in the future to support bidirectional sync
   }
 
   /**
-   * Set cropping planes.
+   * Set clip planes.
    *
-   * @param planes - Partial cropping planes to update
+   * @param planes - Array of clip planes (max 6). Empty array = full volume visible.
+   * @throws Error if more than 6 planes provided or if planes are invalid
    */
-  setCroppingPlanes(planes: Partial<CroppingPlanes>): void {
-    const newPlanes = { ...this._croppingPlanes, ...planes };
+  setClipPlanes(planes: ClipPlanes): void {
+    // Validate the planes
+    validateClipPlanes(planes);
 
-    // Check if new region requires refetch
-    const needsRefetch = this.checkNeedsRefetch(newPlanes);
+    // Check if new clip planes require refetch
+    const needsRefetch = this.checkNeedsRefetch(planes);
 
-    this._croppingPlanes = newPlanes;
+    this._clipPlanes = planes.map((p) => ({
+      point: [...p.point] as [number, number, number],
+      normal: normalizeVector([...p.normal] as [number, number, number]),
+    }));
 
     if (needsRefetch) {
-      // Re-select resolution based on new cropping planes
+      // Re-select resolution based on new clip planes
       const selection = selectResolution(
         this.multiscales,
         this.maxPixels,
-        this._croppingPlanes
+        this._clipPlanes,
+        this._volumeBounds
       );
       this.targetLevelIndex = selection.levelIndex;
+
+      console.log("[fidnii] setClipPlanes - refetching:", {
+        newTargetLevel: this.targetLevelIndex,
+        numPlanes: planes.length,
+      });
 
       // Reload the volume
       this.populateVolume();
     } else {
-      // Just update clip planes
-      const targetImage = this.multiscales.images[this.targetLevelIndex];
-      const pixelRegion = worldToPixelRegion(this._croppingPlanes, targetImage);
-      const alignedRegion = alignToChunks(pixelRegion, targetImage);
-      this.updateNiivueClipPlanes(alignedRegion, targetImage);
+      // Just update NiiVue clip planes
+      this.updateNiivueClipPlanes();
       this.niivue.drawScene();
     }
   }
 
   /**
-   * Get current cropping planes.
+   * Get current clip planes.
+   *
+   * @returns Copy of current clip planes array
    */
-  getCroppingPlanes(): CroppingPlanes {
-    return { ...this._croppingPlanes };
+  getClipPlanes(): ClipPlanes {
+    return this._clipPlanes.map((p) => ({
+      point: [...p.point] as [number, number, number],
+      normal: [...p.normal] as [number, number, number],
+    }));
   }
 
   /**
-   * Check if new cropping planes require refetching data.
+   * Add a single clip plane.
+   *
+   * @param plane - Clip plane to add
+   * @throws Error if already at maximum (6) clip planes
    */
-  private checkNeedsRefetch(newPlanes: CroppingPlanes): boolean {
+  addClipPlane(plane: ClipPlane): void {
+    if (this._clipPlanes.length >= MAX_CLIP_PLANES) {
+      throw new Error(
+        `Cannot add clip plane: already at maximum of ${MAX_CLIP_PLANES} planes`
+      );
+    }
+
+    const newPlanes = [
+      ...this._clipPlanes,
+      {
+        point: [...plane.point] as [number, number, number],
+        normal: [...plane.normal] as [number, number, number],
+      },
+    ];
+
+    this.setClipPlanes(newPlanes);
+  }
+
+  /**
+   * Remove a clip plane by index.
+   *
+   * @param index - Index of plane to remove
+   * @throws Error if index is out of bounds
+   */
+  removeClipPlane(index: number): void {
+    if (index < 0 || index >= this._clipPlanes.length) {
+      throw new Error(
+        `Invalid clip plane index: ${index} (have ${this._clipPlanes.length} planes)`
+      );
+    }
+
+    const newPlanes = this._clipPlanes.filter((_, i) => i !== index);
+    this.setClipPlanes(newPlanes);
+  }
+
+  /**
+   * Clear all clip planes (show full volume).
+   */
+  clearClipPlanes(): void {
+    this.setClipPlanes([]);
+  }
+
+  /**
+   * Check if new clip planes require refetching data.
+   */
+  private checkNeedsRefetch(newPlanes: ClipPlanes): boolean {
     const targetImage = this.multiscales.images[this.targetLevelIndex];
 
-    const currentRegion = worldToPixelRegion(this._croppingPlanes, targetImage);
+    // Convert to pixel regions
+    const currentRegion = clipPlanesToPixelRegion(
+      this._clipPlanes,
+      this._volumeBounds,
+      targetImage
+    );
     const currentAligned = alignToChunks(currentRegion, targetImage);
 
-    const newRegion = worldToPixelRegion(newPlanes, targetImage);
+    const newRegion = clipPlanesToPixelRegion(
+      newPlanes,
+      this._volumeBounds,
+      targetImage
+    );
     const newAligned = alignToChunks(newRegion, targetImage);
 
     // Check if aligned regions are different
@@ -463,11 +605,11 @@ export class OMEZarrNVImage extends NVImage {
   /**
    * Get the volume bounds in world space.
    */
-  getVolumeBounds(): {
-    min: [number, number, number];
-    max: [number, number, number];
-  } {
-    return { ...this.volumeBounds };
+  getVolumeBounds(): VolumeBounds {
+    return {
+      min: [...this._volumeBounds.min],
+      max: [...this._volumeBounds.max],
+    };
   }
 
   /**

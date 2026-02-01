@@ -2,33 +2,35 @@
 // SPDX-License-Identifier: MIT
 
 import type { Multiscales, NgffImage } from "@fideus-labs/ngff-zarr";
-import type { CroppingPlanes, PixelRegion, ResolutionSelection } from "./types.js";
-import { worldToPixelRegion } from "./CroppingPlanes.js";
+import type { ClipPlanes, PixelRegion, ResolutionSelection, VolumeBounds } from "./types.js";
+import { clipPlanesToPixelRegion } from "./ClipPlanes.js";
 
 /**
- * Select the appropriate resolution level based on pixel budget and cropping planes.
+ * Select the appropriate resolution level based on pixel budget and clip planes.
  *
  * The selection process:
  * 1. Starts from the highest resolution (level 0)
  * 2. Finds the highest resolution that fits within maxPixels
- * 3. Considers the cropped region size, not full volume
+ * 3. Considers the clipped region size, not full volume
  *
  * @param multiscales - The OME-Zarr multiscales data
  * @param maxPixels - Maximum number of pixels to use
- * @param croppingPlanes - Current cropping planes in world space
+ * @param clipPlanes - Current clip planes in world space
+ * @param volumeBounds - Full volume bounds in world space
  * @returns The selected resolution level and buffer dimensions
  */
 export function selectResolution(
   multiscales: Multiscales,
   maxPixels: number,
-  croppingPlanes: CroppingPlanes
+  clipPlanes: ClipPlanes,
+  volumeBounds: VolumeBounds
 ): ResolutionSelection {
   const images = multiscales.images;
 
   // Try each resolution from highest to lowest
   for (let i = 0; i < images.length; i++) {
     const image = images[i];
-    const region = worldToPixelRegion(croppingPlanes, image);
+    const region = clipPlanesToPixelRegion(clipPlanes, volumeBounds, image);
     const alignedRegion = alignRegionToChunks(region, image);
 
     const dimensions: [number, number, number] = [
@@ -50,7 +52,7 @@ export function selectResolution(
 
   // Fall back to lowest resolution
   const lowestImage = images[images.length - 1];
-  const region = worldToPixelRegion(croppingPlanes, lowestImage);
+  const region = clipPlanesToPixelRegion(clipPlanes, volumeBounds, lowestImage);
   const alignedRegion = alignRegionToChunks(region, lowestImage);
 
   const dimensions: [number, number, number] = [
@@ -64,30 +66,6 @@ export function selectResolution(
     dimensions,
     pixelCount: dimensions[0] * dimensions[1] * dimensions[2],
   };
-}
-
-/**
- * Get the aspect ratio of a volume at a given resolution level.
- *
- * @param ngffImage - The NgffImage to get aspect ratio from
- * @returns Aspect ratio as [z, y, x]
- */
-export function getAspectRatio(ngffImage: NgffImage): [number, number, number] {
-  const shape = ngffImage.data.shape;
-  const dims = ngffImage.dims;
-
-  // Find z, y, x indices in dims
-  const zIdx = dims.indexOf("z");
-  const yIdx = dims.indexOf("y");
-  const xIdx = dims.indexOf("x");
-
-  if (zIdx === -1 || yIdx === -1 || xIdx === -1) {
-    // Fallback: assume last 3 dimensions are z, y, x
-    const n = shape.length;
-    return [shape[n - 3] || 1, shape[n - 2] || 1, shape[n - 1] || 1];
-  }
-
-  return [shape[zIdx], shape[yIdx], shape[xIdx]];
 }
 
 /**

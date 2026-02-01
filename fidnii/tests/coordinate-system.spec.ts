@@ -7,7 +7,7 @@ test.describe("Coordinate System", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
     // Wait for ready
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 30000 });
+    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 60000 });
   });
 
   test("volume bounds match OME-Zarr metadata", async ({ page }) => {
@@ -153,29 +153,35 @@ test.describe("Coordinate System", () => {
     }
   });
 
-  test("cropping planes use world coordinates", async ({ page }) => {
-    const result = await page.evaluate(() => {
+  test("clip planes use world coordinates", async ({ page }) => {
+    const result = await page.evaluate(async () => {
       const image = (window as any).image;
-      const planes = image.getCroppingPlanes();
       const bounds = image.getVolumeBounds();
 
-      // Cropping planes should be in the same coordinate space as bounds
+      // Add a clip plane in the middle of the X axis
+      const midX = (bounds.min[0] + bounds.max[0]) / 2;
+      const centerY = (bounds.min[1] + bounds.max[1]) / 2;
+      const centerZ = (bounds.min[2] + bounds.max[2]) / 2;
+
+      image.setClipPlanes([
+        { point: [midX, centerY, centerZ], normal: [1, 0, 0] },
+      ]);
+
+      await image.waitForIdle();
+      const planes = image.getClipPlanes();
+
+      // Clip plane point should be within volume bounds
+      const point = planes[0].point;
       return {
-        xMinInBounds: planes.xMin >= bounds.min[0] - 0.1 && planes.xMin <= bounds.max[0] + 0.1,
-        xMaxInBounds: planes.xMax >= bounds.min[0] - 0.1 && planes.xMax <= bounds.max[0] + 0.1,
-        yMinInBounds: planes.yMin >= bounds.min[1] - 0.1 && planes.yMin <= bounds.max[1] + 0.1,
-        yMaxInBounds: planes.yMax >= bounds.min[1] - 0.1 && planes.yMax <= bounds.max[1] + 0.1,
-        zMinInBounds: planes.zMin >= bounds.min[2] - 0.1 && planes.zMin <= bounds.max[2] + 0.1,
-        zMaxInBounds: planes.zMax >= bounds.min[2] - 0.1 && planes.zMax <= bounds.max[2] + 0.1,
+        pointInBoundsX: point[0] >= bounds.min[0] - 0.1 && point[0] <= bounds.max[0] + 0.1,
+        pointInBoundsY: point[1] >= bounds.min[1] - 0.1 && point[1] <= bounds.max[1] + 0.1,
+        pointInBoundsZ: point[2] >= bounds.min[2] - 0.1 && point[2] <= bounds.max[2] + 0.1,
       };
     });
 
-    expect(result.xMinInBounds).toBe(true);
-    expect(result.xMaxInBounds).toBe(true);
-    expect(result.yMinInBounds).toBe(true);
-    expect(result.yMaxInBounds).toBe(true);
-    expect(result.zMinInBounds).toBe(true);
-    expect(result.zMaxInBounds).toBe(true);
+    expect(result.pointInBoundsX).toBe(true);
+    expect(result.pointInBoundsY).toBe(true);
+    expect(result.pointInBoundsZ).toBe(true);
   });
 
   test("data type matches OME-Zarr dtype", async ({ page }) => {

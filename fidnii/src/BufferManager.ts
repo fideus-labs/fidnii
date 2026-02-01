@@ -1,96 +1,104 @@
 // SPDX-FileCopyrightText: Copyright (c) Fideus Labs LLC
 // SPDX-License-Identifier: MIT
 
-import type { PixelRegion, TypedArray, TypedArrayConstructor, ZarrDtype } from "./types.js";
+import type { TypedArray, TypedArrayConstructor, ZarrDtype } from "./types.js";
 import { getTypedArrayConstructor, getBytesPerPixel } from "./types.js";
 
 /**
- * Manages a pre-allocated pixel buffer for volume data.
+ * Manages a dynamically-sized pixel buffer for volume data.
  *
- * The buffer is sized to:
- * 1. Fit within the maxPixels budget
- * 2. Maintain the aspect ratio of the source volume
- * 3. Have dimensions that are integer multiples of chunk size
+ * The buffer is resized to match the fetched data dimensions exactly.
+ * Memory is reused when possible to avoid unnecessary allocations.
+ *
+ * Memory reuse strategy:
+ * - Reuse buffer if newSize <= currentCapacity
+ * - Reallocate if newSize > currentCapacity OR newSize < 25% of currentCapacity
  */
 export class BufferManager {
-  private readonly buffer: ArrayBuffer;
-  private readonly dimensions: [number, number, number];
+  private buffer: ArrayBuffer;
+  private currentDimensions: [number, number, number];
+  private readonly maxPixels: number;
   private readonly TypedArrayCtor: TypedArrayConstructor;
   private readonly bytesPerPixel: number;
   private readonly dtype: ZarrDtype;
 
-  constructor(
-    maxPixels: number,
-    aspectRatio: [number, number, number],
-    chunkShape: [number, number, number],
-    dtype: ZarrDtype
-  ) {
+  /**
+   * Create a new BufferManager.
+   *
+   * @param maxPixels - Maximum number of pixels allowed (budget)
+   * @param dtype - Data type for the buffer
+   */
+  constructor(maxPixels: number, dtype: ZarrDtype) {
+    this.maxPixels = maxPixels;
     this.dtype = dtype;
     this.TypedArrayCtor = getTypedArrayConstructor(dtype);
     this.bytesPerPixel = getBytesPerPixel(dtype);
 
-    // Calculate dimensions that fit maxPixels while maintaining aspect ratio
-    // and aligning to chunk boundaries
-    this.dimensions = this.calculateAlignedDimensions(
-      maxPixels,
-      aspectRatio,
-      chunkShape
-    );
+    // Initialize with empty buffer - will be allocated on first resize
+    this.currentDimensions = [0, 0, 0];
+    this.buffer = new ArrayBuffer(0);
 
-    const totalPixels =
-      this.dimensions[0] * this.dimensions[1] * this.dimensions[2];
-    this.buffer = new ArrayBuffer(totalPixels * this.bytesPerPixel);
+    console.log("[fidnii] BufferManager created:", {
+      maxPixels,
+      dtype,
+      bytesPerPixel: this.bytesPerPixel,
+    });
   }
 
   /**
-   * Calculate buffer dimensions that:
-   * 1. Maintain the aspect ratio
-   * 2. Fit within maxPixels
-   * 3. Are integer multiples of chunk shape
+   * Resize the buffer to fit the given dimensions.
+   *
+   * Reuses existing buffer if large enough, otherwise allocates new buffer.
+   * Will also reallocate if the buffer is significantly oversized (< 25% utilization).
+   *
+   * If dimensions exceed maxPixels, a warning is logged but the buffer is still
+   * allocated. This handles the case where even the lowest resolution exceeds the
+   * pixel budget - we still want to load something rather than failing.
+   *
+   * @param dimensions - New dimensions [z, y, x]
+   * @returns TypedArray view over the (possibly new) buffer
    */
-  private calculateAlignedDimensions(
-    maxPixels: number,
-    aspectRatio: [number, number, number],
-    chunkShape: [number, number, number]
-  ): [number, number, number] {
-    // Normalize aspect ratio so the smallest dimension is 1
-    const minAspect = Math.min(...aspectRatio);
-    const normalizedRatio: [number, number, number] = [
-      aspectRatio[0] / minAspect,
-      aspectRatio[1] / minAspect,
-      aspectRatio[2] / minAspect,
-    ];
+  resize(dimensions: [number, number, number]): TypedArray {
+    const requiredPixels = dimensions[0] * dimensions[1] * dimensions[2];
 
-    // Calculate the scale factor to fit within maxPixels
-    // volume = scale^3 * (r0 * r1 * r2)
-    const ratioProduct =
-      normalizedRatio[0] * normalizedRatio[1] * normalizedRatio[2];
-    const scale = Math.cbrt(maxPixels / ratioProduct);
-
-    // Calculate raw dimensions
-    const rawDims: [number, number, number] = [
-      Math.floor(scale * normalizedRatio[0]),
-      Math.floor(scale * normalizedRatio[1]),
-      Math.floor(scale * normalizedRatio[2]),
-    ];
-
-    // Align each dimension to chunk boundaries (round down to nearest chunk)
-    const alignedDims: [number, number, number] = [
-      Math.max(chunkShape[0], Math.floor(rawDims[0] / chunkShape[0]) * chunkShape[0]),
-      Math.max(chunkShape[1], Math.floor(rawDims[1] / chunkShape[1]) * chunkShape[1]),
-      Math.max(chunkShape[2], Math.floor(rawDims[2] / chunkShape[2]) * chunkShape[2]),
-    ];
-
-    // Verify we're still within budget (should be, but double-check)
-    let totalPixels = alignedDims[0] * alignedDims[1] * alignedDims[2];
-    if (totalPixels > maxPixels) {
-      // Reduce the largest dimension by one chunk
-      const largestIdx = alignedDims.indexOf(Math.max(...alignedDims));
-      alignedDims[largestIdx] -= chunkShape[largestIdx];
-      totalPixels = alignedDims[0] * alignedDims[1] * alignedDims[2];
+    if (requiredPixels > this.maxPixels) {
+      console.warn(
+        `[fidnii] BufferManager: Requested dimensions [${dimensions.join(", ")}] = ${requiredPixels} pixels exceeds maxPixels (${this.maxPixels}). ` +
+        `Proceeding anyway (likely at lowest resolution).`
+      );
     }
 
-    return alignedDims;
+    const currentCapacityPixels =
+      this.buffer.byteLength / this.bytesPerPixel;
+    const utilizationRatio =
+      currentCapacityPixels > 0 ? requiredPixels / currentCapacityPixels : 0;
+
+    const needsReallocation =
+      requiredPixels > currentCapacityPixels || utilizationRatio < 0.25;
+
+    if (needsReallocation) {
+      // Allocate new buffer
+      const newByteLength = requiredPixels * this.bytesPerPixel;
+      this.buffer = new ArrayBuffer(newByteLength);
+
+      console.log("[fidnii] BufferManager reallocated:", {
+        oldCapacity: currentCapacityPixels,
+        newCapacity: requiredPixels,
+        reason:
+          requiredPixels > currentCapacityPixels
+            ? "insufficient capacity"
+            : "low utilization",
+      });
+    } else {
+      console.log("[fidnii] BufferManager reusing buffer:", {
+        capacity: currentCapacityPixels,
+        required: requiredPixels,
+        utilization: `${(utilizationRatio * 100).toFixed(1)}%`,
+      });
+    }
+
+    this.currentDimensions = [...dimensions];
+    return this.getTypedArray();
   }
 
   /**
@@ -101,24 +109,41 @@ export class BufferManager {
   }
 
   /**
-   * Get the buffer as a typed array.
+   * Get a typed array view over the current buffer region.
+   *
+   * The view is sized to match currentDimensions, not the full buffer capacity.
    */
   getTypedArray(): TypedArray {
-    return new this.TypedArrayCtor(this.buffer);
+    const pixelCount =
+      this.currentDimensions[0] *
+      this.currentDimensions[1] *
+      this.currentDimensions[2];
+    return new this.TypedArrayCtor(this.buffer, 0, pixelCount);
   }
 
   /**
-   * Get the buffer dimensions [z, y, x].
+   * Get the current buffer dimensions [z, y, x].
    */
   getDimensions(): [number, number, number] {
-    return [...this.dimensions];
+    return [...this.currentDimensions];
   }
 
   /**
-   * Get the total number of pixels in the buffer.
+   * Get the total number of pixels in the current buffer region.
    */
   getPixelCount(): number {
-    return this.dimensions[0] * this.dimensions[1] * this.dimensions[2];
+    return (
+      this.currentDimensions[0] *
+      this.currentDimensions[1] *
+      this.currentDimensions[2]
+    );
+  }
+
+  /**
+   * Get the buffer capacity in pixels.
+   */
+  getCapacity(): number {
+    return this.buffer.byteLength / this.bytesPerPixel;
   }
 
   /**
@@ -136,147 +161,37 @@ export class BufferManager {
   }
 
   /**
-   * Clear the buffer to zeros.
+   * Get the maximum pixels budget.
+   */
+  getMaxPixels(): number {
+    return this.maxPixels;
+  }
+
+  /**
+   * Clear the current buffer region to zeros.
    */
   clear(): void {
-    const view = new Uint8Array(this.buffer);
-    view.fill(0);
-  }
-
-  /**
-   * Fill a region of the buffer with source data, applying upsampling if needed.
-   *
-   * @param sourceData - Source pixel data
-   * @param sourceShape - Shape of source data [z, y, x]
-   * @param targetRegion - Region in the buffer to fill
-   * @param upsampleFactor - Factor to upsample by (1 = no upsampling)
-   */
-  fillRegion(
-    sourceData: TypedArray,
-    sourceShape: [number, number, number],
-    targetRegion: PixelRegion,
-    upsampleFactor: number = 1
-  ): void {
-    const target = this.getTypedArray();
-    const [_targetZ, _targetY, _targetX] = this.dimensions;
-
-    if (upsampleFactor === 1) {
-      // Direct copy without upsampling
-      this.copyRegion(sourceData, sourceShape, target, targetRegion);
-    } else {
-      // Nearest-neighbor upsampling
-      this.upsampleRegion(
-        sourceData,
-        sourceShape,
-        target,
-        targetRegion,
-        upsampleFactor
+    const pixelCount = this.getPixelCount();
+    if (pixelCount > 0) {
+      const view = new Uint8Array(
+        this.buffer,
+        0,
+        pixelCount * this.bytesPerPixel
       );
+      view.fill(0);
     }
   }
 
   /**
-   * Copy source data directly to target region (no upsampling).
+   * Check if the buffer can accommodate the given dimensions without reallocation.
+   *
+   * @param dimensions - Dimensions to check [z, y, x]
+   * @returns True if current buffer can fit the dimensions
    */
-  private copyRegion(
-    source: TypedArray,
-    sourceShape: [number, number, number],
-    target: TypedArray,
-    region: PixelRegion
-  ): void {
-    const [srcZ, srcY, srcX] = sourceShape;
-    const [tgtZ, tgtY, tgtX] = this.dimensions;
-
-    const zStart = region.start[0];
-    const yStart = region.start[1];
-    const xStart = region.start[2];
-
-    for (let sz = 0; sz < srcZ; sz++) {
-      const tz = zStart + sz;
-      if (tz >= tgtZ) break;
-
-      for (let sy = 0; sy < srcY; sy++) {
-        const ty = yStart + sy;
-        if (ty >= tgtY) break;
-
-        // Copy entire row at once for efficiency
-        const srcRowStart = sz * srcY * srcX + sy * srcX;
-        const tgtRowStart = tz * tgtY * tgtX + ty * tgtX + xStart;
-        const copyLength = Math.min(srcX, tgtX - xStart);
-
-        for (let i = 0; i < copyLength; i++) {
-          target[tgtRowStart + i] = source[srcRowStart + i];
-        }
-      }
-    }
-  }
-
-  /**
-   * Upsample source data into target region using nearest-neighbor interpolation.
-   */
-  private upsampleRegion(
-    source: TypedArray,
-    sourceShape: [number, number, number],
-    target: TypedArray,
-    region: PixelRegion,
-    factor: number
-  ): void {
-    const [srcZ, srcY, srcX] = sourceShape;
-    const [tgtZ, tgtY, tgtX] = this.dimensions;
-
-    const zStart = region.start[0];
-    const yStart = region.start[1];
-    const xStart = region.start[2];
-
-    const zEnd = Math.min(region.end[0], tgtZ);
-    const yEnd = Math.min(region.end[1], tgtY);
-    const xEnd = Math.min(region.end[2], tgtX);
-
-    for (let tz = zStart; tz < zEnd; tz++) {
-      const sz = Math.floor((tz - zStart) / factor);
-      if (sz >= srcZ) continue;
-
-      for (let ty = yStart; ty < yEnd; ty++) {
-        const sy = Math.floor((ty - yStart) / factor);
-        if (sy >= srcY) continue;
-
-        for (let tx = xStart; tx < xEnd; tx++) {
-          const sx = Math.floor((tx - xStart) / factor);
-          if (sx >= srcX) continue;
-
-          const srcIdx = sz * srcY * srcX + sy * srcX + sx;
-          const tgtIdx = tz * tgtY * tgtX + ty * tgtX + tx;
-
-          target[tgtIdx] = source[srcIdx];
-        }
-      }
-    }
-  }
-
-  /**
-   * Fill the entire buffer with data from a source, upsampling as needed
-   * to fill the buffer completely.
-   */
-  fillEntireBuffer(sourceData: TypedArray, sourceShape: [number, number, number]): void {
-    // Calculate upsample factor for each dimension
-    const factors: [number, number, number] = [
-      this.dimensions[0] / sourceShape[0],
-      this.dimensions[1] / sourceShape[1],
-      this.dimensions[2] / sourceShape[2],
-    ];
-
-    // Use the minimum factor to ensure we fill the buffer
-    // (assumes isotropic scaling for simplicity)
-    const factor = Math.min(...factors);
-
-    this.fillRegion(
-      sourceData,
-      sourceShape,
-      {
-        start: [0, 0, 0],
-        end: this.dimensions,
-      },
-      factor
-    );
+  canAccommodate(dimensions: [number, number, number]): boolean {
+    const requiredPixels = dimensions[0] * dimensions[1] * dimensions[2];
+    const currentCapacityPixels =
+      this.buffer.byteLength / this.bytesPerPixel;
+    return requiredPixels <= currentCapacityPixels;
   }
 }

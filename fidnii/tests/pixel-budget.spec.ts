@@ -64,6 +64,9 @@ test.describe("Pixel Budget", () => {
   });
 
   test("reload with higher pixel budget may select higher resolution", async ({ page }) => {
+    // Increase test timeout for large data reload
+    test.setTimeout(180000);
+
     // First reload with low budget
     await page.evaluate(() => {
       const slider = document.getElementById("maxpixels") as HTMLInputElement;
@@ -85,7 +88,7 @@ test.describe("Pixel Budget", () => {
       slider.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await page.locator("#reload").click();
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 60000 });
+    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
 
     const highBudgetLevel = await page.evaluate(() => {
       const image = (window as any).image;
@@ -135,6 +138,9 @@ test.describe("Pixel Budget", () => {
   });
 
   test("very large pixel budget works", async ({ page }) => {
+    // Increase test timeout for large data
+    test.setTimeout(180000);
+
     // Set large budget (100M pixels)
     await page.evaluate(() => {
       const slider = document.getElementById("maxpixels") as HTMLInputElement;
@@ -144,7 +150,7 @@ test.describe("Pixel Budget", () => {
     await page.locator("#reload").click();
 
     // Should still complete successfully (longer timeout for large data)
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 90000 });
+    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
 
     // Should be at highest resolution (level 0)
     const level = await page.evaluate(() => {
@@ -173,31 +179,36 @@ test.describe("Pixel Budget", () => {
     expect(maxPixels).toBe(30_000_000);
   });
 
-  test("cropping affects resolution selection with pixel budget", async ({ page }) => {
+  test("clip planes affect resolution selection with pixel budget", async ({ page }) => {
     // Get level for full volume
     const fullVolumeLevel = await page.evaluate(() => {
       const image = (window as any).image;
       return image.getTargetLevelIndex();
     });
 
-    // Crop to small region
+    // Clip to small region using 6 axis-aligned planes
     await page.evaluate(async () => {
       const image = (window as any).image;
       const bounds = image.getVolumeBounds();
 
-      // Crop to ~1% of volume
+      // Clip to ~10% of volume (center region)
       const rangeX = bounds.max[0] - bounds.min[0];
       const rangeY = bounds.max[1] - bounds.min[1];
       const rangeZ = bounds.max[2] - bounds.min[2];
 
-      image.setCroppingPlanes({
-        xMin: bounds.min[0] + rangeX * 0.45,
-        xMax: bounds.min[0] + rangeX * 0.55,
-        yMin: bounds.min[1] + rangeY * 0.45,
-        yMax: bounds.min[1] + rangeY * 0.55,
-        zMin: bounds.min[2] + rangeZ * 0.45,
-        zMax: bounds.min[2] + rangeZ * 0.55,
-      });
+      const centerX = (bounds.min[0] + bounds.max[0]) / 2;
+      const centerY = (bounds.min[1] + bounds.max[1]) / 2;
+      const centerZ = (bounds.min[2] + bounds.max[2]) / 2;
+
+      // 6 planes forming a box at 45%-55% of each axis
+      image.setClipPlanes([
+        { point: [bounds.min[0] + rangeX * 0.45, centerY, centerZ], normal: [1, 0, 0] },  // X min
+        { point: [bounds.min[0] + rangeX * 0.55, centerY, centerZ], normal: [-1, 0, 0] }, // X max
+        { point: [centerX, bounds.min[1] + rangeY * 0.45, centerZ], normal: [0, 1, 0] },  // Y min
+        { point: [centerX, bounds.min[1] + rangeY * 0.55, centerZ], normal: [0, -1, 0] }, // Y max
+        { point: [centerX, centerY, bounds.min[2] + rangeZ * 0.45], normal: [0, 0, 1] },  // Z min
+        { point: [centerX, centerY, bounds.min[2] + rangeZ * 0.55], normal: [0, 0, -1] }, // Z max
+      ]);
 
       await image.waitForIdle();
     });

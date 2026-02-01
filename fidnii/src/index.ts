@@ -32,7 +32,9 @@ export { OMEZarrNVImage } from "./OMEZarrNVImage.js";
 
 // Types
 export type {
-  CroppingPlanes,
+  ClipPlane,
+  ClipPlanes,
+  VolumeBounds,
   PixelRegion,
   ChunkAlignedRegion,
   ResolutionSelection,
@@ -42,23 +44,30 @@ export type {
   TypedArray,
 } from "./types.js";
 
-// Cropping planes utilities
+// Clip planes utilities
 export {
-  createDefaultCroppingPlanes,
-  worldToPixelRegion,
-  pixelRegionToWorld,
+  createClipPlane,
+  normalizeVector,
+  createDefaultClipPlanes,
+  getVolumeBoundsFromMultiscales,
+  normalToAzimuthElevation,
+  azimuthElevationToNormal,
+  calculateNiivueDepth,
+  clipPlaneToNiivue,
+  clipPlanesToNiivue,
+  pointToPlaneDistance,
+  isInsideClipPlanes,
+  clipPlanesToBoundingBox,
+  clipPlanesToPixelRegion,
   alignToChunks,
-  croppingPlanesToNiivueClipPlanes,
-  isInsideCroppingPlanes,
-  getCroppingVolume,
-  intersectCroppingPlanes,
-  expandCroppingPlanes,
-} from "./CroppingPlanes.js";
+  createAxisAlignedClipPlane,
+  validateClipPlanes,
+  MAX_CLIP_PLANES,
+} from "./ClipPlanes.js";
 
 // Resolution selector utilities
 export {
   selectResolution,
-  getAspectRatio,
   getChunkShape,
   getVolumeShape,
   alignRegionToChunks,
@@ -96,15 +105,6 @@ export {
   updateAffineForRegion,
   calculateWorldBounds,
 } from "./utils/affine.js";
-
-// Upsample utilities
-export {
-  upsampleNearestNeighbor,
-  upsampleTrilinear,
-  calculateUpsampleFactors,
-  needsUpsampling,
-  getIntegerUpsampleFactor,
-} from "./utils/upsample.js";
 
 // Type utilities
 export {

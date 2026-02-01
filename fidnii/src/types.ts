@@ -5,16 +5,30 @@ import type { Multiscales } from "@fideus-labs/ngff-zarr";
 import type { Niivue } from "@niivue/niivue";
 
 /**
- * Six axis-aligned cropping planes defined in world space.
- * These define a bounding box that limits the visible region of the volume.
+ * A single clip plane defined by a point and normal vector.
+ * The plane equation is: normal · (P - point) = 0
+ * Points on the positive side of the normal are kept (visible).
  */
-export interface CroppingPlanes {
-  xMin: number;
-  xMax: number;
-  yMin: number;
-  yMax: number;
-  zMin: number;
-  zMax: number;
+export interface ClipPlane {
+  /** A point on the plane (center of volume projected to plane) [x, y, z] in world coordinates */
+  point: [number, number, number];
+  /** Unit normal vector pointing toward visible region [x, y, z] */
+  normal: [number, number, number];
+}
+
+/**
+ * Collection of clip planes that define the visible region.
+ * Each plane clips away the half-space on the negative side of its normal.
+ * Maximum 6 planes (NiiVue limit). Empty array = full volume visible.
+ */
+export type ClipPlanes = ClipPlane[];
+
+/**
+ * Volume bounds in world space.
+ */
+export interface VolumeBounds {
+  min: [number, number, number];
+  max: [number, number, number];
 }
 
 /**
