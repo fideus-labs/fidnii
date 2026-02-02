@@ -114,3 +114,11 @@ export {
   parseZarritaDtype,
   NiftiDataType,
 } from "./types.js";
+
+// Event system (browser-native EventTarget API)
+export { OMEZarrNVImageEvent } from "./events.js";
+export type {
+  OMEZarrNVImageEventMap,
+  OMEZarrNVImageEventListener,
+  OMEZarrNVImageEventListenerOptions,
+} from "./events.js";

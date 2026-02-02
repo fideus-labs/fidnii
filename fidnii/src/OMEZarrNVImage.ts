@@ -40,6 +40,12 @@ import {
   calculateWorldBounds,
   affineToNiftiSrows,
 } from "./utils/affine.js";
+import {
+  OMEZarrNVImageEventMap,
+  OMEZarrNVImageEvent,
+  OMEZarrNVImageEventListener,
+  OMEZarrNVImageEventListenerOptions,
+} from "./events.js";
 
 const DEFAULT_MAX_PIXELS = 50_000_000;
 
@@ -104,6 +110,9 @@ export class OMEZarrNVImage extends NVImage {
 
   /** Previous pixel count at current resolution (for direction comparison) */
   private _previousPixelCount: number = 0;
+
+  /** Internal EventTarget for event dispatching (composition pattern) */
+  private readonly _eventTarget = new EventTarget();
 
   /**
    * Private constructor. Use OMEZarrNVImage.create() for instantiation.
@@ -237,12 +246,32 @@ export class OMEZarrNVImage extends NVImage {
       // Quick preview from lowest resolution (if different from target and not skipped)
       if (!skipPreview && lowestLevel !== this.targetLevelIndex) {
         await this.loadResolutionLevel(lowestLevel, "preview");
+        const prevLevel = this.currentLevelIndex;
         this.currentLevelIndex = lowestLevel;
+
+        // Emit resolutionChange for preview load
+        if (prevLevel !== lowestLevel) {
+          this._emitEvent("resolutionChange", {
+            currentLevel: this.currentLevelIndex,
+            targetLevel: this.targetLevelIndex,
+            previousLevel: prevLevel,
+          });
+        }
       }
 
       // Final quality at target resolution
       await this.loadResolutionLevel(this.targetLevelIndex, "target");
+      const prevLevelBeforeTarget = this.currentLevelIndex;
       this.currentLevelIndex = this.targetLevelIndex;
+
+      // Emit resolutionChange for target load
+      if (prevLevelBeforeTarget !== this.targetLevelIndex) {
+        this._emitEvent("resolutionChange", {
+          currentLevel: this.currentLevelIndex,
+          targetLevel: this.targetLevelIndex,
+          previousLevel: prevLevelBeforeTarget,
+        });
+      }
 
       // Update previous state for direction-aware resolution selection
       // Always calculate at level 0 for consistent comparison across resolution changes
@@ -272,6 +301,9 @@ export class OMEZarrNVImage extends NVImage {
     levelIndex: number,
     requesterId: string
   ): Promise<void> {
+    // Emit loadingStart event
+    this._emitEvent("loadingStart", { levelIndex });
+
     const ngffImage = this.multiscales.images[levelIndex];
 
     // Get the pixel region for current clip planes
@@ -319,6 +351,9 @@ export class OMEZarrNVImage extends NVImage {
 
     // Refresh NiiVue
     this.niivue.updateGLVolume();
+
+    // Emit loadingComplete event
+    this._emitEvent("loadingComplete", { levelIndex });
   }
 
   /**
@@ -515,6 +550,11 @@ export class OMEZarrNVImage extends NVImage {
       this.targetLevelIndex = newTargetLevel;
       this.populateVolume(true);  // Skip preview for clip plane updates
     }
+
+    // Emit clipPlanesChange event (after debounce)
+    this._emitEvent("clipPlanesChange", {
+      clipPlanes: this.copyClipPlanes(this._clipPlanes),
+    });
   }
 
   /**
@@ -641,5 +681,70 @@ export class OMEZarrNVImage extends NVImage {
    */
   async waitForIdle(): Promise<void> {
     await this.coalescer.onIdle();
+  }
+
+  // ============================================================
+  // Event System (Browser-native EventTarget API)
+  // ============================================================
+
+  /**
+   * Add a type-safe event listener for OMEZarrNVImage events.
+   *
+   * @param type - Event type name
+   * @param listener - Event listener function
+   * @param options - Standard addEventListener options (once, signal, etc.)
+   *
+   * @example
+   * ```typescript
+   * image.addEventListener('resolutionChange', (event) => {
+   *   console.log('New level:', event.detail.currentLevel);
+   * });
+   *
+   * // One-time listener
+   * image.addEventListener('loadingComplete', handler, { once: true });
+   *
+   * // With AbortController
+   * const controller = new AbortController();
+   * image.addEventListener('loadingStart', handler, { signal: controller.signal });
+   * controller.abort(); // removes the listener
+   * ```
+   */
+  addEventListener<K extends keyof OMEZarrNVImageEventMap>(
+    type: K,
+    listener: OMEZarrNVImageEventListener<K>,
+    options?: OMEZarrNVImageEventListenerOptions
+  ): void {
+    this._eventTarget.addEventListener(type, listener as EventListener, options);
+  }
+
+  /**
+   * Remove a type-safe event listener for OMEZarrNVImage events.
+   *
+   * @param type - Event type name
+   * @param listener - Event listener function to remove
+   * @param options - Standard removeEventListener options
+   */
+  removeEventListener<K extends keyof OMEZarrNVImageEventMap>(
+    type: K,
+    listener: OMEZarrNVImageEventListener<K>,
+    options?: OMEZarrNVImageEventListenerOptions
+  ): void {
+    this._eventTarget.removeEventListener(type, listener as EventListener, options);
+  }
+
+  /**
+   * Internal helper to emit events.
+   * Catches and logs any errors from event listeners to prevent breaking execution.
+   */
+  private _emitEvent<K extends keyof OMEZarrNVImageEventMap>(
+    eventName: K,
+    detail: OMEZarrNVImageEventMap[K]
+  ): void {
+    try {
+      const event = new OMEZarrNVImageEvent(eventName, detail);
+      this._eventTarget.dispatchEvent(event);
+    } catch (error) {
+      console.error(`Error in ${eventName} event listener:`, error);
+    }
   }
 }
