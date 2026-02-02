@@ -93,6 +93,18 @@ export class OMEZarrNVImage extends NVImage {
   /** Previous clip plane change handler (to restore later) */
   private previousOnClipPlaneChange?: (clipPlane: number[]) => void;
 
+  /** Debounce delay for clip plane updates (ms) */
+  private readonly clipPlaneDebounceMs: number;
+
+  /** Timeout handle for debounced clip plane refetch */
+  private clipPlaneRefetchTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  /** Previous clip planes state for direction comparison */
+  private _previousClipPlanes: ClipPlanes = [];
+
+  /** Previous pixel count at current resolution (for direction comparison) */
+  private _previousPixelCount: number = 0;
+
   /**
    * Private constructor. Use OMEZarrNVImage.create() for instantiation.
    */
@@ -104,6 +116,7 @@ export class OMEZarrNVImage extends NVImage {
     this.maxPixels = options.maxPixels ?? DEFAULT_MAX_PIXELS;
     this.niivue = options.niivue;
     this.coalescer = new RegionCoalescer();
+    this.clipPlaneDebounceMs = options.clipPlaneDebounceMs ?? 300;
 
     // Initialize clip planes to empty (full volume visible)
     this._clipPlanes = createDefaultClipPlanes(this.multiscales);
@@ -132,14 +145,6 @@ export class OMEZarrNVImage extends NVImage {
 
     // Create buffer manager (dynamic sizing, no pre-allocation)
     this.bufferManager = new BufferManager(this.maxPixels, this.dtype);
-
-    console.log("[fidnii] OMEZarrNVImage created:", {
-      numLevels: this.multiscales.images.length,
-      targetLevel: this.targetLevelIndex,
-      maxPixels: this.maxPixels,
-      dtype: this.dtype,
-      volumeBounds: this._volumeBounds,
-    });
 
     // Initialize NVImage properties with placeholder values
     // Actual values will be set when data is first loaded
@@ -214,10 +219,12 @@ export class OMEZarrNVImage extends NVImage {
    * Populate the volume with data.
    *
    * Loading strategy:
-   * 1. Load lowest resolution first for quick preview
+   * 1. Load lowest resolution first for quick preview (unless skipPreview is true)
    * 2. Jump directly to target resolution (skip intermediate levels)
+   *
+   * @param skipPreview - If true, skip the preview load (used for clip plane updates)
    */
-  async populateVolume(): Promise<void> {
+  async populateVolume(skipPreview: boolean = false): Promise<void> {
     if (this.isLoading) {
       return;
     }
@@ -227,13 +234,8 @@ export class OMEZarrNVImage extends NVImage {
       const numLevels = this.multiscales.images.length;
       const lowestLevel = numLevels - 1;
 
-      console.log("[fidnii] populateVolume starting:", {
-        lowestLevel,
-        targetLevel: this.targetLevelIndex,
-      });
-
-      // Quick preview from lowest resolution (if different from target)
-      if (lowestLevel !== this.targetLevelIndex) {
+      // Quick preview from lowest resolution (if different from target and not skipped)
+      if (!skipPreview && lowestLevel !== this.targetLevelIndex) {
         await this.loadResolutionLevel(lowestLevel, "preview");
         this.currentLevelIndex = lowestLevel;
       }
@@ -242,9 +244,13 @@ export class OMEZarrNVImage extends NVImage {
       await this.loadResolutionLevel(this.targetLevelIndex, "target");
       this.currentLevelIndex = this.targetLevelIndex;
 
-      console.log("[fidnii] populateVolume complete:", {
-        currentLevel: this.currentLevelIndex,
-      });
+      // Update previous state for direction-aware resolution selection
+      // Always calculate at level 0 for consistent comparison across resolution changes
+      this._previousClipPlanes = this.copyClipPlanes(this._clipPlanes);
+      const referenceImage = this.multiscales.images[0];
+      const region = clipPlanesToPixelRegion(this._clipPlanes, this._volumeBounds, referenceImage);
+      const aligned = alignToChunks(region, referenceImage);
+      this._previousPixelCount = this.calculateAlignedPixelCount(aligned);
     } finally {
       this.isLoading = false;
     }
@@ -282,20 +288,6 @@ export class OMEZarrNVImage extends NVImage {
       alignedRegion.chunkAlignedEnd[1] - alignedRegion.chunkAlignedStart[1],
       alignedRegion.chunkAlignedEnd[2] - alignedRegion.chunkAlignedStart[2],
     ];
-
-    // Get voxel size from this resolution level
-    const scale = ngffImage.scale;
-    const sx = scale.x ?? scale.X ?? 1;
-    const sy = scale.y ?? scale.Y ?? 1;
-    const sz = scale.z ?? scale.Z ?? 1;
-
-    console.log("[fidnii] loadResolutionLevel:", {
-      levelIndex,
-      requesterId,
-      fetchedShape,
-      regionStart: alignedRegion.chunkAlignedStart,
-      voxelSize: [sx, sy, sz],
-    });
 
     // Fetch the data
     const fetchRegion: PixelRegion = {
@@ -395,18 +387,6 @@ export class OMEZarrNVImage extends NVImage {
       ],
     };
 
-    console.log("[fidnii] updateHeaderForRegion:", {
-      dims: this.hdr.dims,
-      pixDims: this.hdr.pixDims,
-      affineTranslation: [affine[12], affine[13], affine[14]],
-      physicalExtent: [
-        fetchedShape[2] * sx,
-        fetchedShape[1] * sy,
-        fetchedShape[0] * sz,
-      ],
-      currentBufferBounds: this._currentBufferBounds,
-    });
-
     // Recalculate RAS orientation
     this.calculateRAS();
   }
@@ -422,13 +402,6 @@ export class OMEZarrNVImage extends NVImage {
     // Use current buffer bounds for clip plane conversion
     // This ensures clip planes are relative to the currently loaded data
     const niivueClipPlanes = clipPlanesToNiivue(this._clipPlanes, this._currentBufferBounds);
-
-    console.log("[fidnii] updateNiivueClipPlanes:", {
-      numPlanes: this._clipPlanes.length,
-      fullVolumeBounds: this._volumeBounds,
-      currentBufferBounds: this._currentBufferBounds,
-      niivueClipPlanes,
-    });
 
     if (niivueClipPlanes.length > 0) {
       this.niivue.scene.clipPlaneDepthAziElevs = niivueClipPlanes;
@@ -449,6 +422,11 @@ export class OMEZarrNVImage extends NVImage {
 
   /**
    * Set clip planes.
+   * 
+   * Visual clipping is updated immediately for responsive feedback.
+   * Data refetch is debounced to avoid excessive reloading during slider interaction.
+   * Resolution changes are direction-aware: reducing volume may increase resolution,
+   * increasing volume may decrease resolution.
    *
    * @param planes - Array of clip planes (max 6). Empty array = full volume visible.
    * @throws Error if more than 6 planes provided or if planes are invalid
@@ -457,36 +435,107 @@ export class OMEZarrNVImage extends NVImage {
     // Validate the planes
     validateClipPlanes(planes);
 
-    // Check if new clip planes require refetch
-    const needsRefetch = this.checkNeedsRefetch(planes);
+    // Check if this is a "reset" operation (clearing all planes)
+    const isReset = planes.length === 0 && this._previousClipPlanes.length > 0;
 
+    // Store new clip planes
     this._clipPlanes = planes.map((p) => ({
       point: [...p.point] as [number, number, number],
       normal: normalizeVector([...p.normal] as [number, number, number]),
     }));
 
-    if (needsRefetch) {
-      // Re-select resolution based on new clip planes
-      const selection = selectResolution(
-        this.multiscales,
-        this.maxPixels,
-        this._clipPlanes,
-        this._volumeBounds
-      );
-      this.targetLevelIndex = selection.levelIndex;
+    // Always update NiiVue clip planes immediately (visual feedback)
+    this.updateNiivueClipPlanes();
+    this.niivue.drawScene();
 
-      console.log("[fidnii] setClipPlanes - refetching:", {
-        newTargetLevel: this.targetLevelIndex,
-        numPlanes: planes.length,
-      });
-
-      // Reload the volume
-      this.populateVolume();
-    } else {
-      // Just update NiiVue clip planes
-      this.updateNiivueClipPlanes();
-      this.niivue.drawScene();
+    // Clear any pending debounced refetch
+    if (this.clipPlaneRefetchTimeout) {
+      clearTimeout(this.clipPlaneRefetchTimeout);
+      this.clipPlaneRefetchTimeout = null;
     }
+
+    // Debounce the data refetch decision
+    this.clipPlaneRefetchTimeout = setTimeout(() => {
+      this.handleDebouncedClipPlaneUpdate(isReset);
+    }, this.clipPlaneDebounceMs);
+  }
+
+  /**
+   * Handle clip plane update after debounce delay.
+   * Implements direction-aware resolution selection.
+   * 
+   * Only triggers a refetch when the resolution level needs to change.
+   * Visual clipping is handled by NiiVue clip planes (updated immediately in setClipPlanes).
+   */
+  private handleDebouncedClipPlaneUpdate(isReset: boolean): void {
+    this.clipPlaneRefetchTimeout = null;
+
+    // Always use level 0 for consistent pixel count comparison across resolution changes
+    const referenceImage = this.multiscales.images[0];
+
+    // Calculate current region at reference resolution
+    const currentRegion = clipPlanesToPixelRegion(
+      this._clipPlanes,
+      this._volumeBounds,
+      referenceImage
+    );
+    const currentAligned = alignToChunks(currentRegion, referenceImage);
+    const currentPixelCount = this.calculateAlignedPixelCount(currentAligned);
+
+    // Determine volume change direction (comparing at consistent reference level)
+    const volumeReduced = currentPixelCount < this._previousPixelCount;
+    const volumeIncreased = currentPixelCount > this._previousPixelCount;
+
+    // Get optimal resolution for new region
+    const selection = selectResolution(
+      this.multiscales,
+      this.maxPixels,
+      this._clipPlanes,
+      this._volumeBounds
+    );
+
+    // Direction-aware resolution change
+    let newTargetLevel = this.targetLevelIndex;
+
+    if (isReset) {
+      // Reset/clear: always recalculate optimal resolution
+      newTargetLevel = selection.levelIndex;
+    } else if (volumeReduced && selection.levelIndex < this.targetLevelIndex) {
+      // Volume reduced → allow higher resolution (lower level index)
+      newTargetLevel = selection.levelIndex;
+    } else if (volumeIncreased && selection.levelIndex > this.targetLevelIndex) {
+      // Volume increased → allow lower resolution (higher level index) if needed to fit
+      newTargetLevel = selection.levelIndex;
+    }
+    // Otherwise: keep current level (no unnecessary resolution changes)
+
+    // Only refetch when resolution level changes
+    // Visual clipping is handled by NiiVue clip planes (already updated in setClipPlanes)
+    if (newTargetLevel !== this.targetLevelIndex) {
+      this.targetLevelIndex = newTargetLevel;
+      this.populateVolume(true);  // Skip preview for clip plane updates
+    }
+  }
+
+  /**
+   * Calculate pixel count for a chunk-aligned region.
+   */
+  private calculateAlignedPixelCount(aligned: ChunkAlignedRegion): number {
+    return (
+      (aligned.chunkAlignedEnd[0] - aligned.chunkAlignedStart[0]) *
+      (aligned.chunkAlignedEnd[1] - aligned.chunkAlignedStart[1]) *
+      (aligned.chunkAlignedEnd[2] - aligned.chunkAlignedStart[2])
+    );
+  }
+
+  /**
+   * Create a deep copy of clip planes array.
+   */
+  private copyClipPlanes(planes: ClipPlanes): ClipPlanes {
+    return planes.map((p) => ({
+      point: [...p.point] as [number, number, number],
+      normal: [...p.normal] as [number, number, number],
+    }));
   }
 
   /**
@@ -547,38 +596,6 @@ export class OMEZarrNVImage extends NVImage {
    */
   clearClipPlanes(): void {
     this.setClipPlanes([]);
-  }
-
-  /**
-   * Check if new clip planes require refetching data.
-   */
-  private checkNeedsRefetch(newPlanes: ClipPlanes): boolean {
-    const targetImage = this.multiscales.images[this.targetLevelIndex];
-
-    // Convert to pixel regions
-    const currentRegion = clipPlanesToPixelRegion(
-      this._clipPlanes,
-      this._volumeBounds,
-      targetImage
-    );
-    const currentAligned = alignToChunks(currentRegion, targetImage);
-
-    const newRegion = clipPlanesToPixelRegion(
-      newPlanes,
-      this._volumeBounds,
-      targetImage
-    );
-    const newAligned = alignToChunks(newRegion, targetImage);
-
-    // Check if aligned regions are different
-    return (
-      currentAligned.chunkAlignedStart[0] !== newAligned.chunkAlignedStart[0] ||
-      currentAligned.chunkAlignedStart[1] !== newAligned.chunkAlignedStart[1] ||
-      currentAligned.chunkAlignedStart[2] !== newAligned.chunkAlignedStart[2] ||
-      currentAligned.chunkAlignedEnd[0] !== newAligned.chunkAlignedEnd[0] ||
-      currentAligned.chunkAlignedEnd[1] !== newAligned.chunkAlignedEnd[1] ||
-      currentAligned.chunkAlignedEnd[2] !== newAligned.chunkAlignedEnd[2]
-    );
   }
 
   /**

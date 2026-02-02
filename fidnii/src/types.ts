@@ -76,6 +76,8 @@ export interface OMEZarrNVImageOptions {
   niivue: Niivue;
   /** Maximum number of pixels to use (default: 50,000,000) */
   maxPixels?: number;
+  /** Debounce delay for clip plane data refetch in milliseconds (default: 300) */
+  clipPlaneDebounceMs?: number;
 }
 
 /**

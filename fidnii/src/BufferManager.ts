@@ -37,12 +37,6 @@ export class BufferManager {
     // Initialize with empty buffer - will be allocated on first resize
     this.currentDimensions = [0, 0, 0];
     this.buffer = new ArrayBuffer(0);
-
-    console.log("[fidnii] BufferManager created:", {
-      maxPixels,
-      dtype,
-      bytesPerPixel: this.bytesPerPixel,
-    });
   }
 
   /**
@@ -80,21 +74,6 @@ export class BufferManager {
       // Allocate new buffer
       const newByteLength = requiredPixels * this.bytesPerPixel;
       this.buffer = new ArrayBuffer(newByteLength);
-
-      console.log("[fidnii] BufferManager reallocated:", {
-        oldCapacity: currentCapacityPixels,
-        newCapacity: requiredPixels,
-        reason:
-          requiredPixels > currentCapacityPixels
-            ? "insufficient capacity"
-            : "low utilization",
-      });
-    } else {
-      console.log("[fidnii] BufferManager reusing buffer:", {
-        capacity: currentCapacityPixels,
-        required: requiredPixels,
-        utilization: `${(utilizationRatio * 100).toFixed(1)}%`,
-      });
     }
 
     this.currentDimensions = [...dimensions];

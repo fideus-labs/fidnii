@@ -228,33 +228,6 @@ export function clipPlaneToNiivue(
   // The plane equation dot(n, p-center) + d = 0 changes sign when n is negated.
   const negatedDepth = -depth;
 
-  // Debug logging
-  console.log("[fidnii] clipPlaneToNiivue:", {
-    input: {
-      point: plane.point,
-      normal: plane.normal,
-    },
-    computed: {
-      depth,
-      negatedNormal,
-      negatedDepth,
-    },
-    volumeBounds: {
-      min: volumeBounds.min,
-      max: volumeBounds.max,
-      center: [
-        (volumeBounds.min[0] + volumeBounds.max[0]) / 2,
-        (volumeBounds.min[1] + volumeBounds.max[1]) / 2,
-        (volumeBounds.min[2] + volumeBounds.max[2]) / 2,
-      ],
-    },
-    output: {
-      depth: negatedDepth,
-      azimuth,
-      elevation,
-    },
-  });
-
   return [negatedDepth, azimuth, elevation];
 }
 
