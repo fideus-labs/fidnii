@@ -45,6 +45,7 @@ import {
   OMEZarrNVImageEvent,
   OMEZarrNVImageEventListener,
   OMEZarrNVImageEventListenerOptions,
+  PopulateTrigger,
 } from "./events.js";
 
 const DEFAULT_MAX_PIXELS = 50_000_000;
@@ -113,6 +114,15 @@ export class OMEZarrNVImage extends NVImage {
 
   /** Internal EventTarget for event dispatching (composition pattern) */
   private readonly _eventTarget = new EventTarget();
+
+  /** Pending populate request (latest wins - replaces any previous pending) */
+  private _pendingPopulateRequest: {
+    skipPreview: boolean;
+    trigger: PopulateTrigger;
+  } | null = null;
+
+  /** Current populate trigger (set at start of populateVolume, used by events) */
+  private _currentPopulateTrigger: PopulateTrigger = "initial";
 
   /**
    * Private constructor. Use OMEZarrNVImage.create() for instantiation.
@@ -231,13 +241,34 @@ export class OMEZarrNVImage extends NVImage {
    * 1. Load lowest resolution first for quick preview (unless skipPreview is true)
    * 2. Jump directly to target resolution (skip intermediate levels)
    *
+   * If called while already loading, the request is queued. Only the latest
+   * queued request is kept (latest wins). When a queued request is replaced,
+   * a `loadingSkipped` event is emitted.
+   *
    * @param skipPreview - If true, skip the preview load (used for clip plane updates)
+   * @param trigger - What triggered this population (default: 'initial')
    */
-  async populateVolume(skipPreview: boolean = false): Promise<void> {
+  async populateVolume(
+    skipPreview: boolean = false,
+    trigger: PopulateTrigger = "initial"
+  ): Promise<void> {
+    // If already loading, queue this request (latest wins)
     if (this.isLoading) {
+      if (this._pendingPopulateRequest !== null) {
+        // Replacing an existing queued request - emit loadingSkipped
+        this._emitEvent("loadingSkipped", {
+          reason: "queued-replaced",
+          trigger: this._pendingPopulateRequest.trigger,
+        });
+      }
+      // Queue this request (no event - just queuing)
+      this._pendingPopulateRequest = { skipPreview, trigger };
       return;
     }
+
     this.isLoading = true;
+    this._currentPopulateTrigger = trigger;
+    this._pendingPopulateRequest = null; // Clear any stale pending request
 
     try {
       const numLevels = this.multiscales.images.length;
@@ -255,6 +286,7 @@ export class OMEZarrNVImage extends NVImage {
             currentLevel: this.currentLevelIndex,
             targetLevel: this.targetLevelIndex,
             previousLevel: prevLevel,
+            trigger: this._currentPopulateTrigger,
           });
         }
       }
@@ -270,6 +302,7 @@ export class OMEZarrNVImage extends NVImage {
           currentLevel: this.currentLevelIndex,
           targetLevel: this.targetLevelIndex,
           previousLevel: prevLevelBeforeTarget,
+          trigger: this._currentPopulateTrigger,
         });
       }
 
@@ -282,7 +315,29 @@ export class OMEZarrNVImage extends NVImage {
       this._previousPixelCount = this.calculateAlignedPixelCount(aligned);
     } finally {
       this.isLoading = false;
+      this.handlePendingPopulateRequest();
     }
+  }
+
+  /**
+   * Process any pending populate request after current load completes.
+   * If no pending request, emits populateComplete.
+   */
+  private handlePendingPopulateRequest(): void {
+    const pending = this._pendingPopulateRequest;
+    if (pending !== null) {
+      this._pendingPopulateRequest = null;
+      // Use void to indicate we're intentionally not awaiting
+      void this.populateVolume(pending.skipPreview, pending.trigger);
+      return;
+    }
+
+    // No more pending requests - emit populateComplete
+    this._emitEvent("populateComplete", {
+      currentLevel: this.currentLevelIndex,
+      targetLevel: this.targetLevelIndex,
+      trigger: this._currentPopulateTrigger,
+    });
   }
 
   /**
@@ -302,7 +357,10 @@ export class OMEZarrNVImage extends NVImage {
     requesterId: string
   ): Promise<void> {
     // Emit loadingStart event
-    this._emitEvent("loadingStart", { levelIndex });
+    this._emitEvent("loadingStart", {
+      levelIndex,
+      trigger: this._currentPopulateTrigger,
+    });
 
     const ngffImage = this.multiscales.images[levelIndex];
 
@@ -353,7 +411,10 @@ export class OMEZarrNVImage extends NVImage {
     this.niivue.updateGLVolume();
 
     // Emit loadingComplete event
-    this._emitEvent("loadingComplete", { levelIndex });
+    this._emitEvent("loadingComplete", {
+      levelIndex,
+      trigger: this._currentPopulateTrigger,
+    });
   }
 
   /**
@@ -548,7 +609,7 @@ export class OMEZarrNVImage extends NVImage {
     // Visual clipping is handled by NiiVue clip planes (already updated in setClipPlanes)
     if (newTargetLevel !== this.targetLevelIndex) {
       this.targetLevelIndex = newTargetLevel;
-      this.populateVolume(true);  // Skip preview for clip plane updates
+      this.populateVolume(true, "clipPlanesChanged"); // Skip preview for clip plane updates
     }
 
     // Emit clipPlanesChange event (after debounce)

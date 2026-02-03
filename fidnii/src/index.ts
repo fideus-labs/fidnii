@@ -121,4 +121,5 @@ export type {
   OMEZarrNVImageEventMap,
   OMEZarrNVImageEventListener,
   OMEZarrNVImageEventListenerOptions,
+  PopulateTrigger,
 } from "./events.js";
