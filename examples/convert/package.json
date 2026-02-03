@@ -1,0 +1,24 @@
+{
+  "name": "@fideus-labs/fidnii-example-convert",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@awesome.me/webawesome": "^3.1.0",
+    "@fideus-labs/fidnii": "workspace:*",
+    "@fideus-labs/ngff-zarr": "^0.3.0",
+    "@itk-wasm/image-io": "^1.6.0",
+    "@niivue/niivue": "^0.67.0",
+    "itk-wasm": "1.0.0-b.196",
+    "zarrita": "^0.5.4"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^6.4.1"
+  }
+}

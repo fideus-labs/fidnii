@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Convert to OME-Zarr</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@awesome.me/webawesome@3.1.0/dist/styles/themes/default.css"
+    />
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 0;
+        padding: 1rem;
+        background: #f5f5f5;
+      }
+      h1 {
+        margin: 0 0 1rem 0;
+        font-size: 1.5rem;
+      }
+      .container {
+        display: grid;
+        grid-template-columns: 320px 1fr;
+        gap: 1rem;
+        max-width: 1400px;
+        margin: 0 auto;
+      }
+      .sidebar {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+      }
+      .main {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+      }
+      .drop-zone {
+        border: 2px dashed #ccc;
+        border-radius: 8px;
+        padding: 2rem 1rem;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.2s;
+        background: white;
+      }
+      .drop-zone:hover,
+      .drop-zone.dragover {
+        border-color: var(--wa-color-primary-500);
+        background: var(--wa-color-primary-50);
+      }
+      .drop-zone p {
+        margin: 0 0 0.5rem 0;
+        color: #666;
+      }
+      .settings-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.75rem;
+      }
+      .settings-grid wa-input,
+      .settings-grid wa-select {
+        width: 100%;
+      }
+      .full-width {
+        grid-column: 1 / -1;
+      }
+      #canvas-container {
+        background: #000;
+        border-radius: 8px;
+        overflow: hidden;
+        aspect-ratio: 16 / 10;
+        position: relative;
+      }
+      #canvas-container canvas {
+        width: 100%;
+        height: 100%;
+      }
+      .placeholder {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #666;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.875rem;
+      }
+      th,
+      td {
+        padding: 0.5rem;
+        text-align: left;
+        border-bottom: 1px solid #eee;
+      }
+      th {
+        font-weight: 600;
+        background: #f9f9f9;
+      }
+      .mono {
+        font-family: monospace;
+      }
+      .actions {
+        display: flex;
+        gap: 0.5rem;
+      }
+      wa-card {
+        --padding: 1rem;
+      }
+      wa-card::part(body) {
+        padding: var(--padding);
+      }
+      wa-card [slot="header"] {
+        font-weight: 600;
+      }
+      #progress-container {
+        display: none;
+      }
+      #progress-container.visible {
+        display: block;
+      }
+      #file-info {
+        font-size: 0.875rem;
+        color: #666;
+        margin-top: 0.5rem;
+      }
+      .hidden {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Convert to OME-Zarr 0.5</h1>
+
+    <div class="container">
+      <div class="sidebar">
+        <wa-card>
+          <div slot="header">Input</div>
+          <div
+            id="drop-zone"
+            class="drop-zone"
+            role="button"
+            tabindex="0"
+            aria-label="Drop zone for image files"
+          >
+            <p>Drop image file here</p>
+            <wa-button variant="neutral" size="small" id="browse-btn">
+              Browse...
+            </wa-button>
+            <input type="file" id="file-input" hidden />
+            <div id="file-info"></div>
+          </div>
+        </wa-card>
+
+        <wa-card>
+          <div slot="header">OME-Zarr Settings</div>
+          <div class="settings-grid">
+            <wa-input
+              id="chunk-size"
+              type="number"
+              label="Chunk Size"
+              value="64"
+              min="16"
+              max="512"
+              step="16"
+            ></wa-input>
+            <wa-input
+              id="scale-levels"
+              type="number"
+              label="Scale Levels"
+              value="0"
+              min="0"
+              max="8"
+              help-text="0 = auto"
+            ></wa-input>
+          </div>
+        </wa-card>
+
+        <wa-card>
+          <div slot="header">Preview Settings</div>
+          <div class="settings-grid">
+            <wa-select id="colormap" label="Colormap" value="gray">
+              <wa-option value="gray">Gray</wa-option>
+              <wa-option value="hot">Hot</wa-option>
+              <wa-option value="cool">Cool</wa-option>
+              <wa-option value="viridis">Viridis</wa-option>
+              <wa-option value="plasma">Plasma</wa-option>
+              <wa-option value="inferno">Inferno</wa-option>
+              <wa-option value="red">Red</wa-option>
+              <wa-option value="green">Green</wa-option>
+              <wa-option value="blue">Blue</wa-option>
+            </wa-select>
+            <wa-input
+              id="opacity"
+              type="number"
+              label="Opacity"
+              value="1.0"
+              min="0"
+              max="1"
+              step="0.1"
+            ></wa-input>
+          </div>
+        </wa-card>
+
+        <div id="progress-container">
+          <wa-card>
+            <div slot="header">Progress</div>
+            <wa-progress-bar id="progress-bar" value="0"></wa-progress-bar>
+            <p id="progress-text" style="margin: 0.5rem 0 0 0; font-size: 0.875rem"></p>
+          </wa-card>
+        </div>
+
+        <div class="actions">
+          <wa-button
+            id="convert-btn"
+            variant="brand"
+            disabled
+            style="flex: 1"
+          >
+            Convert & Download
+          </wa-button>
+          <wa-button id="download-btn" variant="neutral" class="hidden">
+            Download Again
+          </wa-button>
+        </div>
+      </div>
+
+      <div class="main">
+        <wa-card>
+          <div slot="header">Preview</div>
+          <div id="canvas-container">
+            <div id="placeholder" class="placeholder">
+              Load an image to preview
+            </div>
+            <canvas id="gl"></canvas>
+          </div>
+        </wa-card>
+
+        <wa-card id="multiscales-card" class="hidden">
+          <div slot="header">Multiscales Info</div>
+          <table id="multiscales-table">
+            <thead>
+              <tr>
+                <th>Level</th>
+                <th>Path</th>
+                <th>Shape</th>
+                <th>Chunks</th>
+                <th>Size</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </wa-card>
+      </div>
+    </div>
+
+    <script type="module" src="/main.ts"></script>
+  </body>
+</html>
