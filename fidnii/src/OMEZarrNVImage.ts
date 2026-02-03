@@ -173,6 +173,13 @@ export class OMEZarrNVImage extends NVImage {
   /**
    * Create a new OMEZarrNVImage instance.
    *
+   * By default, the image is automatically added to NiiVue and progressive
+   * loading starts immediately (fire-and-forget). This enables progressive
+   * rendering where each resolution level is displayed as it loads.
+   *
+   * Set `autoLoad: false` for manual control over when loading starts.
+   * Listen to 'populateComplete' event to know when loading finishes.
+   *
    * @param options - Options including multiscales, niivue reference, and optional maxPixels
    * @returns Promise resolving to the OMEZarrNVImage instance
    */
@@ -189,6 +196,13 @@ export class OMEZarrNVImage extends NVImage {
       // Handle clip plane change
       image.onNiivueClipPlaneChange(clipPlane);
     };
+
+    // Auto-load by default (add to NiiVue + start progressive loading)
+    const autoLoad = options.autoLoad ?? true;
+    if (autoLoad) {
+      image.niivue.addVolume(image);
+      void image.populateVolume(); // Fire-and-forget, returns immediately
+    }
 
     return image;
   }

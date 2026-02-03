@@ -78,6 +78,12 @@ export interface OMEZarrNVImageOptions {
   maxPixels?: number;
   /** Debounce delay for clip plane data refetch in milliseconds (default: 300) */
   clipPlaneDebounceMs?: number;
+  /**
+   * Automatically add to NiiVue and start progressive loading (default: true).
+   * Set to false to manually control when populateVolume() is called.
+   * Listen to 'populateComplete' event to know when loading finishes.
+   */
+  autoLoad?: boolean;
 }
 
 /**

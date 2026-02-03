@@ -16,14 +16,21 @@
  * await nv.attachToCanvas(document.getElementById('canvas'));
  *
  * const multiscales = await fromNgffZarr('/path/to/data.ome.zarr');
- * const image = await OMEZarrNVImage.create({
- *   multiscales,
- *   niivue: nv,
- *   maxPixels: 50_000_000
- * });
  *
- * nv.volumes.push(image);
- * await image.populateVolume();
+ * // Image is automatically added to NiiVue and loads progressively
+ * const image = await OMEZarrNVImage.create({ multiscales, niivue: nv });
+ *
+ * // Listen for loading complete if needed
+ * image.addEventListener('populateComplete', () => console.log('Loaded!'));
+ *
+ * // For manual control, use autoLoad: false
+ * // const image = await OMEZarrNVImage.create({
+ * //   multiscales,
+ * //   niivue: nv,
+ * //   autoLoad: false,
+ * // });
+ * // nv.addVolume(image);
+ * // await image.populateVolume();
  * ```
  */
 

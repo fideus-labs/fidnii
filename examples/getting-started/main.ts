@@ -16,10 +16,8 @@ async function main() {
   // Load OME-Zarr data
   const multiscales = await fromNgffZarr(DATA_URL);
 
-  // Create and display image
-  const image = await OMEZarrNVImage.create({ multiscales, niivue: nv });
-  await image.populateVolume();
-  nv.addVolume(image);
+  // Create image - automatically added to NiiVue and loads progressively
+  await OMEZarrNVImage.create({ multiscales, niivue: nv });
 }
 
 main();
