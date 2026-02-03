@@ -12,6 +12,25 @@ importers:
         specifier: ^5.5.3
         version: 5.9.3
 
+  examples/getting-started:
+    dependencies:
+      '@fideus-labs/fidnii':
+        specifier: workspace:*
+        version: link:../../fidnii
+      '@fideus-labs/ngff-zarr':
+        specifier: ^0.1.0
+        version: 0.1.0
+      '@niivue/niivue':
+        specifier: ^0.67.0
+        version: 0.67.0
+    devDependencies:
+      typescript:
+        specifier: ^5.5.3
+        version: 5.9.3
+      vite:
+        specifier: ^5.4.0
+        version: 5.4.21(@types/node@20.19.30)
+
   fidnii:
     dependencies:
       '@fideus-labs/ngff-zarr':

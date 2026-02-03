@@ -1,0 +1,20 @@
+{
+  "name": "@fideus-labs/fidnii-getting-started",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@fideus-labs/fidnii": "workspace:*",
+    "@fideus-labs/ngff-zarr": "^0.1.0",
+    "@niivue/niivue": "^0.67.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.3",
+    "vite": "^5.4.0"
+  }
+}
