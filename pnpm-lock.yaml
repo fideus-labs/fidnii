@@ -21,8 +21,8 @@ importers:
         specifier: workspace:*
         version: link:../../fidnii
       '@fideus-labs/ngff-zarr':
-        specifier: ^0.3.0
-        version: 0.3.0
+        specifier: ^0.4.0
+        version: 0.4.0
       '@itk-wasm/image-io':
         specifier: ^1.6.0
         version: 1.6.0
@@ -49,8 +49,8 @@ importers:
         specifier: workspace:*
         version: link:../../fidnii
       '@fideus-labs/ngff-zarr':
-        specifier: ^0.3.0
-        version: 0.3.0
+        specifier: ^0.4.0
+        version: 0.4.0
       '@niivue/niivue':
         specifier: ^0.67.0
         version: 0.67.0
@@ -65,8 +65,8 @@ importers:
   fidnii:
     dependencies:
       '@fideus-labs/ngff-zarr':
-        specifier: ^0.3.0
-        version: 0.3.0
+        specifier: ^0.4.0
+        version: 0.4.0
       '@itk-wasm/downsample':
         specifier: ^1.8.1
         version: 1.8.1
@@ -409,8 +409,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@fideus-labs/ngff-zarr@0.3.0':
-    resolution: {integrity: sha512-2wP4OSwn21OM6ug3p+nFTpPlNKriS7MP7Vt8PxilHWgwPC8vo+fRLpQ8HsQKd+OubuoTBDaIdCb/cBWzJVjFEA==}
+  '@fideus-labs/ngff-zarr@0.4.0':
+    resolution: {integrity: sha512-m8m+v28kR35mztwa8qJFKhnJwvAksz6k2fdESUPzxcNL+E6Upl1PeUGXwwNJSeATyD43dBMhgizDe2p+KqPuPg==}
 
   '@floating-ui/core@1.7.4':
     resolution: {integrity: sha512-C3HlIdsBxszvm5McXlB8PeOEWfBhcGBTZGkGlWc2U0KFY5IwG5OQEuQ8rq52DZmcHDlPLd+YFBK+cZcytwIFWg==}
@@ -1615,7 +1615,7 @@ snapshots:
   '@esbuild/win32-x64@0.25.12':
     optional: true
 
-  '@fideus-labs/ngff-zarr@0.3.0':
+  '@fideus-labs/ngff-zarr@0.4.0':
     dependencies:
       '@itk-wasm/downsample': 1.8.1
       '@zarrita/storage': 0.1.4
