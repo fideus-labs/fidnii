@@ -49,12 +49,15 @@ importers:
         specifier: workspace:*
         version: link:../../fidnii
       '@fideus-labs/ngff-zarr':
-        specifier: ^0.5.0
-        version: 0.5.0
+        specifier: ^0.5.1
+        version: 0.5.1
       '@niivue/niivue':
         specifier: ^0.67.0
         version: 0.67.0
     devDependencies:
+      '@playwright/test':
+        specifier: ^1.58.1
+        version: 1.58.1
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -408,9 +411,6 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
-
-  '@fideus-labs/ngff-zarr@0.5.0':
-    resolution: {integrity: sha512-OzWdul2fLHxA0msRDpj5nrC7hPM9S0RYeQaz7V2mG7y/3t4A1vCQ2qjLNv9iTmdbk/OSm/CrHe9CnV30eXRoEw==}
 
   '@fideus-labs/ngff-zarr@0.5.1':
     resolution: {integrity: sha512-EVXjjRRwg+Y70FKmHE/2y8GI/uOoyHd2b8Q25Kzs/W8x7Br0ceOCWNk7JNeCTv/O8KNiyZQIWRXlzptRLHyqfQ==}
@@ -1628,18 +1628,6 @@ snapshots:
 
   '@esbuild/win32-x64@0.25.12':
     optional: true
-
-  '@fideus-labs/ngff-zarr@0.5.0':
-    dependencies:
-      '@itk-wasm/downsample': 1.8.1
-      '@zarrita/storage': 0.1.4
-      comlink: 4.4.2
-      itk-wasm: 1.0.0-b.196
-      p-queue: 8.1.1
-      zarrita: 0.5.4
-      zod: 4.3.6
-    transitivePeerDependencies:
-      - debug
 
   '@fideus-labs/ngff-zarr@0.5.1':
     dependencies:

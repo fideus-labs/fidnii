@@ -13,11 +13,22 @@ async function main() {
   await nv.attachToCanvas(canvas);
   nv.setSliceType(nv.sliceTypeRender);
 
+  // Expose NiiVue instance for testing
+  (window as any).nv = nv;
+
   // Load OME-Zarr data
   const multiscales = await fromNgffZarr(DATA_URL);
 
   // Create image - automatically added to NiiVue and loads progressively
-  await OMEZarrNVImage.create({ multiscales, niivue: nv });
+  const image = await OMEZarrNVImage.create({ multiscales, niivue: nv });
+
+  // Expose image for testing
+  (window as any).image = image;
+
+  // Signal when progressive loading completes
+  image.addEventListener("populateComplete", () => {
+    (window as any).loadingComplete = true;
+  });
 }
 
 main();
