@@ -10,13 +10,13 @@ test.describe("Pixel Budget", () => {
     await expect(page.locator("#status")).toHaveText("Ready", { timeout: 30000 });
   });
 
-  test("default maxPixels is 50 million", async ({ page }) => {
+  test("default maxPixels is 12 million", async ({ page }) => {
     const maxPixels = await page.evaluate(() => {
       const image = (window as any).image;
       return image.maxPixels;
     });
 
-    expect(maxPixels).toBe(50_000_000);
+    expect(maxPixels).toBe(12_000_000);
   });
 
   test("maxPixels slider changes displayed value", async ({ page }) => {
@@ -24,7 +24,7 @@ test.describe("Pixel Budget", () => {
     const valueEl = page.locator("#maxpixels-value");
 
     // Initial value
-    await expect(valueEl).toHaveText("50");
+    await expect(valueEl).toHaveText("12");
 
     // Change slider
     await slider.fill("25");
@@ -34,7 +34,7 @@ test.describe("Pixel Budget", () => {
   });
 
   test("reload with lower pixel budget may select lower resolution", async ({ page }) => {
-    // Get initial level with default 50M
+    // Get initial level with default 12M
     const initialLevel = await page.evaluate(() => {
       const image = (window as any).image;
       return image.getTargetLevelIndex();
@@ -152,7 +152,7 @@ test.describe("Pixel Budget", () => {
     // Should still complete successfully (longer timeout for large data)
     await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
 
-    // Should be at highest resolution (level 0)
+    // Should target highest resolution (level 0)
     const level = await page.evaluate(() => {
       const image = (window as any).image;
       return image.getTargetLevelIndex();

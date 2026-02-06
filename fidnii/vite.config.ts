@@ -11,6 +11,8 @@ export default defineConfig({
     alias: {
       "@fideus-labs/fidnii": resolve(__dirname, "src/index.ts"),
       // Use local ngff-zarr browser build to avoid Node.js-specific imports
+      // Both the main import and /browser subpath should resolve to the browser module
+      "@fideus-labs/ngff-zarr/browser": resolve(__dirname, "../context/ngff-zarr/ts/src/browser-mod.ts"),
       "@fideus-labs/ngff-zarr": resolve(__dirname, "../context/ngff-zarr/ts/src/browser-mod.ts"),
       // Help resolve dependencies for local ngff-zarr
       "zod": resolve(__dirname, "node_modules/zod"),

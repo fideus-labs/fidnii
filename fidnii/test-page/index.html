@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>fidnii Test Page</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body { font-family: monospace; background: #1a1a1a; color: #eee; display: flex; height: 100vh; }
+      #sidebar {
+        width: 280px; padding: 12px; overflow-y: auto; flex-shrink: 0;
+        display: flex; flex-direction: column; gap: 10px; font-size: 13px;
+      }
+      #sidebar h1 { font-size: 16px; margin-bottom: 4px; }
+      #canvas-wrap { flex: 1; min-width: 0; }
+      canvas { width: 100%; height: 100%; display: block; }
+      label { display: block; margin-bottom: 2px; color: #aaa; }
+      .row { display: flex; gap: 6px; align-items: center; }
+      .row span { min-width: 30px; }
+      input[type="range"] { flex: 1; }
+      button { padding: 4px 10px; cursor: pointer; }
+      .info span { color: #8cf; }
+    </style>
+  </head>
+  <body>
+    <div id="sidebar">
+      <h1>@fideus-labs/fidnii</h1>
+
+      <div class="info">
+        <label>Status</label>
+        <span id="status">Loading...</span>
+      </div>
+
+      <div class="info">
+        <label>Resolution Levels</label>
+        <span id="num-levels">-</span>
+      </div>
+
+      <div class="info">
+        <label>Bounds X</label>
+        <span id="bounds-x">-</span>
+      </div>
+      <div class="info">
+        <label>Bounds Y</label>
+        <span id="bounds-y">-</span>
+      </div>
+      <div class="info">
+        <label>Bounds Z</label>
+        <span id="bounds-z">-</span>
+      </div>
+
+      <div>
+        <label>Max Pixels (M)</label>
+        <div class="row">
+          <input type="range" id="maxpixels" min="1" max="100" value="12" />
+          <span id="maxpixels-value">12</span>
+        </div>
+      </div>
+
+      <button id="reload">Reload</button>
+
+      <div class="info">
+        <label>Clip Planes</label>
+        <span id="clip-plane-count">0</span>
+      </div>
+
+      <div>
+        <label>X Min Clip</label>
+        <input type="range" id="xmin" min="0" max="100" step="any" value="0" />
+      </div>
+
+      <button id="reset-clip-planes">Reset Clip Planes</button>
+    </div>
+
+    <div id="canvas-wrap">
+      <canvas id="gl"></canvas>
+    </div>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

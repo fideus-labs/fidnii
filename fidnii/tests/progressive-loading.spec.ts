@@ -51,7 +51,7 @@ test.describe("Progressive Loading", () => {
     // Wait for ready
     await expect(page.locator("#status")).toHaveText("Ready", { timeout: 60000 });
 
-    // Default is 50M pixels
+    // Default is 12M pixels
     const levels = await page.evaluate(() => {
       const image = (window as any).image;
       return {
@@ -60,9 +60,10 @@ test.describe("Progressive Loading", () => {
       };
     });
 
-    // With 50M pixels and stent.ome.zarr dimensions, should be level 0 or 1
-    expect(levels.maxPixels).toBe(50_000_000);
-    expect(levels.target).toBeLessThanOrEqual(1);
+    // With 12M pixels and stent.ome.zarr dimensions, should be level 1
+    // (scale 0 is 174×512×512 = ~45.6M > 12M, scale 1 is 174×256×256 = ~11.4M <= 12M)
+    expect(levels.maxPixels).toBe(12_000_000);
+    expect(levels.target).toBe(1);
   });
 
   test("image buffer is populated after loading", async ({ page }) => {

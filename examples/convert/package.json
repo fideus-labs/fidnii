@@ -11,11 +11,11 @@
   "dependencies": {
     "@awesome.me/webawesome": "^3.1.0",
     "@fideus-labs/fidnii": "workspace:*",
-    "@fideus-labs/ngff-zarr": "^0.5.0",
+    "@fideus-labs/ngff-zarr": "^0.5.1",
     "@itk-wasm/image-io": "^1.6.0",
     "@niivue/niivue": "^0.67.0",
     "itk-wasm": "1.0.0-b.196",
-    "zarrita": "^0.5.4"
+    "zarrita": "^0.6.1"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

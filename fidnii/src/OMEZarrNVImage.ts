@@ -4,7 +4,8 @@
 import { NIFTI1 } from "nifti-reader-js";
 import { NVImage } from "@niivue/niivue";
 import type { Niivue } from "@niivue/niivue";
-import type { Multiscales, NgffImage } from "@fideus-labs/ngff-zarr";
+import type { Multiscales, NgffImage, Omero } from "@fideus-labs/ngff-zarr";
+import { computeOmeroFromNgffImage } from "@fideus-labs/ngff-zarr/browser";
 
 import type {
   ClipPlane,
@@ -111,6 +112,15 @@ export class OMEZarrNVImage extends NVImage {
 
   /** Previous pixel count at current resolution (for direction comparison) */
   private _previousPixelCount: number = 0;
+
+  /** Cached/computed OMERO metadata for visualization (cal_min/cal_max) */
+  private _omero: Omero | undefined;
+
+  /** Active channel index for OMERO window selection (default: 0) */
+  private _activeChannel: number = 0;
+
+  /** Resolution level at which OMERO was last computed (to track recomputation) */
+  private _omeroComputedForLevel: number = -1;
 
   /** Internal EventTarget for event dispatching (composition pattern) */
   private readonly _eventTarget = new EventTarget();
@@ -418,6 +428,9 @@ export class OMEZarrNVImage extends NVImage {
     // Update NVImage header with correct dimensions and transforms
     this.updateHeaderForRegion(ngffImage, alignedRegion, fetchedShape);
 
+    // Compute or apply OMERO metadata for cal_min/cal_max
+    await this.ensureOmeroMetadata(ngffImage, levelIndex);
+
     // Update NiiVue clip planes
     this.updateNiivueClipPlanes();
 
@@ -518,6 +531,78 @@ export class OMEZarrNVImage extends NVImage {
     } else {
       // Clear clip planes - set to "disabled" state (depth > 1.8)
       this.niivue.scene.clipPlaneDepthAziElevs = [[2, 0, 0]];
+    }
+  }
+
+  /**
+   * Apply OMERO window settings to NIfTI header cal_min/cal_max.
+   *
+   * Uses the active channel's window (start/end preferred over min/max).
+   * This sets the display intensity range for NiiVue rendering.
+   */
+  private applyOmeroToHeader(): void {
+    if (!this.hdr || !this._omero?.channels?.length) return;
+
+    // Clamp active channel to valid range
+    const channelIndex = Math.min(
+      this._activeChannel,
+      this._omero.channels.length - 1
+    );
+    const channel = this._omero.channels[channelIndex];
+    const window = channel?.window;
+
+    if (window) {
+      // Prefer start/end (display window based on quantiles) over min/max (data range)
+      const calMin = window.start ?? window.min;
+      const calMax = window.end ?? window.max;
+
+      if (calMin !== undefined) this.hdr.cal_min = calMin;
+      if (calMax !== undefined) this.hdr.cal_max = calMax;
+    }
+  }
+
+  /**
+   * Ensure OMERO metadata is available and applied.
+   *
+   * Strategy:
+   * - If OMERO exists in file metadata, use it (first time only)
+   * - If NOT present, compute dynamically:
+   *   - Compute at preview (lowest) resolution for quick initial display
+   *   - Recompute at target resolution for more accurate values
+   *   - Keep target values for consistency on subsequent clip plane changes
+   *
+   * @param ngffImage - The NgffImage at the current resolution level
+   * @param levelIndex - The resolution level index
+   */
+  private async ensureOmeroMetadata(
+    ngffImage: NgffImage,
+    levelIndex: number
+  ): Promise<void> {
+    const existingOmero = this.multiscales.metadata?.omero;
+
+    if (existingOmero && !this._omero) {
+      // Use existing OMERO metadata from the file (first time)
+      this._omero = existingOmero;
+      this.applyOmeroToHeader();
+      return;
+    }
+
+    if (!existingOmero) {
+      // No OMERO in file - compute dynamically
+      // Compute at preview (lowest) and target levels, then keep for consistency
+      const lowestLevel = this.multiscales.images.length - 1;
+      const isPreviewLevel = levelIndex === lowestLevel;
+      const isTargetLevel = levelIndex === this.targetLevelIndex;
+      const needsCompute =
+        isPreviewLevel ||
+        (isTargetLevel && this._omeroComputedForLevel !== this.targetLevelIndex);
+
+      if (needsCompute) {
+        const computedOmero = await computeOmeroFromNgffImage(ngffImage);
+        this._omero = computedOmero;
+        this._omeroComputedForLevel = levelIndex;
+        this.applyOmeroToHeader();
+      }
     }
   }
 
@@ -756,6 +841,78 @@ export class OMEZarrNVImage extends NVImage {
    */
   async waitForIdle(): Promise<void> {
     await this.coalescer.onIdle();
+  }
+
+  // ============================================================
+  // OMERO Metadata (Visualization Parameters)
+  // ============================================================
+
+  /**
+   * Get OMERO metadata (if available).
+   *
+   * Returns the existing OMERO metadata from the OME-Zarr file,
+   * or the computed OMERO metadata if none was present in the file.
+   *
+   * OMERO metadata includes per-channel visualization parameters:
+   * - window.min/max: The actual data range
+   * - window.start/end: The display window (based on quantiles)
+   * - color: Hex color for the channel
+   * - label: Channel name
+   *
+   * @returns OMERO metadata or undefined if not yet loaded/computed
+   */
+  getOmero(): Omero | undefined {
+    return this._omero;
+  }
+
+  /**
+   * Get the active channel index used for OMERO window selection.
+   *
+   * For multi-channel images, this determines which channel's
+   * cal_min/cal_max values are applied to the NiiVue display.
+   *
+   * @returns Current active channel index (0-based)
+   */
+  getActiveChannel(): number {
+    return this._activeChannel;
+  }
+
+  /**
+   * Set the active channel for OMERO window selection.
+   *
+   * For multi-channel images, this determines which channel's
+   * window (cal_min/cal_max) values are applied to the NiiVue display.
+   *
+   * Changing the active channel immediately updates the display intensity
+   * range and refreshes the NiiVue rendering.
+   *
+   * @param index - Channel index (0-based)
+   * @throws Error if no OMERO metadata is available
+   * @throws Error if index is out of range
+   *
+   * @example
+   * ```typescript
+   * // Get number of channels
+   * const omero = image.getOmero();
+   * if (omero) {
+   *   console.log(`${omero.channels.length} channels available`);
+   *   // Switch to channel 1
+   *   image.setActiveChannel(1);
+   * }
+   * ```
+   */
+  setActiveChannel(index: number): void {
+    if (!this._omero?.channels?.length) {
+      throw new Error("No OMERO metadata available");
+    }
+    if (index < 0 || index >= this._omero.channels.length) {
+      throw new Error(
+        `Invalid channel index: ${index} (have ${this._omero.channels.length} channels)`
+      );
+    }
+    this._activeChannel = index;
+    this.applyOmeroToHeader();
+    this.niivue.updateGLVolume();
   }
 
   // ============================================================

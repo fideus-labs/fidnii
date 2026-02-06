@@ -14,7 +14,10 @@ import {
 } from "@fideus-labs/ngff-zarr";
 // Import browser-specific toNgffZarrOzx which returns Uint8Array
 // (Node version takes a path and returns void)
-import { toNgffZarrOzx } from "@fideus-labs/ngff-zarr/browser";
+import {
+  toNgffZarrOzx,
+  computeOmeroFromNgffImage,
+} from "@fideus-labs/ngff-zarr/browser";
 // itkImageToNgffImage is not in browser exports, but the main module has browser condition
 // that should resolve to browser-mod.js - we need to use the main import for this
 import type { Image } from "itk-wasm";
@@ -156,6 +159,10 @@ export async function convertToOmeZarr(
   report("converting", 20, "Converting to NGFF format...");
   const ngffImage = await itkImageToNgffImage(itkImage);
 
+  // Stage 2b: Compute OMERO visualization metadata from highest resolution image
+  report("converting", 25, "Computing OMERO visualization metadata...");
+  const omero = await computeOmeroFromNgffImage(ngffImage);
+
   // Stage 3: Generate multiscales (downsampling)
   report("downsampling", 30, "Generating multiscale pyramid...");
 
@@ -176,10 +183,13 @@ export async function convertToOmeZarr(
   report("downsampling", 70, `Created ${multiscalesV04.images.length} scale levels`);
 
   // toMultiscales creates version 0.4 by default, but toNgffZarrOzx requires 0.5
-  // Create a new Multiscales with version 0.5 metadata
+  // Create a new Multiscales with version 0.5 metadata and OMERO visualization data
+  const metadataV05 = createMetadataWithVersion(multiscalesV04.metadata, "0.5");
+  metadataV05.omero = omero; // Attach computed OMERO visualization metadata
+
   const multiscales = new MultiscalesClass({
     images: multiscalesV04.images,
-    metadata: createMetadataWithVersion(multiscalesV04.metadata, "0.5"),
+    metadata: metadataV05,
     scaleFactors: multiscalesV04.scaleFactors,
     method: multiscalesV04.method,
     chunks: multiscalesV04.chunks,

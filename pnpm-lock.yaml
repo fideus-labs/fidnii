@@ -21,8 +21,8 @@ importers:
         specifier: workspace:*
         version: link:../../fidnii
       '@fideus-labs/ngff-zarr':
-        specifier: ^0.5.0
-        version: 0.5.0
+        specifier: ^0.5.1
+        version: 0.5.1
       '@itk-wasm/image-io':
         specifier: ^1.6.0
         version: 1.6.0
@@ -33,8 +33,8 @@ importers:
         specifier: 1.0.0-b.196
         version: 1.0.0-b.196
       zarrita:
-        specifier: ^0.5.4
-        version: 0.5.4
+        specifier: ^0.6.1
+        version: 0.6.1
     devDependencies:
       typescript:
         specifier: ^5.9.3
@@ -65,8 +65,8 @@ importers:
   fidnii:
     dependencies:
       '@fideus-labs/ngff-zarr':
-        specifier: ^0.5.0
-        version: 0.5.0
+        specifier: ^0.5.1
+        version: 0.5.1
       '@itk-wasm/downsample':
         specifier: ^1.8.1
         version: 1.8.1
@@ -83,8 +83,8 @@ importers:
         specifier: ^8.1.1
         version: 8.1.1
       zarrita:
-        specifier: ^0.5.4
-        version: 0.5.4
+        specifier: ^0.6.1
+        version: 0.6.1
       zod:
         specifier: ^3.25.76
         version: 3.25.76
@@ -411,6 +411,9 @@ packages:
 
   '@fideus-labs/ngff-zarr@0.5.0':
     resolution: {integrity: sha512-OzWdul2fLHxA0msRDpj5nrC7hPM9S0RYeQaz7V2mG7y/3t4A1vCQ2qjLNv9iTmdbk/OSm/CrHe9CnV30eXRoEw==}
+
+  '@fideus-labs/ngff-zarr@0.5.1':
+    resolution: {integrity: sha512-EVXjjRRwg+Y70FKmHE/2y8GI/uOoyHd2b8Q25Kzs/W8x7Br0ceOCWNk7JNeCTv/O8KNiyZQIWRXlzptRLHyqfQ==}
 
   '@floating-ui/core@1.7.4':
     resolution: {integrity: sha512-C3HlIdsBxszvm5McXlB8PeOEWfBhcGBTZGkGlWc2U0KFY5IwG5OQEuQ8rq52DZmcHDlPLd+YFBK+cZcytwIFWg==}
@@ -1163,9 +1166,17 @@ packages:
     resolution: {integrity: sha512-aNZ+VfjobsWryoiPnEApGGmf5WmNsCo9xu8dfaYamG5qaLP7ClhLN6NgsFe6SwJ2UbLEBK5dv9x8Mn5+RVhMWQ==}
     engines: {node: '>=18'}
 
+  p-queue@9.1.0:
+    resolution: {integrity: sha512-O/ZPaXuQV29uSLbxWBGGZO1mCQXV2BLIwUr59JUU9SoH76mnYvtms7aafH/isNSNGwuEfP6W/4xD0/TJXxrizw==}
+    engines: {node: '>=20'}
+
   p-timeout@6.1.4:
     resolution: {integrity: sha512-MyIV3ZA/PmyBN/ud8vV9XzwTrNtR4jFrObymZYnZqMmW0zA8Z17vnT0rBgFE/TlohB+YCHqXMgZzb3Csp49vqg==}
     engines: {node: '>=14.16'}
+
+  p-timeout@7.0.1:
+    resolution: {integrity: sha512-AxTM2wDGORHGEkPCt8yqxOTMgpfbEHqF51f/5fJCmwFC3C/zNcGT63SymH2ttOAaiIws2zVg4+izQCjrakcwHg==}
+    engines: {node: '>=20'}
 
   pend@1.2.0:
     resolution: {integrity: sha512-F3asv42UuXchdzt+xXqfW1OGlVBe+mxa2mqI0pg5yAHZPvFmY3Y6drSf/GQ1A86WgWEN9Kzh/WrgKa6iGcHXLg==}
@@ -1439,6 +1450,9 @@ packages:
   zarrita@0.5.4:
     resolution: {integrity: sha512-i88iN2+HqIQ+uiCEWLfhjbYNXAJD7IrM4h3lFwFclfqEOOhxp10amRWtqmgN5jbuy3+h0LwdyLVVzk4y9rTLgg==}
 
+  zarrita@0.6.1:
+    resolution: {integrity: sha512-YOMTW8FT55Rz+vadTIZeOFZ/F2h4svKizyldvPtMYSxPgSNcRkOzkxCsWpIWlWzB1I/LmISmi0bEekOhLlI+Zw==}
+
   zod@3.25.76:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
@@ -1623,6 +1637,18 @@ snapshots:
       itk-wasm: 1.0.0-b.196
       p-queue: 8.1.1
       zarrita: 0.5.4
+      zod: 4.3.6
+    transitivePeerDependencies:
+      - debug
+
+  '@fideus-labs/ngff-zarr@0.5.1':
+    dependencies:
+      '@itk-wasm/downsample': 1.8.1
+      '@zarrita/storage': 0.1.4
+      comlink: 4.4.2
+      itk-wasm: 1.0.0-b.196
+      p-queue: 9.1.0
+      zarrita: 0.6.1
       zod: 4.3.6
     transitivePeerDependencies:
       - debug
@@ -2428,7 +2454,14 @@ snapshots:
       eventemitter3: 5.0.4
       p-timeout: 6.1.4
 
+  p-queue@9.1.0:
+    dependencies:
+      eventemitter3: 5.0.4
+      p-timeout: 7.0.1
+
   p-timeout@6.1.4: {}
+
+  p-timeout@7.0.1: {}
 
   pend@1.2.0: {}
 
@@ -2701,6 +2734,11 @@ snapshots:
       fd-slicer: 1.1.0
 
   zarrita@0.5.4:
+    dependencies:
+      '@zarrita/storage': 0.1.4
+      numcodecs: 0.3.2
+
+  zarrita@0.6.1:
     dependencies:
       '@zarrita/storage': 0.1.4
       numcodecs: 0.3.2
