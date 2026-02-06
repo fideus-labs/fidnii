@@ -8,7 +8,7 @@
       * { box-sizing: border-box; margin: 0; padding: 0; }
       body { font-family: monospace; background: #1a1a1a; color: #eee; display: flex; height: 100vh; }
       #sidebar {
-        width: 280px; padding: 12px; overflow-y: auto; flex-shrink: 0;
+        width: 300px; padding: 12px; overflow-y: auto; flex-shrink: 0;
         display: flex; flex-direction: column; gap: 10px; font-size: 13px;
       }
       #sidebar h1 { font-size: 16px; margin-bottom: 4px; }
@@ -20,6 +20,7 @@
       input[type="range"] { flex: 1; }
       button { padding: 4px 10px; cursor: pointer; }
       .info span { color: #8cf; }
+      hr { border: none; border-top: 1px solid #444; margin: 4px 0; }
     </style>
   </head>
   <body>
@@ -37,6 +38,16 @@
       </div>
 
       <div class="info">
+        <label>Current Level</label>
+        <span id="current-level">-</span>
+      </div>
+
+      <div class="info">
+        <label>Target Level</label>
+        <span id="target-level">-</span>
+      </div>
+
+      <div class="info">
         <label>Bounds X</label>
         <span id="bounds-x">-</span>
       </div>
@@ -49,15 +60,19 @@
         <span id="bounds-z">-</span>
       </div>
 
+      <hr />
+
       <div>
         <label>Max Pixels (M)</label>
         <div class="row">
-          <input type="range" id="maxpixels" min="1" max="2000" value="4" />
+          <input type="range" id="maxpixels" min="1" max="134" value="4" />
           <span id="maxpixels-value">4</span>
         </div>
       </div>
 
       <button id="reload">Reload</button>
+
+      <hr />
 
       <div class="info">
         <label>Clip Planes</label>
@@ -65,8 +80,28 @@
       </div>
 
       <div>
-        <label>X Min Clip</label>
+        <label>X Min</label>
         <input type="range" id="xmin" min="0" max="100" step="any" value="0" />
+      </div>
+      <div>
+        <label>X Max</label>
+        <input type="range" id="xmax" min="0" max="100" step="any" value="100" />
+      </div>
+      <div>
+        <label>Y Min</label>
+        <input type="range" id="ymin" min="0" max="100" step="any" value="0" />
+      </div>
+      <div>
+        <label>Y Max</label>
+        <input type="range" id="ymax" min="0" max="100" step="any" value="100" />
+      </div>
+      <div>
+        <label>Z Min</label>
+        <input type="range" id="zmin" min="0" max="100" step="any" value="0" />
+      </div>
+      <div>
+        <label>Z Max</label>
+        <input type="range" id="zmax" min="0" max="100" step="any" value="100" />
       </div>
 
       <button id="reset-clip-planes">Reset Clip Planes</button>

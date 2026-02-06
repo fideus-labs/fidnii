@@ -14,28 +14,146 @@ declare global {
 
 const DATA_URL = "https://ome-zarr-scivis.s3.us-east-1.amazonaws.com/v0.5/96x2/beechnut.ome.zarr";
 
-// DOM elements
+// DOM elements — info panel
 const statusEl = document.getElementById("status")!;
 const numLevelsEl = document.getElementById("num-levels")!;
+const currentLevelEl = document.getElementById("current-level")!;
+const targetLevelEl = document.getElementById("target-level")!;
 const boundsXEl = document.getElementById("bounds-x")!;
 const boundsYEl = document.getElementById("bounds-y")!;
 const boundsZEl = document.getElementById("bounds-z")!;
+const clipPlaneCountEl = document.getElementById("clip-plane-count")!;
+
+// DOM elements — controls
 const maxpixelsSlider = document.getElementById("maxpixels") as HTMLInputElement;
 const maxpixelsValueEl = document.getElementById("maxpixels-value")!;
 const reloadBtn = document.getElementById("reload")!;
-const clipPlaneCountEl = document.getElementById("clip-plane-count")!;
-const xminSlider = document.getElementById("xmin") as HTMLInputElement;
 const resetClipPlanesBtn = document.getElementById("reset-clip-planes")!;
 
+// Clip plane sliders (6 axis-aligned)
+const sliders = {
+  xmin: document.getElementById("xmin") as HTMLInputElement,
+  xmax: document.getElementById("xmax") as HTMLInputElement,
+  ymin: document.getElementById("ymin") as HTMLInputElement,
+  ymax: document.getElementById("ymax") as HTMLInputElement,
+  zmin: document.getElementById("zmin") as HTMLInputElement,
+  zmax: document.getElementById("zmax") as HTMLInputElement,
+};
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
 function formatBounds(min: number, max: number): string {
-  // Use enough precision to distinguish small world coordinates
   const range = Math.abs(max - min);
   const decimals = range < 1 ? 6 : 2;
   return `[${min.toFixed(decimals)}, ${max.toFixed(decimals)}]`;
 }
 
+/** Configure all 6 slider ranges from the volume bounds and reset to extremes. */
+function configureSlidersFromBounds(bounds: { min: number[]; max: number[] }): void {
+  const axes: Array<{ min: string; max: string; axis: number; isMax: boolean }> = [
+    { min: "xmin", max: "xmax", axis: 0, isMax: false },
+    { min: "xmin", max: "xmax", axis: 0, isMax: true },
+    { min: "ymin", max: "ymax", axis: 1, isMax: false },
+    { min: "ymin", max: "ymax", axis: 1, isMax: true },
+    { min: "zmin", max: "zmax", axis: 2, isMax: false },
+    { min: "zmin", max: "zmax", axis: 2, isMax: true },
+  ];
+
+  for (const { axis, isMax } of axes) {
+    const key = isMax
+      ? (["xmax", "ymax", "zmax"] as const)[axis]
+      : (["xmin", "ymin", "zmin"] as const)[axis];
+    const slider = sliders[key];
+    slider.min = String(bounds.min[axis]);
+    slider.max = String(bounds.max[axis]);
+    // "min" sliders default to their minimum (inactive); "max" sliders default to their maximum (inactive)
+    slider.value = isMax ? String(bounds.max[axis]) : String(bounds.min[axis]);
+    slider.step = "any";
+  }
+}
+
+/** Build clip planes array from the current slider positions. */
+function buildClipPlanesFromSliders(bounds: { min: number[]; max: number[] }): Array<{
+  point: [number, number, number];
+  normal: [number, number, number];
+}> {
+  const planes: Array<{ point: [number, number, number]; normal: [number, number, number] }> = [];
+
+  const center: [number, number, number] = [
+    (bounds.min[0] + bounds.max[0]) / 2,
+    (bounds.min[1] + bounds.max[1]) / 2,
+    (bounds.min[2] + bounds.max[2]) / 2,
+  ];
+
+  // Tolerance: slider must move meaningfully away from the extreme to activate
+  const eps = [
+    (bounds.max[0] - bounds.min[0]) * 1e-6,
+    (bounds.max[1] - bounds.min[1]) * 1e-6,
+    (bounds.max[2] - bounds.min[2]) * 1e-6,
+  ];
+
+  // xmin — clips from below on X, normal +X
+  const xminVal = parseFloat(sliders.xmin.value);
+  if (xminVal > bounds.min[0] + eps[0]) {
+    planes.push({ point: [xminVal, center[1], center[2]], normal: [1, 0, 0] });
+  }
+
+  // xmax — clips from above on X, normal -X
+  const xmaxVal = parseFloat(sliders.xmax.value);
+  if (xmaxVal < bounds.max[0] - eps[0]) {
+    planes.push({ point: [xmaxVal, center[1], center[2]], normal: [-1, 0, 0] });
+  }
+
+  // ymin — clips from below on Y, normal +Y
+  const yminVal = parseFloat(sliders.ymin.value);
+  if (yminVal > bounds.min[1] + eps[1]) {
+    planes.push({ point: [center[0], yminVal, center[2]], normal: [0, 1, 0] });
+  }
+
+  // ymax — clips from above on Y, normal -Y
+  const ymaxVal = parseFloat(sliders.ymax.value);
+  if (ymaxVal < bounds.max[1] - eps[1]) {
+    planes.push({ point: [center[0], ymaxVal, center[2]], normal: [0, -1, 0] });
+  }
+
+  // zmin — clips from below on Z, normal +Z
+  const zminVal = parseFloat(sliders.zmin.value);
+  if (zminVal > bounds.min[2] + eps[2]) {
+    planes.push({ point: [center[0], center[1], zminVal], normal: [0, 0, 1] });
+  }
+
+  // zmax — clips from above on Z, normal -Z
+  const zmaxVal = parseFloat(sliders.zmax.value);
+  if (zmaxVal < bounds.max[2] - eps[2]) {
+    planes.push({ point: [center[0], center[1], zmaxVal], normal: [0, 0, -1] });
+  }
+
+  return planes;
+}
+
+/** Apply slider-derived clip planes to the image. */
+function applyClipPlanesFromSliders(): void {
+  const image = window.image;
+  if (!image) return;
+
+  const bounds = image.getVolumeBounds();
+  const planes = buildClipPlanesFromSliders(bounds);
+
+  if (planes.length === 0) {
+    image.clearClipPlanes();
+  } else {
+    image.setClipPlanes(planes);
+  }
+
+  clipPlaneCountEl.textContent = String(image.getClipPlanes().length);
+}
+
 function updateInfoPanel(image: OMEZarrNVImage): void {
   numLevelsEl.textContent = String(image.getNumLevels());
+  currentLevelEl.textContent = String(image.getCurrentLevelIndex());
+  targetLevelEl.textContent = String(image.getTargetLevelIndex());
 
   const bounds = image.getVolumeBounds();
   boundsXEl.textContent = formatBounds(bounds.min[0], bounds.max[0]);
@@ -44,11 +162,13 @@ function updateInfoPanel(image: OMEZarrNVImage): void {
 
   clipPlaneCountEl.textContent = String(image.getClipPlanes().length);
 
-  // Configure xmin slider range based on volume bounds
-  xminSlider.min = String(bounds.min[0]);
-  xminSlider.max = String(bounds.max[0]);
-  xminSlider.value = String(bounds.min[0]);
+  // Configure slider ranges from volume bounds
+  configureSlidersFromBounds(bounds);
 }
+
+// ---------------------------------------------------------------------------
+// Image loading
+// ---------------------------------------------------------------------------
 
 async function loadImage(nv: Niivue, maxPixels: number): Promise<OMEZarrNVImage> {
   statusEl.textContent = "Loading...";
@@ -60,7 +180,6 @@ async function loadImage(nv: Niivue, maxPixels: number): Promise<OMEZarrNVImage>
 
   const multiscales = await fromNgffZarr(DATA_URL);
 
-  // Use autoLoad: false so we can attach event listener before loading starts
   const image = await OMEZarrNVImage.create({
     multiscales,
     niivue: nv,
@@ -68,16 +187,21 @@ async function loadImage(nv: Niivue, maxPixels: number): Promise<OMEZarrNVImage>
     autoLoad: false,
   });
 
-  // Manually add to NiiVue and start progressive loading
   nv.addVolume(image);
 
-  // Listen for populateComplete — fires when all loading finishes (even on error)
+  // Listen for populateComplete — fires when all loading finishes
   image.addEventListener("populateComplete", () => {
     statusEl.textContent = "Ready";
     updateInfoPanel(image);
   });
 
-  // Start progressive loading (fire-and-forget; catch to prevent unhandled rejection)
+  // Listen for resolutionChange — update level displays during progressive loading
+  image.addEventListener("resolutionChange", () => {
+    currentLevelEl.textContent = String(image.getCurrentLevelIndex());
+    targetLevelEl.textContent = String(image.getTargetLevelIndex());
+  });
+
+  // Start progressive loading
   image.populateVolume().catch((err: unknown) => {
     console.error("[fidnii test-page] populateVolume error:", err);
   });
@@ -85,36 +209,21 @@ async function loadImage(nv: Niivue, maxPixels: number): Promise<OMEZarrNVImage>
   return image;
 }
 
+// ---------------------------------------------------------------------------
+// Event listeners
+// ---------------------------------------------------------------------------
+
 // --- Slider: maxpixels ---
 maxpixelsSlider.addEventListener("input", () => {
   maxpixelsValueEl.textContent = maxpixelsSlider.value;
 });
 
-// --- X Min clip plane slider ---
-xminSlider.addEventListener("input", () => {
-  const image = window.image;
-  if (!image) return;
-
-  const bounds = image.getVolumeBounds();
-  const xmin = parseFloat(xminSlider.value);
-
-  // If slider is at the volume minimum, clear clip planes
-  if (xmin <= bounds.min[0]) {
-    image.clearClipPlanes();
-    clipPlaneCountEl.textContent = "0";
-    return;
-  }
-
-  // Create a clip plane at the slider position
-  const centerY = (bounds.min[1] + bounds.max[1]) / 2;
-  const centerZ = (bounds.min[2] + bounds.max[2]) / 2;
-
-  image.setClipPlanes([
-    { point: [xmin, centerY, centerZ], normal: [1, 0, 0] as [number, number, number] },
-  ]);
-
-  clipPlaneCountEl.textContent = String(image.getClipPlanes().length);
-});
+// --- Clip plane sliders ---
+for (const slider of Object.values(sliders)) {
+  slider.addEventListener("input", () => {
+    applyClipPlanesFromSliders();
+  });
+}
 
 // --- Reset clip planes ---
 resetClipPlanesBtn.addEventListener("click", () => {
@@ -124,9 +233,9 @@ resetClipPlanesBtn.addEventListener("click", () => {
   image.clearClipPlanes();
   clipPlaneCountEl.textContent = "0";
 
-  // Reset xmin slider to minimum
+  // Reset all sliders to their extremes (inactive position)
   const bounds = image.getVolumeBounds();
-  xminSlider.value = String(bounds.min[0]);
+  configureSlidersFromBounds(bounds);
 });
 
 // --- Reload button ---
@@ -137,7 +246,10 @@ reloadBtn.addEventListener("click", async () => {
   window.image = image;
 });
 
-// --- Main ---
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+
 async function main() {
   const canvas = document.getElementById("gl") as HTMLCanvasElement;
 
