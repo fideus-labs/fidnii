@@ -6,8 +6,8 @@ import { test, expect } from "@playwright/test";
 test.describe("Clip Planes", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
-    // Wait for ready
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 60000 });
+    // Wait for ready (generous timeout for S3 loading)
+    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
   });
 
   test("default clip planes is empty array (full volume visible)", async ({ page }) => {
@@ -76,14 +76,17 @@ test.describe("Clip Planes", () => {
       ];
 
       // Create 6 axis-aligned planes (forming a smaller box)
-      const offset = 50;
+      // Use 25% of each axis range as inset
+      const rangeX = bounds.max[0] - bounds.min[0];
+      const rangeY = bounds.max[1] - bounds.min[1];
+      const rangeZ = bounds.max[2] - bounds.min[2];
       image.setClipPlanes([
-        { point: [bounds.min[0] + offset, center[1], center[2]], normal: [1, 0, 0] },
-        { point: [bounds.max[0] - offset, center[1], center[2]], normal: [-1, 0, 0] },
-        { point: [center[0], bounds.min[1] + offset, center[2]], normal: [0, 1, 0] },
-        { point: [center[0], bounds.max[1] - offset, center[2]], normal: [0, -1, 0] },
-        { point: [center[0], center[1], bounds.min[2] + offset], normal: [0, 0, 1] },
-        { point: [center[0], center[1], bounds.max[2] - offset], normal: [0, 0, -1] },
+        { point: [bounds.min[0] + rangeX * 0.25, center[1], center[2]], normal: [1, 0, 0] },
+        { point: [bounds.max[0] - rangeX * 0.25, center[1], center[2]], normal: [-1, 0, 0] },
+        { point: [center[0], bounds.min[1] + rangeY * 0.25, center[2]], normal: [0, 1, 0] },
+        { point: [center[0], bounds.max[1] - rangeY * 0.25, center[2]], normal: [0, -1, 0] },
+        { point: [center[0], center[1], bounds.min[2] + rangeZ * 0.25], normal: [0, 0, 1] },
+        { point: [center[0], center[1], bounds.max[2] - rangeZ * 0.25], normal: [0, 0, -1] },
       ]);
 
       await image.waitForIdle();
@@ -254,8 +257,10 @@ test.describe("Clip Planes", () => {
       const image = (window as any).image;
       const bounds = image.getVolumeBounds();
 
+      // Place test point 25% into the X range
+      const rangeX = bounds.max[0] - bounds.min[0];
       const testPoint: [number, number, number] = [
-        bounds.min[0] + 100,
+        bounds.min[0] + rangeX * 0.25,
         (bounds.min[1] + bounds.max[1]) / 2,
         (bounds.min[2] + bounds.max[2]) / 2,
       ];

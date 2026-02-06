@@ -24,25 +24,25 @@ test.describe("Basic Loading", () => {
     // Should show loading state initially or during load
     await expect(statusEl).toBeVisible();
 
-    // Wait for ready state (with generous timeout for loading)
-    await expect(statusEl).toHaveText("Ready", { timeout: 60000 });
+    // Wait for ready state (generous timeout for S3 loading)
+    await expect(statusEl).toHaveText("Ready", { timeout: 120000 });
   });
 
   test("resolution info is populated after load", async ({ page }) => {
     // Wait for ready
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 60000 });
+    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
 
     // Check resolution info is populated
     const numLevels = page.locator("#num-levels");
     await expect(numLevels).not.toHaveText("-");
 
-    // stent.ome.zarr has 3 levels
-    await expect(numLevels).toHaveText("3");
+    // beechnut.ome.zarr has 5 levels
+    await expect(numLevels).toHaveText("5");
   });
 
   test("volume bounds are displayed", async ({ page }) => {
     // Wait for ready
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 60000 });
+    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
 
     // Check bounds are populated
     const boundsX = page.locator("#bounds-x");
@@ -56,7 +56,7 @@ test.describe("Basic Loading", () => {
 
   test("OMEZarrNVImage is exposed on window", async ({ page }) => {
     // Wait for ready
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 60000 });
+    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
 
     // Check that image is exposed on window
     const hasImage = await page.evaluate(() => {
@@ -67,7 +67,7 @@ test.describe("Basic Loading", () => {
 
   test("NiiVue is exposed on window", async ({ page }) => {
     // Wait for ready
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 60000 });
+    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
 
     // Check that nv is exposed on window
     const hasNv = await page.evaluate(() => {
@@ -78,7 +78,7 @@ test.describe("Basic Loading", () => {
 
   test("image has correct multiscales metadata", async ({ page }) => {
     // Wait for ready
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 60000 });
+    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
 
     // Check multiscales info
     const metadata = await page.evaluate(() => {
@@ -89,6 +89,6 @@ test.describe("Basic Loading", () => {
       };
     });
 
-    expect(metadata.numImages).toBe(3);
+    expect(metadata.numImages).toBe(5);
   });
 });

@@ -6,8 +6,8 @@ import { test, expect } from "@playwright/test";
 test.describe("Coordinate System", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
-    // Wait for ready
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 60000 });
+    // Wait for ready (generous timeout for S3 loading)
+    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
   });
 
   test("volume bounds match OME-Zarr metadata", async ({ page }) => {
@@ -37,9 +37,9 @@ test.describe("Coordinate System", () => {
     });
 
     // The bounds should be based on scale * shape + translation
-    // For stent.ome.zarr: z=174, y=512, x=512 at highest res
-    // scale: z=3.2, y~=0.83, x~=0.83
-    // translation: z~=-278.4, y~=-214, x~=-214
+    // For beechnut.ome.zarr: z=1546, y=1024, x=1024 at highest res
+    // scale: 2e-5 per axis
+    // translation: z~=-0.01546, y~=-0.01024, x~=-0.01024
 
     // Just verify bounds are reasonable (not NaN, not zero extent)
     expect(result.bounds.min[0]).not.toBeNaN();
@@ -144,7 +144,14 @@ test.describe("Coordinate System", () => {
 
     // All resolutions should map to approximately the same world center
     const worlds = result.centerWorlds;
-    const tolerance = 10; // Allow some tolerance for rounding
+    // Use a fraction of the full extent as tolerance (scale-independent)
+    const extent = Math.max(
+      Math.abs(worlds[0][0]),
+      Math.abs(worlds[0][1]),
+      Math.abs(worlds[0][2]),
+      0.001
+    );
+    const tolerance = extent * 0.1; // 10% of the world coordinate magnitude
 
     for (let i = 1; i < worlds.length; i++) {
       expect(Math.abs(worlds[i][0] - worlds[0][0])).toBeLessThan(tolerance);
@@ -170,12 +177,17 @@ test.describe("Coordinate System", () => {
       await image.waitForIdle();
       const planes = image.getClipPlanes();
 
-      // Clip plane point should be within volume bounds
+      // Clip plane point should be within volume bounds (small epsilon for floating point)
+      const epsilon = Math.max(
+        bounds.max[0] - bounds.min[0],
+        bounds.max[1] - bounds.min[1],
+        bounds.max[2] - bounds.min[2],
+      ) * 0.01;
       const point = planes[0].point;
       return {
-        pointInBoundsX: point[0] >= bounds.min[0] - 0.1 && point[0] <= bounds.max[0] + 0.1,
-        pointInBoundsY: point[1] >= bounds.min[1] - 0.1 && point[1] <= bounds.max[1] + 0.1,
-        pointInBoundsZ: point[2] >= bounds.min[2] - 0.1 && point[2] <= bounds.max[2] + 0.1,
+        pointInBoundsX: point[0] >= bounds.min[0] - epsilon && point[0] <= bounds.max[0] + epsilon,
+        pointInBoundsY: point[1] >= bounds.min[1] - epsilon && point[1] <= bounds.max[1] + epsilon,
+        pointInBoundsZ: point[2] >= bounds.min[2] - epsilon && point[2] <= bounds.max[2] + epsilon,
       };
     });
 
@@ -198,7 +210,7 @@ test.describe("Coordinate System", () => {
       };
     });
 
-    // stent.ome.zarr is uint16, which maps to NIfTI code 512 and Uint16Array
+    // beechnut.ome.zarr is uint16, which maps to NIfTI code 512 and Uint16Array
     expect(result.niftiCode).toBe(512);
     expect(result.arrayType).toBe("Uint16Array");
   });

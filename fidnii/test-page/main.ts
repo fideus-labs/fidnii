@@ -12,7 +12,7 @@ declare global {
   }
 }
 
-const DATA_PATH = "/stent.ome.zarr";
+const DATA_URL = "https://ome-zarr-scivis.s3.us-east-1.amazonaws.com/v0.5/96x2/beechnut.ome.zarr";
 
 // DOM elements
 const statusEl = document.getElementById("status")!;
@@ -28,7 +28,10 @@ const xminSlider = document.getElementById("xmin") as HTMLInputElement;
 const resetClipPlanesBtn = document.getElementById("reset-clip-planes")!;
 
 function formatBounds(min: number, max: number): string {
-  return `[${min.toFixed(2)}, ${max.toFixed(2)}]`;
+  // Use enough precision to distinguish small world coordinates
+  const range = Math.abs(max - min);
+  const decimals = range < 1 ? 6 : 2;
+  return `[${min.toFixed(decimals)}, ${max.toFixed(decimals)}]`;
 }
 
 function updateInfoPanel(image: OMEZarrNVImage): void {
@@ -55,9 +58,7 @@ async function loadImage(nv: Niivue, maxPixels: number): Promise<OMEZarrNVImage>
     nv.removeVolume(nv.volumes[0]);
   }
 
-  // fromNgffZarr requires a full HTTP URL, not a relative path
-  const dataUrl = window.location.origin + DATA_PATH;
-  const multiscales = await fromNgffZarr(dataUrl);
+  const multiscales = await fromNgffZarr(DATA_URL);
 
   // Use autoLoad: false so we can attach event listener before loading starts
   const image = await OMEZarrNVImage.create({
@@ -146,7 +147,7 @@ async function main() {
 
   window.nv = nv;
 
-  const image = await loadImage(nv, 12_000_000);
+  const image = await loadImage(nv, 4_000_000);
   window.image = image;
 }
 

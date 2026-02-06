@@ -6,17 +6,17 @@ import { test, expect } from "@playwright/test";
 test.describe("Pixel Budget", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
-    // Wait for ready
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 30000 });
+    // Wait for ready (generous timeout for S3 loading)
+    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
   });
 
-  test("default maxPixels is 12 million", async ({ page }) => {
+  test("default maxPixels is 4 million", async ({ page }) => {
     const maxPixels = await page.evaluate(() => {
       const image = (window as any).image;
       return image.maxPixels;
     });
 
-    expect(maxPixels).toBe(12_000_000);
+    expect(maxPixels).toBe(4_000_000);
   });
 
   test("maxPixels slider changes displayed value", async ({ page }) => {
@@ -24,7 +24,7 @@ test.describe("Pixel Budget", () => {
     const valueEl = page.locator("#maxpixels-value");
 
     // Initial value
-    await expect(valueEl).toHaveText("12");
+    await expect(valueEl).toHaveText("4");
 
     // Change slider
     await slider.fill("25");
@@ -34,7 +34,7 @@ test.describe("Pixel Budget", () => {
   });
 
   test("reload with lower pixel budget may select lower resolution", async ({ page }) => {
-    // Get initial level with default 12M
+    // Get initial level with default 4M
     const initialLevel = await page.evaluate(() => {
       const image = (window as any).image;
       return image.getTargetLevelIndex();
@@ -51,7 +51,7 @@ test.describe("Pixel Budget", () => {
     await page.locator("#reload").click();
 
     // Wait for reload to complete (with longer timeout for reload)
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 60000 });
+    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
 
     // Get new level
     const newLevel = await page.evaluate(() => {
@@ -64,8 +64,8 @@ test.describe("Pixel Budget", () => {
   });
 
   test("reload with higher pixel budget may select higher resolution", async ({ page }) => {
-    // Increase test timeout for large data reload
-    test.setTimeout(180000);
+    // Increase test timeout for large data reload from S3
+    test.setTimeout(300000);
 
     // First reload with low budget
     await page.evaluate(() => {
@@ -74,7 +74,7 @@ test.describe("Pixel Budget", () => {
       slider.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await page.locator("#reload").click();
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 60000 });
+    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
 
     const lowBudgetLevel = await page.evaluate(() => {
       const image = (window as any).image;
@@ -88,7 +88,7 @@ test.describe("Pixel Budget", () => {
       slider.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await page.locator("#reload").click();
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
+    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 180000 });
 
     const highBudgetLevel = await page.evaluate(() => {
       const image = (window as any).image;
@@ -126,7 +126,7 @@ test.describe("Pixel Budget", () => {
     await page.locator("#reload").click();
 
     // Should still complete successfully (longer timeout for reload)
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 60000 });
+    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
 
     // Should have loaded something
     const hasData = await page.evaluate(() => {
@@ -137,11 +137,11 @@ test.describe("Pixel Budget", () => {
     expect(hasData).toBe(true);
   });
 
-  test("very large pixel budget works", async ({ page }) => {
-    // Increase test timeout for large data
-    test.setTimeout(180000);
+  test("very large pixel budget selects higher resolution", async ({ page }) => {
+    // Increase test timeout for large data from S3
+    test.setTimeout(300000);
 
-    // Set large budget (100M pixels)
+    // Set large budget (100M pixels — enough for beechnut level 2: 386×256×256 = ~25.3M)
     await page.evaluate(() => {
       const slider = document.getElementById("maxpixels") as HTMLInputElement;
       slider.value = "100";
@@ -149,16 +149,16 @@ test.describe("Pixel Budget", () => {
     });
     await page.locator("#reload").click();
 
-    // Should still complete successfully (longer timeout for large data)
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
+    // Should still complete successfully (longer timeout for large S3 data)
+    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 180000 });
 
-    // Should target highest resolution (level 0)
+    // With 100M budget, should target level 2 (25.3M pixels fits, level 1 at 202M doesn't)
     const level = await page.evaluate(() => {
       const image = (window as any).image;
       return image.getTargetLevelIndex();
     });
 
-    expect(level).toBe(0);
+    expect(level).toBe(2);
   });
 
   test("pixel budget is stored on image", async ({ page }) => {
@@ -169,7 +169,7 @@ test.describe("Pixel Budget", () => {
       slider.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await page.locator("#reload").click();
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 60000 });
+    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
 
     const maxPixels = await page.evaluate(() => {
       const image = (window as any).image;

@@ -10,7 +10,7 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
   reporter: "html",
-  timeout: 60000, // 60 second timeout per test
+  timeout: 120000, // 120 second timeout per test (S3 loading may be slow)
   use: {
     baseURL: "http://localhost:5173",
     trace: "on-first-retry",

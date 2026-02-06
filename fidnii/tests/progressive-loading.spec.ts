@@ -9,8 +9,8 @@ test.describe("Progressive Loading", () => {
   });
 
   test("progressive loading starts from lowest resolution", async ({ page }) => {
-    // Wait for loading to complete
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 60000 });
+    // Wait for loading to complete (generous timeout for S3 loading)
+    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
 
     // The image should exist and have resolution info
     const result = await page.evaluate(() => {
@@ -25,15 +25,15 @@ test.describe("Progressive Loading", () => {
 
     // Verify image loaded with multiple resolution levels
     expect(result.exists).toBe(true);
-    expect(result.numLevels).toBe(3); // stent.ome.zarr has 3 levels
+    expect(result.numLevels).toBe(5); // beechnut.ome.zarr has 5 levels
 
     // After progressive loading completes, current level should be at or better than target
     expect(result.currentLevel).toBeLessThanOrEqual(result.targetLevel);
   });
 
   test("current level reaches target level after loading", async ({ page }) => {
-    // Wait for ready
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 60000 });
+    // Wait for ready (generous timeout for S3 loading)
+    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
 
     // Check current level equals or is less than target
     const levels = await page.evaluate(() => {
@@ -48,10 +48,10 @@ test.describe("Progressive Loading", () => {
   });
 
   test("target level is selected based on pixel budget", async ({ page }) => {
-    // Wait for ready
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 60000 });
+    // Wait for ready (generous timeout for S3 loading)
+    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
 
-    // Default is 12M pixels
+    // Default is 4M pixels
     const levels = await page.evaluate(() => {
       const image = (window as any).image;
       return {
@@ -60,15 +60,15 @@ test.describe("Progressive Loading", () => {
       };
     });
 
-    // With 12M pixels and stent.ome.zarr dimensions, should be level 1
-    // (scale 0 is 174×512×512 = ~45.6M > 12M, scale 1 is 174×256×256 = ~11.4M <= 12M)
-    expect(levels.maxPixels).toBe(12_000_000);
-    expect(levels.target).toBe(1);
+    // With 4M pixels and beechnut.ome.zarr dimensions, should be level 3
+    // (level 2 is 386×256×256 = ~25.3M > 4M, level 3 is 193×128×128 = ~3.16M <= 4M)
+    expect(levels.maxPixels).toBe(4_000_000);
+    expect(levels.target).toBe(3);
   });
 
   test("image buffer is populated after loading", async ({ page }) => {
-    // Wait for ready
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 60000 });
+    // Wait for ready (generous timeout for S3 loading)
+    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
 
     // Check that image data is populated
     const bufferInfo = await page.evaluate(() => {
@@ -106,13 +106,13 @@ test.describe("Progressive Loading", () => {
     // This is a timing-dependent test, so we just verify the element exists
     await expect(statusEl).toBeVisible();
 
-    // Wait for ready
-    await expect(statusEl).toHaveText("Ready", { timeout: 60000 });
+    // Wait for ready (generous timeout for S3 loading)
+    await expect(statusEl).toHaveText("Ready", { timeout: 120000 });
   });
 
   test("waitForIdle resolves after loading completes", async ({ page }) => {
-    // Wait for ready
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 60000 });
+    // Wait for ready (generous timeout for S3 loading)
+    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
 
     // waitForIdle should resolve immediately when not loading
     const waitResult = await page.evaluate(async () => {
