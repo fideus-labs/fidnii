@@ -1,4 +1,14 @@
 import { test, expect } from "@playwright/test";
+import type { Niivue, NVImage } from "@niivue/niivue";
+import type { OMEZarrNVImage } from "@fideus-labs/fidnii";
+
+declare global {
+  interface Window {
+    nv: Niivue;
+    image: OMEZarrNVImage;
+    loadingComplete: boolean;
+  }
+}
 
 test.describe("Getting Started Example", () => {
   test.beforeEach(async ({ page }) => {
@@ -12,13 +22,12 @@ test.describe("Getting Started Example", () => {
 
   test("NiiVue initializes on canvas", async ({ page }) => {
     // Wait for NiiVue to be exposed on window
-    await page.waitForFunction(() => (window as any).nv !== undefined, null, {
+    await page.waitForFunction(() => window.nv !== undefined, null, {
       timeout: 30000,
     });
 
     const hasNv = await page.evaluate(() => {
-      const nv = (window as any).nv;
-      return nv !== null && nv !== undefined;
+      return window.nv !== null && window.nv !== undefined;
     });
     expect(hasNv).toBe(true);
   });
@@ -37,15 +46,13 @@ test.describe("Getting Started Example", () => {
     });
 
     // Wait for image to be created and exposed
-    await page.waitForFunction(
-      () => (window as any).image !== undefined,
-      null,
-      { timeout: 60000 }
-    );
+    await page.waitForFunction(() => window.image !== undefined, null, {
+      timeout: 60000,
+    });
 
     // Wait for progressive loading to complete
     await page.waitForFunction(
-      () => (window as any).loadingComplete === true,
+      () => window.loadingComplete === true,
       null,
       { timeout: 120000 }
     );
@@ -56,16 +63,15 @@ test.describe("Getting Started Example", () => {
 
   test("image has correct multiscales metadata", async ({ page }) => {
     await page.waitForFunction(
-      () => (window as any).loadingComplete === true,
+      () => window.loadingComplete === true,
       null,
       { timeout: 120000 }
     );
 
     const metadata = await page.evaluate(() => {
-      const image = (window as any).image;
       return {
-        numImages: image.multiscales.images.length,
-        hasMetadata: image.multiscales.metadata !== undefined,
+        numImages: window.image.multiscales.images.length,
+        hasMetadata: window.image.multiscales.metadata !== undefined,
       };
     });
 
@@ -75,17 +81,16 @@ test.describe("Getting Started Example", () => {
 
   test("image reaches target resolution level", async ({ page }) => {
     await page.waitForFunction(
-      () => (window as any).loadingComplete === true,
+      () => window.loadingComplete === true,
       null,
       { timeout: 120000 }
     );
 
     const resolution = await page.evaluate(() => {
-      const image = (window as any).image;
       return {
-        currentLevel: image.getCurrentLevelIndex(),
-        targetLevel: image.getTargetLevelIndex(),
-        numLevels: image.getNumLevels(),
+        currentLevel: window.image.getCurrentLevelIndex(),
+        targetLevel: window.image.getTargetLevelIndex(),
+        numLevels: window.image.getNumLevels(),
       };
     });
 
@@ -96,14 +101,13 @@ test.describe("Getting Started Example", () => {
 
   test("volume has valid bounds", async ({ page }) => {
     await page.waitForFunction(
-      () => (window as any).loadingComplete === true,
+      () => window.loadingComplete === true,
       null,
       { timeout: 120000 }
     );
 
     const bounds = await page.evaluate(() => {
-      const image = (window as any).image;
-      return image.getVolumeBounds();
+      return window.image.getVolumeBounds();
     });
 
     // Bounds should be finite numbers with min < max for each axis
@@ -118,21 +122,20 @@ test.describe("Getting Started Example", () => {
     page,
   }) => {
     await page.waitForFunction(
-      () => (window as any).loadingComplete === true,
+      () => window.loadingComplete === true,
       null,
       { timeout: 120000 }
     );
 
     const volumeInfo = await page.evaluate(() => {
-      const nv = (window as any).nv;
-      const image = (window as any).image;
+      const img = window.image.img;
       return {
-        numVolumes: nv.volumes.length,
-        hasImageData: image.img !== null && image.img !== undefined,
-        imageDataLength: image.img ? image.img.length : 0,
+        numVolumes: window.nv.volumes.length,
+        hasImageData: img !== null && img !== undefined,
+        imageDataLength: img ? img.length : 0,
         // Check that the buffer has non-zero values (actual image data)
-        hasNonZeroData: image.img
-          ? Array.from(image.img.slice(0, 1000) as ArrayLike<number>).some(
+        hasNonZeroData: img
+          ? Array.from(img.slice(0, 1000) as ArrayLike<number>).some(
               (v: number) => v > 0
             )
           : false,
@@ -147,14 +150,13 @@ test.describe("Getting Started Example", () => {
 
   test("image is not loading after completion", async ({ page }) => {
     await page.waitForFunction(
-      () => (window as any).loadingComplete === true,
+      () => window.loadingComplete === true,
       null,
       { timeout: 120000 }
     );
 
     const isLoading = await page.evaluate(() => {
-      const image = (window as any).image;
-      return image.getIsLoading();
+      return window.image.getIsLoading();
     });
 
     expect(isLoading).toBe(false);
