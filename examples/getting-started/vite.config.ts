@@ -16,6 +16,18 @@ export default defineConfig({
       zarrita: zarritaPath,
     },
   },
+  server: {
+    headers: {
+      "Cross-Origin-Opener-Policy": "same-origin",
+      "Cross-Origin-Embedder-Policy": "require-corp",
+    },
+  },
+  optimizeDeps: {
+    exclude: [
+      "@fideus-labs/ngff-zarr",
+      "@fideus-labs/fizarrita",
+    ],
+  },
   build: {
     outDir: "dist",
   },

@@ -22,6 +22,7 @@ import {
 // that should resolve to browser-mod.js - we need to use the main import for this
 import type { Image } from "itk-wasm";
 import * as zarr from "zarrita";
+import { zarrSet } from "@fideus-labs/ngff-zarr/browser";
 
 // Inline itkImageToNgffImage since it's not exported from browser module
 // This is a simplified version based on ngff-zarr's implementation
@@ -85,7 +86,7 @@ async function itkImageToNgffImage(itkImage: Image): Promise<NgffImageClass> {
     shape: shape,
     stride: strides,
   };
-  await zarr.set(zarrArray, selection, dataChunk);
+  await zarrSet(zarrArray, selection, dataChunk);
 
   return new NgffImageClass({
     data: zarrArray,

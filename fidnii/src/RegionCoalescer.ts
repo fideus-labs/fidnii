@@ -1,9 +1,9 @@
 // SPDX-FileCopyrightText: Copyright (c) Fideus Labs LLC
 // SPDX-License-Identifier: MIT
 
-import PQueue from "p-queue";
 import * as zarr from "zarrita";
 import type { NgffImage } from "@fideus-labs/ngff-zarr";
+import { zarrGet } from "@fideus-labs/ngff-zarr/browser";
 import type { PixelRegion, RegionFetchResult, TypedArray } from "./types.js";
 
 /**
@@ -25,20 +25,15 @@ interface PendingRequest {
  *
  * 1. Request deduplication - Multiple async triggers (zoom, crop changes, etc.)
  *    requesting the same region receive the same promise
- * 2. Parallel fetching - Uses p-queue for concurrency-controlled chunk fetches
+ * 2. Parallel fetching - Uses fizarrita's worker-pool-accelerated zarrGet
+ *    for concurrent, worker-offloaded chunk fetches
  * 3. Requester tracking - Tracks who is waiting for each request
  *
  * This design supports future scenarios where multiple UI events may trigger
  * overlapping region requests simultaneously.
  */
 export class RegionCoalescer {
-  private readonly queue: PQueue;
   private readonly pending: Map<string, PendingRequest> = new Map();
-
-  constructor() {
-    const concurrency = Math.min(navigator?.hardwareConcurrency || 4, 128);
-    this.queue = new PQueue({ concurrency });
-  }
 
   /**
    * Generate a unique key for a request based on image path, level index, and region.
@@ -96,20 +91,14 @@ export class RegionCoalescer {
 
     this.pending.set(key, pendingRequest);
 
-    // Queue the actual fetch
+    // Fetch using fizarrita's worker-accelerated zarrGet
     try {
-      const result = await this.queue.add(async () => {
-        const selection = [
-          zarr.slice(region.start[0], region.end[0]),
-          zarr.slice(region.start[1], region.end[1]),
-          zarr.slice(region.start[2], region.end[2]),
-        ];
-        return zarr.get(ngffImage.data, selection);
-      });
-
-      if (!result) {
-        throw new Error("Failed to fetch region: no result returned");
-      }
+      const selection = [
+        zarr.slice(region.start[0], region.end[0]),
+        zarr.slice(region.start[1], region.end[1]),
+        zarr.slice(region.start[2], region.end[2]),
+      ];
+      const result = await zarrGet(ngffImage.data, selection);
 
       const fetchResult: RegionFetchResult = {
         data: result.data as TypedArray,
@@ -180,7 +169,11 @@ export class RegionCoalescer {
    * Wait for all pending fetches to complete.
    */
   async onIdle(): Promise<void> {
-    await this.queue.onIdle();
+    // Wait for all in-flight requests to settle
+    const promises = Array.from(this.pending.values()).map((p) =>
+      p.promise.catch(() => {})
+    );
+    await Promise.all(promises);
   }
 
   /**
@@ -191,25 +184,10 @@ export class RegionCoalescer {
   }
 
   /**
-   * Get the number of items waiting in the fetch queue.
-   */
-  get queueSize(): number {
-    return this.queue.size;
-  }
-
-  /**
-   * Get the number of items currently being processed.
-   */
-  get queuePending(): number {
-    return this.queue.pending;
-  }
-
-  /**
-   * Clear all pending requests and the queue.
+   * Clear all pending requests.
    * Note: Does not resolve or reject pending promises.
    */
   clear(): void {
     this.pending.clear();
-    this.queue.clear();
   }
 }

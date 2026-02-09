@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "@fideus-labs/fidnii": "workspace:*",
-    "@fideus-labs/ngff-zarr": "^0.5.1",
+    "@fideus-labs/fizarrita": "^1.1.0",
+    "@fideus-labs/ngff-zarr": "^0.7.2",
     "@niivue/niivue": "^0.67.0"
   },
   "devDependencies": {

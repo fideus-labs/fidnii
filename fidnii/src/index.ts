@@ -122,6 +122,9 @@ export {
   NiftiDataType,
 } from "./types.js";
 
+// Worker pool lifecycle (re-exported from ngff-zarr)
+export { terminateWorkerPool } from "@fideus-labs/ngff-zarr/browser";
+
 // Event system (browser-native EventTarget API)
 export { OMEZarrNVImageEvent } from "./events.js";
 export type {

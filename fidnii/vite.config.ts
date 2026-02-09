@@ -14,9 +14,13 @@ export default defineConfig({
       // Both the main import and /browser subpath should resolve to the browser module
       "@fideus-labs/ngff-zarr/browser": resolve(__dirname, "../context/ngff-zarr/ts/src/browser-mod.ts"),
       "@fideus-labs/ngff-zarr": resolve(__dirname, "../context/ngff-zarr/ts/src/browser-mod.ts"),
-      // Help resolve dependencies for local ngff-zarr
+      // Help resolve dependencies for local ngff-zarr source alias
       "zod": resolve(__dirname, "node_modules/zod"),
       "@itk-wasm/downsample": resolve(__dirname, "node_modules/@itk-wasm/downsample"),
+      "@fideus-labs/fizarrita": resolve(__dirname, "node_modules/@fideus-labs/fizarrita"),
+      "@fideus-labs/worker-pool": resolve(__dirname, "node_modules/@fideus-labs/worker-pool"),
+      "comlink": resolve(__dirname, "node_modules/comlink"),
+      "fflate": resolve(__dirname, "node_modules/fflate"),
     },
   },
   server: {
@@ -25,6 +29,10 @@ export default defineConfig({
     // Disable history API fallback for ome.zarr paths
     // to avoid returning index.html for zarr metadata requests
     middlewareMode: false,
+    headers: {
+      "Cross-Origin-Opener-Policy": "same-origin",
+      "Cross-Origin-Embedder-Policy": "require-corp",
+    },
   },
   appType: "mpa", // Multi-page app mode to avoid SPA fallback
   build: {
@@ -33,6 +41,16 @@ export default defineConfig({
   },
   optimizeDeps: {
     // Force Vite to pre-bundle these dependencies
-    include: ["@niivue/niivue", "gl-matrix", "zarrita", "zod", "@itk-wasm/downsample"],
+    include: [
+      "@niivue/niivue",
+      "gl-matrix",
+      "zarrita",
+      "zod",
+      "@itk-wasm/downsample",
+      "@fideus-labs/worker-pool",
+    ],
+    // Exclude fizarrita from pre-bundling so its Web Worker (codec-worker.js)
+    // loads correctly via new URL(..., import.meta.url)
+    exclude: ["@fideus-labs/fizarrita"],
   },
 });
