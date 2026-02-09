@@ -135,14 +135,14 @@ async function showPreview(result: ConversionResult): Promise<void> {
     autoLoad: false,
   });
 
-  // Apply settings
-  image.colormap = colormap;
-  image.opacity = opacity;
-
   // Clear existing volumes and add new one
   nv.volumes = [];
   nv.addVolume(image);
   await image.populateVolume();
+
+  // Apply settings AFTER data is loaded to avoid calMinMax() running on placeholder data
+  image.colormap = colormap;
+  image.opacity = opacity;
 }
 
 // Update multiscales table

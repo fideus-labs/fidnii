@@ -431,6 +431,13 @@ export class OMEZarrNVImage extends NVImage {
     // Compute or apply OMERO metadata for cal_min/cal_max
     await this.ensureOmeroMetadata(ngffImage, levelIndex);
 
+    // Reset global_min so NiiVue's refreshLayers() re-runs calMinMax() on real data.
+    // Without this, if calMinMax() was previously called on placeholder/empty data
+    // (e.g., when setting colormap before loading), global_min would already be set
+    // and NiiVue would skip recalculating intensity ranges, leaving cal_min/cal_max
+    // at stale values (typically 0/0), causing an all-white render.
+    this.global_min = undefined;
+
     // Update NiiVue clip planes
     this.updateNiivueClipPlanes();
 
