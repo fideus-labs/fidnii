@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NIFTI1 } from "nifti-reader-js";
-import { NVImage } from "@niivue/niivue";
+import { NVImage, SLICE_TYPE } from "@niivue/niivue";
 import type { Niivue } from "@niivue/niivue";
 import type { Multiscales, NgffImage, Omero } from "@fideus-labs/ngff-zarr";
 import { computeOmeroFromNgffImage } from "@fideus-labs/ngff-zarr/browser";
@@ -15,6 +15,9 @@ import type {
   PixelRegion,
   ChunkAlignedRegion,
   VolumeBounds,
+  SlabBufferState,
+  AttachedNiivueState,
+  SlabSliceType,
 } from "./types.js";
 import {
   parseZarritaDtype,
@@ -25,8 +28,11 @@ import { BufferManager } from "./BufferManager.js";
 import { RegionCoalescer } from "./RegionCoalescer.js";
 import {
   selectResolution,
+  select2DResolution,
   getVolumeShape,
+  getChunkShape,
 } from "./ResolutionSelector.js";
+import type { OrthogonalAxis } from "./ResolutionSelector.js";
 import {
   createDefaultClipPlanes,
   clipPlanesToPixelRegion,
@@ -41,6 +47,7 @@ import {
   calculateWorldBounds,
   affineToNiftiSrows,
 } from "./utils/affine.js";
+import { worldToPixel } from "./utils/coordinates.js";
 import {
   OMEZarrNVImageEventMap,
   OMEZarrNVImageEvent,
@@ -134,6 +141,19 @@ export class OMEZarrNVImage extends NVImage {
   /** Current populate trigger (set at start of populateVolume, used by events) */
   private _currentPopulateTrigger: PopulateTrigger = "initial";
 
+  // ============================================================
+  // Multi-NV / Slab Buffer State
+  // ============================================================
+
+  /** Attached Niivue instances and their state */
+  private _attachedNiivues: Map<Niivue, AttachedNiivueState> = new Map();
+
+  /** Per-slice-type slab buffers (lazily created) */
+  private _slabBuffers: Map<SlabSliceType, SlabBufferState> = new Map();
+
+  /** Debounce timeout for slab reload per slice type */
+  private _slabReloadTimeouts: Map<SlabSliceType, ReturnType<typeof setTimeout>> = new Map();
+
   /**
    * Private constructor. Use OMEZarrNVImage.create() for instantiation.
    */
@@ -206,6 +226,9 @@ export class OMEZarrNVImage extends NVImage {
       // Handle clip plane change
       image.onNiivueClipPlaneChange(clipPlane);
     };
+
+    // Auto-attach the primary NV instance for slice type / location tracking
+    image.attachNiivue(image.niivue);
 
     // Auto-load by default (add to NiiVue + start progressive loading)
     const autoLoad = options.autoLoad ?? true;
@@ -920,6 +943,580 @@ export class OMEZarrNVImage extends NVImage {
     this._activeChannel = index;
     this.applyOmeroToHeader();
     this.niivue.updateGLVolume();
+  }
+
+  // ============================================================
+  // Multi-NV / Slab Buffer Management
+  // ============================================================
+
+  /**
+   * Attach a Niivue instance for slice-type-aware rendering.
+   *
+   * The image auto-detects the NV's current slice type and hooks into
+   * `onOptsChange` to track mode changes and `onLocationChange` to track
+   * crosshair/slice position changes.
+   *
+   * When the NV is in a 2D slice mode (Axial, Coronal, Sagittal), the image
+   * loads a slab (one chunk thick in the orthogonal direction) at the current
+   * slice position, using a 2D pixel budget for resolution selection.
+   *
+   * @param nv - The Niivue instance to attach
+   */
+  attachNiivue(nv: Niivue): void {
+    if (this._attachedNiivues.has(nv)) return; // Already attached
+
+    const state: AttachedNiivueState = {
+      nv,
+      currentSliceType: this._detectSliceType(nv),
+      previousOnLocationChange: nv.onLocationChange,
+      previousOnOptsChange: nv.onOptsChange as AttachedNiivueState["previousOnOptsChange"],
+    };
+
+    // Hook onOptsChange to detect slice type changes
+    nv.onOptsChange = (
+      propertyName: string,
+      newValue: unknown,
+      oldValue: unknown
+    ) => {
+      // Chain to previous handler
+      if (state.previousOnOptsChange) {
+        state.previousOnOptsChange(propertyName, newValue, oldValue);
+      }
+      if (propertyName === "sliceType") {
+        this._handleSliceTypeChange(nv, newValue as SLICE_TYPE);
+      }
+    };
+
+    // Hook onLocationChange to detect slice position changes
+    nv.onLocationChange = (location: unknown) => {
+      // Chain to previous handler
+      if (state.previousOnLocationChange) {
+        state.previousOnLocationChange(location);
+      }
+      this._handleLocationChange(nv, location);
+    };
+
+    this._attachedNiivues.set(nv, state);
+
+    // If the NV is already in a 2D slice mode, set up the slab buffer
+    const sliceType = state.currentSliceType;
+    if (this._isSlabSliceType(sliceType)) {
+      this._ensureSlabForNiivue(nv, sliceType as SlabSliceType);
+    }
+  }
+
+  /**
+   * Detach a Niivue instance, restoring its original callbacks.
+   *
+   * @param nv - The Niivue instance to detach
+   */
+  detachNiivue(nv: Niivue): void {
+    const state = this._attachedNiivues.get(nv);
+    if (!state) return;
+
+    // Restore original callbacks
+    nv.onLocationChange = state.previousOnLocationChange ?? (() => {});
+    nv.onOptsChange = (state.previousOnOptsChange ?? (() => {})) as typeof nv.onOptsChange;
+
+    this._attachedNiivues.delete(nv);
+  }
+
+  /**
+   * Get the slab buffer state for a given slice type, if it exists.
+   * Useful for testing and inspection.
+   *
+   * @param sliceType - The slice type to query
+   * @returns The slab buffer state, or undefined if not yet created
+   */
+  getSlabBufferState(sliceType: SlabSliceType): SlabBufferState | undefined {
+    return this._slabBuffers.get(sliceType);
+  }
+
+  /**
+   * Get all attached Niivue instances.
+   */
+  getAttachedNiivues(): Niivue[] {
+    return Array.from(this._attachedNiivues.keys());
+  }
+
+  // ---- Private slab helpers ----
+
+  /**
+   * Detect the current slice type of a Niivue instance.
+   */
+  private _detectSliceType(nv: Niivue): SLICE_TYPE {
+    // Access the opts.sliceType via the scene data or fall back to checking
+    // the convenience properties. Niivue stores the current sliceType in opts.
+    // We can read it from the NV instance's internal opts.
+    const opts = (nv as any).opts;
+    if (opts && typeof opts.sliceType === "number") {
+      return opts.sliceType as SLICE_TYPE;
+    }
+    // Default to Render
+    return SLICE_TYPE.RENDER;
+  }
+
+  /**
+   * Check if a slice type is one of the 2D slab types.
+   */
+  private _isSlabSliceType(st: SLICE_TYPE): st is SlabSliceType {
+    return (
+      st === SLICE_TYPE.AXIAL ||
+      st === SLICE_TYPE.CORONAL ||
+      st === SLICE_TYPE.SAGITTAL
+    );
+  }
+
+  /**
+   * Get the orthogonal axis index for a slab slice type.
+   * Returns index in [z, y, x] order:
+   * - Axial: slicing through Z → orthogonal axis = 0 (Z)
+   * - Coronal: slicing through Y → orthogonal axis = 1 (Y)
+   * - Sagittal: slicing through X → orthogonal axis = 2 (X)
+   */
+  private _getOrthogonalAxis(sliceType: SlabSliceType): OrthogonalAxis {
+    switch (sliceType) {
+      case SLICE_TYPE.AXIAL:
+        return 0; // Z
+      case SLICE_TYPE.CORONAL:
+        return 1; // Y
+      case SLICE_TYPE.SAGITTAL:
+        return 2; // X
+    }
+  }
+
+  /**
+   * Handle a slice type change on an attached Niivue instance.
+   */
+  private _handleSliceTypeChange(nv: Niivue, newSliceType: SLICE_TYPE): void {
+    const state = this._attachedNiivues.get(nv);
+    if (!state) return;
+
+    const oldSliceType = state.currentSliceType;
+    state.currentSliceType = newSliceType;
+
+    if (oldSliceType === newSliceType) return;
+
+    if (this._isSlabSliceType(newSliceType)) {
+      // Switching TO a 2D slab mode: swap in the slab NVImage
+      this._ensureSlabForNiivue(nv, newSliceType as SlabSliceType);
+    } else {
+      // Switching TO Render or Multiplanar mode: swap back to the main (3D) NVImage
+      this._swapVolumeInNiivue(nv, this as NVImage);
+    }
+  }
+
+  /**
+   * Handle location (crosshair) change on an attached Niivue instance.
+   * Checks if the current slice position has moved outside the loaded slab.
+   */
+  private _handleLocationChange(nv: Niivue, _location: unknown): void {
+    const state = this._attachedNiivues.get(nv);
+    if (!state || !this._isSlabSliceType(state.currentSliceType)) return;
+
+    const sliceType = state.currentSliceType as SlabSliceType;
+    const slabState = this._slabBuffers.get(sliceType);
+    if (!slabState || slabState.slabStart < 0) return; // Slab not yet created or loaded
+
+    // Get the current crosshair position in fractional coordinates [0..1]
+    const crosshairPos = nv.scene?.crosshairPos;
+    if (!crosshairPos || nv.volumes.length === 0) return;
+
+    let worldCoord: [number, number, number];
+    try {
+      const mm = nv.frac2mm([crosshairPos[0], crosshairPos[1], crosshairPos[2]]);
+      worldCoord = [mm[0], mm[1], mm[2]];
+    } catch {
+      return; // Can't convert coordinates yet
+    }
+
+    // Convert world to pixel at the slab's current resolution level
+    const ngffImage = this.multiscales.images[slabState.levelIndex];
+    const pixelCoord = worldToPixel(worldCoord, ngffImage);
+
+    // Check the orthogonal axis
+    const orthAxis = this._getOrthogonalAxis(sliceType);
+    const pixelPos = pixelCoord[orthAxis];
+
+    // Is the pixel position outside the currently loaded slab?
+    if (pixelPos < slabState.slabStart || pixelPos >= slabState.slabEnd) {
+      // Need to reload the slab for the new position
+      this._debouncedSlabReload(sliceType, worldCoord);
+    }
+  }
+
+  /**
+   * Debounced slab reload to avoid excessive reloading during scrolling.
+   */
+  private _debouncedSlabReload(
+    sliceType: SlabSliceType,
+    worldCoord: [number, number, number]
+  ): void {
+    // Clear any pending reload for this slice type
+    const existing = this._slabReloadTimeouts.get(sliceType);
+    if (existing) clearTimeout(existing);
+
+    const timeout = setTimeout(() => {
+      this._slabReloadTimeouts.delete(sliceType);
+      void this._loadSlab(sliceType, worldCoord, "sliceChanged");
+    }, 100); // Short debounce for slice scrolling (faster than clip plane debounce)
+
+    this._slabReloadTimeouts.set(sliceType, timeout);
+  }
+
+  /**
+   * Ensure a slab buffer exists and is loaded for the given NV + slice type.
+   * If needed, creates the slab buffer and triggers an initial load.
+   */
+  private _ensureSlabForNiivue(nv: Niivue, sliceType: SlabSliceType): void {
+    let slabState = this._slabBuffers.get(sliceType);
+
+    if (!slabState) {
+      // Lazily create the slab buffer
+      slabState = this._createSlabBuffer(sliceType);
+      this._slabBuffers.set(sliceType, slabState);
+    }
+
+    // Swap the slab's NVImage into this NV instance
+    this._swapVolumeInNiivue(nv, slabState.nvImage);
+
+    // Get the current crosshair position and load the slab.
+    // Use the volume bounds center as a fallback if crosshair isn't available yet.
+    let worldCoord: [number, number, number];
+    try {
+      const crosshairPos = nv.scene?.crosshairPos;
+      if (crosshairPos && nv.volumes.length > 0) {
+        const mm = nv.frac2mm([crosshairPos[0], crosshairPos[1], crosshairPos[2]]);
+        worldCoord = [mm[0], mm[1], mm[2]];
+      } else {
+        // Fall back to volume center
+        worldCoord = [
+          (this._volumeBounds.min[0] + this._volumeBounds.max[0]) / 2,
+          (this._volumeBounds.min[1] + this._volumeBounds.max[1]) / 2,
+          (this._volumeBounds.min[2] + this._volumeBounds.max[2]) / 2,
+        ];
+      }
+    } catch {
+      // Fall back to volume center if frac2mm fails
+      worldCoord = [
+        (this._volumeBounds.min[0] + this._volumeBounds.max[0]) / 2,
+        (this._volumeBounds.min[1] + this._volumeBounds.max[1]) / 2,
+        (this._volumeBounds.min[2] + this._volumeBounds.max[2]) / 2,
+      ];
+    }
+
+    void this._loadSlab(sliceType, worldCoord, "initial").catch((err) => {
+      console.error(`[fidnii] Error loading slab for ${SLICE_TYPE[sliceType]}:`, err);
+    });
+  }
+
+  /**
+   * Create a new slab buffer state for a slice type.
+   */
+  private _createSlabBuffer(sliceType: SlabSliceType): SlabBufferState {
+    const bufferManager = new BufferManager(this.maxPixels, this.dtype);
+    const nvImage = new NVImage();
+
+    // Initialize with placeholder NIfTI header (same as main image setup)
+    const hdr = new NIFTI1();
+    nvImage.hdr = hdr;
+    hdr.dims = [3, 1, 1, 1, 1, 1, 1, 1];
+    hdr.datatypeCode = getNiftiDataType(this.dtype);
+    hdr.numBitsPerVoxel = getBytesPerPixel(this.dtype) * 8;
+    hdr.pixDims = [1, 1, 1, 1, 0, 0, 0, 0];
+    hdr.affine = [
+      [1, 0, 0, 0],
+      [0, 1, 0, 0],
+      [0, 0, 1, 0],
+      [0, 0, 0, 1],
+    ];
+    hdr.sform_code = 1;
+    nvImage.name = `${this.name ?? "OME-Zarr"} [${SLICE_TYPE[sliceType]}]`;
+    nvImage.img = bufferManager.resize([1, 1, 1]) as any;
+    (nvImage as any)._colormap = "gray";
+    (nvImage as any)._opacity = 1.0;
+
+    // Select initial resolution using 2D pixel budget
+    const orthAxis = this._getOrthogonalAxis(sliceType);
+    const selection = select2DResolution(
+      this.multiscales,
+      this.maxPixels,
+      this._clipPlanes,
+      this._volumeBounds,
+      orthAxis
+    );
+
+    return {
+      nvImage,
+      bufferManager,
+      levelIndex: this.multiscales.images.length - 1, // Start at lowest
+      targetLevelIndex: selection.levelIndex,
+      slabStart: -1,
+      slabEnd: -1,
+      isLoading: false,
+      dtype: this.dtype,
+    };
+  }
+
+  /**
+   * Swap the NVImage in a Niivue instance's volume list.
+   * Removes any existing volumes from this OMEZarrNVImage and adds the target.
+   */
+  private _swapVolumeInNiivue(nv: Niivue, targetVolume: NVImage): void {
+    // Find and remove any volumes we own (the main image or any slab NVImages)
+    const ourVolumes = new Set<NVImage>([this as NVImage]);
+    for (const slab of this._slabBuffers.values()) {
+      ourVolumes.add(slab.nvImage);
+    }
+
+    // Remove our volumes from nv (in reverse to avoid index shifting issues)
+    const toRemove = nv.volumes.filter(v => ourVolumes.has(v));
+    for (const vol of toRemove) {
+      try {
+        nv.removeVolume(vol);
+      } catch {
+        // Ignore errors during removal (volume may not be fully initialized)
+      }
+    }
+
+    // Add the target volume if not already present
+    if (!nv.volumes.includes(targetVolume)) {
+      try {
+        nv.addVolume(targetVolume);
+      } catch (err) {
+        console.warn("[fidnii] Failed to add volume to NV:", err);
+        return;
+      }
+    }
+
+    try {
+      nv.updateGLVolume();
+    } catch {
+      // May fail if GL context not ready
+    }
+  }
+
+  /**
+   * Load a slab for a 2D slice type at the given world position.
+   *
+   * The slab is one chunk thick in the orthogonal direction and uses
+   * the full in-plane extent (respecting clip planes).
+   *
+   * Loading follows a progressive strategy: preview (lowest res) then target.
+   */
+  private async _loadSlab(
+    sliceType: SlabSliceType,
+    worldCoord: [number, number, number],
+    trigger: PopulateTrigger
+  ): Promise<void> {
+    const slabState = this._slabBuffers.get(sliceType);
+    if (!slabState) return;
+
+    if (slabState.isLoading) {
+      // Already loading — the slab will be reloaded when the current load completes
+      // if the position has changed. We don't queue for slabs; latest position wins.
+      return;
+    }
+
+    slabState.isLoading = true;
+    this._emitEvent("slabLoadingStart", {
+      sliceType,
+      levelIndex: slabState.targetLevelIndex,
+      trigger,
+    });
+
+    try {
+      const orthAxis = this._getOrthogonalAxis(sliceType);
+
+      // Recompute target resolution using 2D pixel budget
+      const selection = select2DResolution(
+        this.multiscales,
+        this.maxPixels,
+        this._clipPlanes,
+        this._volumeBounds,
+        orthAxis
+      );
+      slabState.targetLevelIndex = selection.levelIndex;
+
+      const numLevels = this.multiscales.images.length;
+      const lowestLevel = numLevels - 1;
+
+      // Progressive: preview first if target != lowest
+      if (lowestLevel !== slabState.targetLevelIndex) {
+        await this._loadSlabAtLevel(slabState, sliceType, worldCoord, lowestLevel, orthAxis, trigger);
+        slabState.levelIndex = lowestLevel;
+      }
+
+      // Target resolution
+      await this._loadSlabAtLevel(slabState, sliceType, worldCoord, slabState.targetLevelIndex, orthAxis, trigger);
+      slabState.levelIndex = slabState.targetLevelIndex;
+    } finally {
+      slabState.isLoading = false;
+
+      this._emitEvent("slabLoadingComplete", {
+        sliceType,
+        levelIndex: slabState.levelIndex,
+        slabStart: slabState.slabStart,
+        slabEnd: slabState.slabEnd,
+        trigger,
+      });
+    }
+  }
+
+  /**
+   * Load slab data at a specific resolution level.
+   */
+  private async _loadSlabAtLevel(
+    slabState: SlabBufferState,
+    sliceType: SlabSliceType,
+    worldCoord: [number, number, number],
+    levelIndex: number,
+    orthAxis: OrthogonalAxis,
+    _trigger: PopulateTrigger
+  ): Promise<void> {
+    const ngffImage = this.multiscales.images[levelIndex];
+    const chunkShape = getChunkShape(ngffImage);
+    const volumeShape = getVolumeShape(ngffImage);
+
+    // Convert world position to pixel position at this level
+    const pixelCoord = worldToPixel(worldCoord, ngffImage);
+    const orthPixel = pixelCoord[orthAxis];
+
+    // Find the chunk-aligned slab in the orthogonal axis
+    const chunkSize = chunkShape[orthAxis];
+    const slabStart = Math.max(0, Math.floor(orthPixel / chunkSize) * chunkSize);
+    const slabEnd = Math.min(slabStart + chunkSize, volumeShape[orthAxis]);
+
+    // Get the full in-plane region (respecting clip planes)
+    const pixelRegion = clipPlanesToPixelRegion(
+      this._clipPlanes,
+      this._volumeBounds,
+      ngffImage
+    );
+    const alignedRegion = alignToChunks(pixelRegion, ngffImage);
+
+    // Override the orthogonal axis with our slab extent
+    const fetchStart: [number, number, number] = [
+      alignedRegion.chunkAlignedStart[0],
+      alignedRegion.chunkAlignedStart[1],
+      alignedRegion.chunkAlignedStart[2],
+    ];
+    const fetchEnd: [number, number, number] = [
+      alignedRegion.chunkAlignedEnd[0],
+      alignedRegion.chunkAlignedEnd[1],
+      alignedRegion.chunkAlignedEnd[2],
+    ];
+    fetchStart[orthAxis] = slabStart;
+    fetchEnd[orthAxis] = slabEnd;
+
+    const fetchedShape: [number, number, number] = [
+      fetchEnd[0] - fetchStart[0],
+      fetchEnd[1] - fetchStart[1],
+      fetchEnd[2] - fetchStart[2],
+    ];
+
+    // Fetch the data
+    const fetchRegion: PixelRegion = { start: fetchStart, end: fetchEnd };
+    const result = await this.coalescer.fetchRegion(
+      ngffImage,
+      levelIndex,
+      fetchRegion,
+      `slab-${SLICE_TYPE[sliceType]}-${levelIndex}`
+    );
+
+    // Resize buffer and copy data
+    const targetData = slabState.bufferManager.resize(fetchedShape);
+    targetData.set(result.data);
+    slabState.nvImage.img = slabState.bufferManager.getTypedArray() as any;
+
+    // Update slab position tracking
+    slabState.slabStart = slabStart;
+    slabState.slabEnd = slabEnd;
+
+    // Update the NVImage header for this slab region
+    this._updateSlabHeader(slabState.nvImage, ngffImage, fetchStart, fetchEnd, fetchedShape);
+
+    // Apply OMERO metadata if available
+    if (this._omero) {
+      this._applyOmeroToSlabHeader(slabState.nvImage);
+    }
+
+    // Reset global_min so NiiVue recalculates intensity ranges
+    slabState.nvImage.global_min = undefined;
+
+    // Refresh all NV instances using this slice type
+    for (const [attachedNv, attachedState] of this._attachedNiivues) {
+      if (
+        this._isSlabSliceType(attachedState.currentSliceType) &&
+        (attachedState.currentSliceType as SlabSliceType) === sliceType
+      ) {
+        // Ensure this NV has the slab volume
+        if (attachedNv.volumes.includes(slabState.nvImage)) {
+          attachedNv.updateGLVolume();
+        }
+      }
+    }
+  }
+
+  /**
+   * Update NVImage header for a slab region.
+   */
+  private _updateSlabHeader(
+    nvImage: NVImage,
+    ngffImage: NgffImage,
+    fetchStart: [number, number, number],
+    _fetchEnd: [number, number, number],
+    fetchedShape: [number, number, number]
+  ): void {
+    if (!nvImage.hdr) return;
+
+    const scale = ngffImage.scale;
+    const sx = scale.x ?? scale.X ?? 1;
+    const sy = scale.y ?? scale.Y ?? 1;
+    const sz = scale.z ?? scale.Z ?? 1;
+
+    nvImage.hdr.pixDims = [1, sx, sy, sz, 0, 0, 0, 0];
+    // NIfTI dims: [ndim, x, y, z, t, ...]
+    nvImage.hdr.dims = [3, fetchedShape[2], fetchedShape[1], fetchedShape[0], 1, 1, 1, 1];
+
+    // Build affine with offset for region start
+    const affine = createAffineFromNgffImage(ngffImage);
+    // Adjust translation for region offset (fetchStart is [z, y, x])
+    affine[12] += fetchStart[2] * sx; // x offset
+    affine[13] += fetchStart[1] * sy; // y offset
+    affine[14] += fetchStart[0] * sz; // z offset
+
+    const srows = affineToNiftiSrows(affine);
+    nvImage.hdr.affine = [
+      srows.srow_x,
+      srows.srow_y,
+      srows.srow_z,
+      [0, 0, 0, 1],
+    ];
+
+    nvImage.hdr.sform_code = 1;
+    nvImage.calculateRAS();
+  }
+
+  /**
+   * Apply OMERO metadata to a slab NVImage header.
+   */
+  private _applyOmeroToSlabHeader(nvImage: NVImage): void {
+    if (!nvImage.hdr || !this._omero?.channels?.length) return;
+
+    const channelIndex = Math.min(
+      this._activeChannel,
+      this._omero.channels.length - 1
+    );
+    const channel = this._omero.channels[channelIndex];
+    const window = channel?.window;
+
+    if (window) {
+      const calMin = window.start ?? window.min;
+      const calMax = window.end ?? window.max;
+      if (calMin !== undefined) nvImage.hdr.cal_min = calMin;
+      if (calMax !== undefined) nvImage.hdr.cal_max = calMax;
+    }
   }
 
   // ============================================================

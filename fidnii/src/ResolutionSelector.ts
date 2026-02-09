@@ -6,6 +6,12 @@ import type { ClipPlanes, PixelRegion, ResolutionSelection, VolumeBounds } from 
 import { clipPlanesToPixelRegion } from "./ClipPlanes.js";
 
 /**
+ * Orthogonal axis index in [z, y, x] order.
+ * 0 = Z (axial view), 1 = Y (coronal view), 2 = X (sagittal view)
+ */
+export type OrthogonalAxis = 0 | 1 | 2;
+
+/**
  * Select the appropriate resolution level based on pixel budget and clip planes.
  *
  * The selection process:
@@ -204,4 +210,75 @@ export function getFullVolumeDimensions(
   levelIndex: number
 ): [number, number, number] {
   return getVolumeShape(multiscales.images[levelIndex]);
+}
+
+/**
+ * Select the appropriate resolution level for a 2D slice view.
+ *
+ * Unlike `selectResolution` which counts all 3D pixels (z*y*x), this function
+ * counts only the 2D in-plane pixels (e.g., x*y for axial), ignoring the
+ * orthogonal axis. This allows much higher resolution for 2D slice views.
+ *
+ * The slab dimensions returned include one chunk of thickness in the
+ * orthogonal direction (needed for zarr fetching efficiency).
+ *
+ * @param multiscales - The OME-Zarr multiscales data
+ * @param maxPixels - Maximum number of pixels to use (applied to 2D plane)
+ * @param clipPlanes - Current clip planes in world space
+ * @param volumeBounds - Full volume bounds in world space
+ * @param orthogonalAxis - The axis perpendicular to the slice plane (0=Z, 1=Y, 2=X)
+ * @returns The selected resolution level and slab dimensions
+ */
+export function select2DResolution(
+  multiscales: Multiscales,
+  maxPixels: number,
+  clipPlanes: ClipPlanes,
+  volumeBounds: VolumeBounds,
+  orthogonalAxis: OrthogonalAxis
+): ResolutionSelection {
+  const images = multiscales.images;
+
+  // Try each resolution from highest to lowest
+  for (let i = 0; i < images.length; i++) {
+    const image = images[i];
+    const region = clipPlanesToPixelRegion(clipPlanes, volumeBounds, image);
+    const alignedRegion = alignRegionToChunks(region, image);
+
+    const dimensions: [number, number, number] = [
+      alignedRegion.end[0] - alignedRegion.start[0],
+      alignedRegion.end[1] - alignedRegion.start[1],
+      alignedRegion.end[2] - alignedRegion.start[2],
+    ];
+
+    // Count only the 2D in-plane pixels (exclude orthogonal axis)
+    const inPlaneAxes = ([0, 1, 2] as const).filter(a => a !== orthogonalAxis);
+    const pixelCount2D = dimensions[inPlaneAxes[0]] * dimensions[inPlaneAxes[1]];
+
+    if (pixelCount2D <= maxPixels) {
+      return {
+        levelIndex: i,
+        dimensions,
+        pixelCount: pixelCount2D,
+      };
+    }
+  }
+
+  // Fall back to lowest resolution
+  const lowestImage = images[images.length - 1];
+  const region = clipPlanesToPixelRegion(clipPlanes, volumeBounds, lowestImage);
+  const alignedRegion = alignRegionToChunks(region, lowestImage);
+
+  const dimensions: [number, number, number] = [
+    alignedRegion.end[0] - alignedRegion.start[0],
+    alignedRegion.end[1] - alignedRegion.start[1],
+    alignedRegion.end[2] - alignedRegion.start[2],
+  ];
+
+  const inPlaneAxes = ([0, 1, 2] as const).filter(a => a !== orthogonalAxis);
+
+  return {
+    levelIndex: images.length - 1,
+    dimensions,
+    pixelCount: dimensions[inPlaneAxes[0]] * dimensions[inPlaneAxes[1]],
+  };
 }

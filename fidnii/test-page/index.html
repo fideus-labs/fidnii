@@ -12,12 +12,19 @@
         display: flex; flex-direction: column; gap: 10px; font-size: 13px;
       }
       #sidebar h1 { font-size: 16px; margin-bottom: 4px; }
-      #canvas-wrap { flex: 1; min-width: 0; }
-      canvas { width: 100%; height: 100%; display: block; }
+      #canvas-area { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+      #canvas-area .canvas-row { display: flex; flex: 1; min-height: 0; }
+      .canvas-wrap { flex: 1; min-width: 0; position: relative; }
+      .canvas-wrap canvas { width: 100%; height: 100%; display: block; }
+      .canvas-label {
+        position: absolute; top: 4px; left: 8px; font-size: 11px;
+        color: #888; pointer-events: none; z-index: 1;
+      }
       label { display: block; margin-bottom: 2px; color: #aaa; }
       .row { display: flex; gap: 6px; align-items: center; }
       .row span { min-width: 30px; }
       input[type="range"] { flex: 1; }
+      select { padding: 2px 4px; font-family: monospace; }
       button { padding: 4px 10px; cursor: pointer; }
       .info span { color: #8cf; }
       hr { border: none; border-top: 1px solid #444; margin: 4px 0; }
@@ -105,10 +112,41 @@
       </div>
 
       <button id="reset-clip-planes">Reset Clip Planes</button>
+
+      <hr />
+
+      <div>
+        <label>Slice View Mode</label>
+        <select id="slice-type">
+          <option value="4">Render</option>
+          <option value="0" selected>Axial</option>
+          <option value="1">Coronal</option>
+          <option value="2">Sagittal</option>
+          <option value="3">Multiplanar</option>
+        </select>
+      </div>
+
+      <div class="info">
+        <label>Slab Level</label>
+        <span id="slab-level">-</span>
+      </div>
+      <div class="info">
+        <label>Slab Range</label>
+        <span id="slab-range">-</span>
+      </div>
     </div>
 
-    <div id="canvas-wrap">
-      <canvas id="gl"></canvas>
+    <div id="canvas-area">
+      <div class="canvas-row">
+        <div class="canvas-wrap">
+          <span class="canvas-label">3D Render</span>
+          <canvas id="gl"></canvas>
+        </div>
+        <div class="canvas-wrap">
+          <span class="canvas-label" id="gl2-label">Axial</span>
+          <canvas id="gl2"></canvas>
+        </div>
+      </div>
     </div>
 
     <script type="module" src="./main.ts"></script>

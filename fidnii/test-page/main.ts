@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) Fideus Labs LLC
 // SPDX-License-Identifier: MIT
 
-import { Niivue } from "@niivue/niivue";
+import { Niivue, SLICE_TYPE } from "@niivue/niivue";
 import { fromNgffZarr } from "@fideus-labs/ngff-zarr/browser";
 import { OMEZarrNVImage } from "@fideus-labs/fidnii";
 
@@ -9,6 +9,7 @@ declare global {
   interface Window {
     image: OMEZarrNVImage;
     nv: Niivue;
+    nv2: Niivue;
   }
 }
 
@@ -29,6 +30,10 @@ const maxpixelsSlider = document.getElementById("maxpixels") as HTMLInputElement
 const maxpixelsValueEl = document.getElementById("maxpixels-value")!;
 const reloadBtn = document.getElementById("reload")!;
 const resetClipPlanesBtn = document.getElementById("reset-clip-planes")!;
+const sliceTypeSelect = document.getElementById("slice-type") as HTMLSelectElement;
+const slabLevelEl = document.getElementById("slab-level")!;
+const slabRangeEl = document.getElementById("slab-range")!;
+const gl2LabelEl = document.getElementById("gl2-label")!;
 
 // Clip plane sliders (6 axis-aligned)
 const sliders = {
@@ -170,12 +175,15 @@ function updateInfoPanel(image: OMEZarrNVImage): void {
 // Image loading
 // ---------------------------------------------------------------------------
 
-async function loadImage(nv: Niivue, maxPixels: number): Promise<OMEZarrNVImage> {
+async function loadImage(nv: Niivue, nv2: Niivue, maxPixels: number): Promise<OMEZarrNVImage> {
   statusEl.textContent = "Loading...";
 
-  // Remove existing volumes
+  // Remove existing volumes from both NV instances
   while (nv.volumes.length > 0) {
     nv.removeVolume(nv.volumes[0]);
+  }
+  while (nv2.volumes.length > 0) {
+    nv2.removeVolume(nv2.volumes[0]);
   }
 
   const multiscales = await fromNgffZarr(DATA_URL);
@@ -189,6 +197,9 @@ async function loadImage(nv: Niivue, maxPixels: number): Promise<OMEZarrNVImage>
 
   nv.addVolume(image);
 
+  // Attach the second NV instance for slice-type-aware rendering
+  image.attachNiivue(nv2);
+
   // Listen for populateComplete — fires when all loading finishes
   image.addEventListener("populateComplete", () => {
     statusEl.textContent = "Ready";
@@ -199,6 +210,14 @@ async function loadImage(nv: Niivue, maxPixels: number): Promise<OMEZarrNVImage>
   image.addEventListener("resolutionChange", () => {
     currentLevelEl.textContent = String(image.getCurrentLevelIndex());
     targetLevelEl.textContent = String(image.getTargetLevelIndex());
+  });
+
+  // Listen for slab loading events — update slab info display
+  image.addEventListener("slabLoadingComplete", (event) => {
+    const detail = event.detail;
+    const sliceTypeName = SLICE_TYPE[detail.sliceType] ?? String(detail.sliceType);
+    slabLevelEl.textContent = `${detail.levelIndex} (${sliceTypeName})`;
+    slabRangeEl.textContent = `[${detail.slabStart}, ${detail.slabEnd})`;
   });
 
   // Start progressive loading
@@ -238,11 +257,31 @@ resetClipPlanesBtn.addEventListener("click", () => {
   configureSlidersFromBounds(bounds);
 });
 
+// --- Slice type selector ---
+sliceTypeSelect.addEventListener("change", () => {
+  const nv2 = window.nv2;
+  if (!nv2) return;
+
+  const value = parseInt(sliceTypeSelect.value, 10);
+  nv2.setSliceType(value);
+
+  // Update the canvas label
+  const labels: Record<number, string> = {
+    [SLICE_TYPE.RENDER]: "Render",
+    [SLICE_TYPE.AXIAL]: "Axial",
+    [SLICE_TYPE.CORONAL]: "Coronal",
+    [SLICE_TYPE.SAGITTAL]: "Sagittal",
+    [SLICE_TYPE.MULTIPLANAR]: "Multiplanar",
+  };
+  gl2LabelEl.textContent = labels[value] ?? "Unknown";
+});
+
 // --- Reload button ---
 reloadBtn.addEventListener("click", async () => {
   const nv = window.nv;
+  const nv2 = window.nv2;
   const maxPixels = parseInt(maxpixelsSlider.value, 10) * 1_000_000;
-  const image = await loadImage(nv, maxPixels);
+  const image = await loadImage(nv, nv2, maxPixels);
   window.image = image;
 });
 
@@ -252,14 +291,26 @@ reloadBtn.addEventListener("click", async () => {
 
 async function main() {
   const canvas = document.getElementById("gl") as HTMLCanvasElement;
+  const canvas2 = document.getElementById("gl2") as HTMLCanvasElement;
 
+  // Create primary NV instance (3D render mode)
   const nv = new Niivue({ backColor: [0, 0, 0, 1] });
   await nv.attachToCanvas(canvas);
   nv.setSliceType(nv.sliceTypeRender);
 
-  window.nv = nv;
+  // Create secondary NV instance (2D slice mode)
+  const nv2 = new Niivue({ backColor: [0, 0, 0, 1] });
+  await nv2.attachToCanvas(canvas2);
+  nv2.setSliceType(nv2.sliceTypeAxial);
 
-  const image = await loadImage(nv, 4_000_000);
+  // Sync crosshair between the two NV instances (bidirectional)
+  nv.broadcastTo(nv2, { "2d": true, "3d": true });
+  nv2.broadcastTo(nv, { "2d": true, "3d": true });
+
+  window.nv = nv;
+  window.nv2 = nv2;
+
+  const image = await loadImage(nv, nv2, 4_000_000);
   window.image = image;
 }
 

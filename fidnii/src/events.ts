@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) Fideus Labs LLC
 // SPDX-License-Identifier: MIT
 
+import type { SLICE_TYPE } from "@niivue/niivue";
 import type { ClipPlanes } from "./types.js";
 
 /**
@@ -9,11 +10,8 @@ import type { ClipPlanes } from "./types.js";
  */
 export type PopulateTrigger =
   | "initial" // First load or reload with new settings
-  | "clipPlanesChanged"; // Clip planes were modified
-// Future triggers:
-// | 'pan'
-// | 'zoom'
-// | 'regionOfInterest'
+  | "clipPlanesChanged" // Clip planes were modified
+  | "sliceChanged"; // Slice position changed (slab reload)
 
 /**
  * Type-safe event map for OMEZarrNVImage events.
@@ -89,6 +87,27 @@ export interface OMEZarrNVImageEventMap {
    */
   loadingSkipped: {
     reason: "queued-replaced";
+    trigger: PopulateTrigger;
+  };
+
+  /**
+   * Fired when a slab (2D slice buffer) finishes loading.
+   * This event is specific to slab-based loading for 2D slice views.
+   */
+  slabLoadingComplete: {
+    sliceType: SLICE_TYPE;
+    levelIndex: number;
+    slabStart: number;
+    slabEnd: number;
+    trigger: PopulateTrigger;
+  };
+
+  /**
+   * Fired when a slab starts loading.
+   */
+  slabLoadingStart: {
+    sliceType: SLICE_TYPE;
+    levelIndex: number;
     trigger: PopulateTrigger;
   };
 }

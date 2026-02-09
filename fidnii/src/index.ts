@@ -49,7 +49,13 @@ export type {
   RegionFetchResult,
   ZarrDtype,
   TypedArray,
+  SlabBufferState,
+  AttachedNiivueState,
+  SlabSliceType,
 } from "./types.js";
+
+// Re-export SLICE_TYPE from types (which re-exports from niivue)
+export { SLICE_TYPE } from "./types.js";
 
 // Clip planes utilities
 export {
@@ -75,6 +81,7 @@ export {
 // Resolution selector utilities
 export {
   selectResolution,
+  select2DResolution,
   getChunkShape,
   getVolumeShape,
   alignRegionToChunks,
@@ -82,6 +89,8 @@ export {
   calculateUpsampleFactor,
   getFullVolumeDimensions,
 } from "./ResolutionSelector.js";
+
+export type { OrthogonalAxis } from "./ResolutionSelector.js";
 
 // Buffer manager
 export { BufferManager } from "./BufferManager.js";

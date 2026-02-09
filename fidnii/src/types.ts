@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import type { Multiscales } from "@fideus-labs/ngff-zarr";
-import type { Niivue } from "@niivue/niivue";
+import type { Niivue, NVImage } from "@niivue/niivue";
+import { SLICE_TYPE } from "@niivue/niivue";
+import type { BufferManager } from "./BufferManager.js";
 
 /**
  * A single clip plane defined by a point and normal vector.
@@ -134,6 +136,62 @@ export type NiiVueTypedArray =
   | Int16Array
   | Float32Array
   | Float64Array;
+
+// Re-export SLICE_TYPE for convenience
+export { SLICE_TYPE };
+
+/**
+ * The 2D slice types that use slab-based loading.
+ * These are the Niivue slice types that show a single 2D plane.
+ */
+export type SlabSliceType =
+  | typeof SLICE_TYPE.AXIAL
+  | typeof SLICE_TYPE.CORONAL
+  | typeof SLICE_TYPE.SAGITTAL;
+
+/**
+ * State for a per-slice-type slab buffer.
+ *
+ * Each 2D slice view (axial, coronal, sagittal) gets its own NVImage buffer
+ * loaded with a slab (one chunk thick in the orthogonal direction) at the
+ * current slice position.
+ */
+export interface SlabBufferState {
+  /** The NVImage instance for this slab */
+  nvImage: NVImage;
+  /** Buffer manager for this slab's pixel data */
+  bufferManager: BufferManager;
+  /** Current resolution level index for this slab */
+  levelIndex: number;
+  /** Target resolution level index for this slab */
+  targetLevelIndex: number;
+  /** Start index of the currently loaded slab in the orthogonal axis (pixel coords at current level) */
+  slabStart: number;
+  /** End index of the currently loaded slab in the orthogonal axis (pixel coords at current level) */
+  slabEnd: number;
+  /** Whether this slab is currently loading */
+  isLoading: boolean;
+  /** Data type of the slab */
+  dtype: ZarrDtype;
+}
+
+/**
+ * State for a Niivue instance attached to an OMEZarrNVImage.
+ */
+export interface AttachedNiivueState {
+  /** The Niivue instance */
+  nv: Niivue;
+  /** The current slice type of this NV instance */
+  currentSliceType: SLICE_TYPE;
+  /** Previous onLocationChange callback (to chain) */
+  previousOnLocationChange?: (location: unknown) => void;
+  /** Previous onOptsChange callback (to chain) */
+  previousOnOptsChange?: (
+    propertyName: string,
+    newValue: unknown,
+    oldValue: unknown
+  ) => void;
+}
 
 /**
  * Typed array constructor types.
