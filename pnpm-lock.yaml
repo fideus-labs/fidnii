@@ -20,6 +20,9 @@ importers:
       '@fideus-labs/fidnii':
         specifier: workspace:*
         version: link:../../fidnii
+      '@fideus-labs/fizarrita':
+        specifier: ^1.1.0
+        version: 1.1.0(zarrita@0.6.1)
       '@fideus-labs/ngff-zarr':
         specifier: ^0.7.2
         version: 0.7.2
