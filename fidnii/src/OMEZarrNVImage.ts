@@ -1158,7 +1158,15 @@ export class OMEZarrNVImage extends NVImage {
               crosshairPos[1],
               crosshairPos[2],
             ]);
-            const worldCoord: [number, number, number] = [mm[0], mm[1], mm[2]];
+            // frac2mm returns values in the slab NVImage's mm space, which
+            // is normalized (world * normalizationScale). Convert back to
+            // physical world coordinates for worldToPixel and other callers.
+            const ns = slabState.normalizationScale;
+            const worldCoord: [number, number, number] = [
+              mm[0] / ns,
+              mm[1] / ns,
+              mm[2] / ns,
+            ];
             this._debouncedSlabReload(sliceType, worldCoord, trigger);
           } catch {
             // Can't convert coordinates yet
@@ -1443,7 +1451,10 @@ export class OMEZarrNVImage extends NVImage {
     let worldCoord: [number, number, number];
     try {
       const mm = nv.frac2mm([crosshairPos[0], crosshairPos[1], crosshairPos[2]]);
-      worldCoord = [mm[0], mm[1], mm[2]];
+      // frac2mm returns values in the slab NVImage's normalized mm space
+      // (world * normalizationScale). Convert back to physical world.
+      const ns = slabState.normalizationScale;
+      worldCoord = [mm[0] / ns, mm[1] / ns, mm[2] / ns];
     } catch {
       return; // Can't convert coordinates yet
     }
