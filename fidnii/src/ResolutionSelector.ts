@@ -220,10 +220,12 @@ export function getFullVolumeDimensions(
  * orthogonal axis. This allows much higher resolution for 2D slice views.
  *
  * The slab dimensions returned include one chunk of thickness in the
- * orthogonal direction (needed for zarr fetching efficiency).
+ * orthogonal direction (needed for zarr fetching efficiency). The pixel
+ * budget accounts for the full 3D slab volume (in-plane area multiplied
+ * by the chunk thickness along the orthogonal axis).
  *
  * @param multiscales - The OME-Zarr multiscales data
- * @param maxPixels - Maximum number of pixels to use (applied to 2D plane)
+ * @param maxPixels - Maximum number of voxels for the slab (in-plane area × chunk depth)
  * @param clipPlanes - Current clip planes in world space
  * @param volumeBounds - Full volume bounds in world space
  * @param orthogonalAxis - The axis perpendicular to the slice plane (0=Z, 1=Y, 2=X)
@@ -250,15 +252,19 @@ export function select2DResolution(
       alignedRegion.end[2] - alignedRegion.start[2],
     ];
 
-    // Count only the 2D in-plane pixels (exclude orthogonal axis)
+    // Count the full slab volume: in-plane area × chunk depth along the
+    // orthogonal axis. The slab is always one chunk thick, so we use the
+    // chunk shape rather than the full volume extent in that axis.
+    const chunkShape = getChunkShape(image);
+    const slabDepth = chunkShape[orthogonalAxis];
     const inPlaneAxes = ([0, 1, 2] as const).filter(a => a !== orthogonalAxis);
-    const pixelCount2D = dimensions[inPlaneAxes[0]] * dimensions[inPlaneAxes[1]];
+    const slabVoxelCount = dimensions[inPlaneAxes[0]] * dimensions[inPlaneAxes[1]] * slabDepth;
 
-    if (pixelCount2D <= maxPixels) {
+    if (slabVoxelCount <= maxPixels) {
       return {
         levelIndex: i,
         dimensions,
-        pixelCount: pixelCount2D,
+        pixelCount: slabVoxelCount,
       };
     }
   }
@@ -274,11 +280,13 @@ export function select2DResolution(
     alignedRegion.end[2] - alignedRegion.start[2],
   ];
 
+  const chunkShape = getChunkShape(lowestImage);
+  const slabDepth = chunkShape[orthogonalAxis];
   const inPlaneAxes = ([0, 1, 2] as const).filter(a => a !== orthogonalAxis);
 
   return {
     levelIndex: images.length - 1,
     dimensions,
-    pixelCount: dimensions[inPlaneAxes[0]] * dimensions[inPlaneAxes[1]],
+    pixelCount: dimensions[inPlaneAxes[0]] * dimensions[inPlaneAxes[1]] * slabDepth,
   };
 }
