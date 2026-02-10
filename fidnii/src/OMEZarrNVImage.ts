@@ -1723,13 +1723,15 @@ export class OMEZarrNVImage extends NVImage {
     const slabStart = Math.max(0, Math.floor(orthPixel / chunkSize) * chunkSize);
     const slabEnd = Math.min(slabStart + chunkSize, volumeShape[orthAxis]);
 
-    // Get the full in-plane region (respecting clip planes + per-slab viewport bounds)
-    const slabViewportBounds = this._viewportBoundsPerSlab.get(sliceType) ?? undefined;
+    // Get the full in-plane region (respecting clip planes only).
+    // Viewport bounds are intentionally NOT passed here — they are used only
+    // for resolution selection (in _loadSlab → select2DResolution) so that a
+    // higher-res level is chosen when zoomed in.  The fetch region always
+    // covers the full in-plane extent so the slab fills the entire viewport.
     const pixelRegion = clipPlanesToPixelRegion(
       this._clipPlanes,
       this._volumeBounds,
-      ngffImage,
-      slabViewportBounds
+      ngffImage
     );
     const alignedRegion = alignToChunks(pixelRegion, ngffImage);
 
