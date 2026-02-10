@@ -284,8 +284,8 @@ test.describe("Slice Mode", () => {
         const nv2 = (window as any).nv2;
         nv2.setSliceType(1); // CORONAL
 
-        // Timeout fallback
-        setTimeout(() => resolve(false), 15000);
+        // Timeout fallback (slab loading at level 0 can take 30s+ for large datasets)
+        setTimeout(() => resolve(false), 60000);
       });
     });
 

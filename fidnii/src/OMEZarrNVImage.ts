@@ -1475,16 +1475,33 @@ export class OMEZarrNVImage extends NVImage {
     const sy = scale.y ?? scale.Y ?? 1;
     const sz = scale.z ?? scale.Z ?? 1;
 
-    nvImage.hdr.pixDims = [1, sx, sy, sz, 0, 0, 0, 0];
+    // NiiVue's 2D slice renderer has precision issues when voxel sizes are
+    // very small (e.g. OME-Zarr datasets in meters where pixDims ~ 2e-5).
+    // Since the slab NVImage is rendered independently in its own Niivue
+    // instance, we can normalize coordinates to ~1mm voxels without affecting
+    // the 3D render. We scale uniformly to preserve aspect ratio.
+    const maxVoxelSize = Math.max(sx, sy, sz);
+    const normalizationScale = maxVoxelSize > 0 ? 1.0 / maxVoxelSize : 1.0;
+    const nsx = sx * normalizationScale;
+    const nsy = sy * normalizationScale;
+    const nsz = sz * normalizationScale;
+
+    nvImage.hdr.pixDims = [1, nsx, nsy, nsz, 0, 0, 0, 0];
     // NIfTI dims: [ndim, x, y, z, t, ...]
     nvImage.hdr.dims = [3, fetchedShape[2], fetchedShape[1], fetchedShape[0], 1, 1, 1, 1];
 
-    // Build affine with offset for region start
+    // Build affine with offset for region start, then normalize
     const affine = createAffineFromNgffImage(ngffImage);
     // Adjust translation for region offset (fetchStart is [z, y, x])
     affine[12] += fetchStart[2] * sx; // x offset
     affine[13] += fetchStart[1] * sy; // y offset
     affine[14] += fetchStart[0] * sz; // z offset
+
+    // Apply normalization to the entire affine (scale columns + translation)
+    for (let i = 0; i < 15; i++) {
+      affine[i] *= normalizationScale;
+    }
+    // affine[15] stays 1
 
     const srows = affineToNiftiSrows(affine);
     nvImage.hdr.affine = [
