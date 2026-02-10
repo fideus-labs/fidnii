@@ -7,7 +7,7 @@ settings:
 overrides:
   '@fideus-labs/ngff-zarr': ^0.7.2
   zarrita: ^0.6.1
-  '@fideus-labs/fizarrita': ^1.1.0
+  '@fideus-labs/fizarrita': ^1.1.1
   '@fideus-labs/worker-pool': ^1.0.0
   typescript: ^5.9.3
   vite: ^7.3.1
@@ -29,8 +29,8 @@ importers:
         specifier: workspace:*
         version: link:../../fidnii
       '@fideus-labs/fizarrita':
-        specifier: ^1.1.0
-        version: 1.1.0(zarrita@0.6.1)
+        specifier: ^1.1.1
+        version: 1.1.1(zarrita@0.6.1)
       '@fideus-labs/ngff-zarr':
         specifier: ^0.7.2
         version: 0.7.2
@@ -60,8 +60,8 @@ importers:
         specifier: workspace:*
         version: link:../../fidnii
       '@fideus-labs/fizarrita':
-        specifier: ^1.1.0
-        version: 1.1.0(zarrita@0.6.1)
+        specifier: ^1.1.1
+        version: 1.1.1(zarrita@0.6.1)
       '@fideus-labs/ngff-zarr':
         specifier: ^0.7.2
         version: 0.7.2
@@ -104,8 +104,8 @@ importers:
         version: 3.25.76
     devDependencies:
       '@fideus-labs/fizarrita':
-        specifier: ^1.1.0
-        version: 1.1.0(zarrita@0.6.1)
+        specifier: ^1.1.1
+        version: 1.1.1(zarrita@0.6.1)
       '@fideus-labs/worker-pool':
         specifier: ^1.0.0
         version: 1.0.0
@@ -297,8 +297,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@fideus-labs/fizarrita@1.1.0':
-    resolution: {integrity: sha512-n4hJzOg4Hfwvkvj6z7ednbn5Rc/ArFnw7hYTpNEbHNwkYwZb4gK9l9/bcJ9NpYrd1RWky7Un0yiWqgQ5QoZPrg==}
+  '@fideus-labs/fizarrita@1.1.1':
+    resolution: {integrity: sha512-0TrS1UwlIEZcFTr61Uv3RmrJh2es7OgPckZn4ISX3WpxhfwDoVo47aNJ4VNRPLwcPZzyhw+XmBEaJi9zfa2gCg==}
     peerDependencies:
       zarrita: ^0.6.1
 
@@ -1406,14 +1406,14 @@ snapshots:
   '@esbuild/win32-x64@0.27.3':
     optional: true
 
-  '@fideus-labs/fizarrita@1.1.0(zarrita@0.6.1)':
+  '@fideus-labs/fizarrita@1.1.1(zarrita@0.6.1)':
     dependencies:
       '@fideus-labs/worker-pool': 1.0.0
       zarrita: 0.6.1
 
   '@fideus-labs/ngff-zarr@0.7.2':
     dependencies:
-      '@fideus-labs/fizarrita': 1.1.0(zarrita@0.6.1)
+      '@fideus-labs/fizarrita': 1.1.1(zarrita@0.6.1)
       '@fideus-labs/worker-pool': 1.0.0
       '@itk-wasm/downsample': 1.8.1
       '@zarrita/storage': 0.1.4

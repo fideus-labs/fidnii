@@ -49,8 +49,15 @@ export default defineConfig({
       "@itk-wasm/downsample",
       "@fideus-labs/worker-pool",
     ],
-    // Exclude fizarrita from pre-bundling so its Web Worker (codec-worker.js)
-    // loads correctly via new URL(..., import.meta.url)
-    exclude: ["@fideus-labs/fizarrita"],
+    // Exclude fizarrita (and ngff-zarr which transitively imports it) from
+    // pre-bundling so fizarrita's Web Worker (codec-worker.js) loads correctly
+    // via new URL(..., import.meta.url). If ngff-zarr is pre-bundled, Vite
+    // inlines fizarrita's code and the relative worker URL resolves to the
+    // wrong location (.vite/deps/ instead of fizarrita's dist/).
+    exclude: [
+      "@fideus-labs/fizarrita",
+      "@fideus-labs/ngff-zarr",
+      "@fideus-labs/ngff-zarr/browser",
+    ],
   },
 });
