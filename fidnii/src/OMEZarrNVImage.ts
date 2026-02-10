@@ -1801,6 +1801,12 @@ export class OMEZarrNVImage extends NVImage {
           // Without this, NiiVue defaults to the center of the slab which
           // corresponds to different physical positions at each resolution level.
           const frac = attachedNv.mm2frac(normalizedMM);
+          // Clamp to [0,1] — when viewport-aware mode constrains the slab to
+          // a subregion, the crosshair world position may be outside the slab's
+          // spatial extent, causing mm2frac to return out-of-range values.
+          frac[0] = Math.max(0, Math.min(1, frac[0]));
+          frac[1] = Math.max(0, Math.min(1, frac[1]));
+          frac[2] = Math.max(0, Math.min(1, frac[2]));
           attachedNv.scene.crosshairPos = frac;
           attachedNv.drawScene();
         }

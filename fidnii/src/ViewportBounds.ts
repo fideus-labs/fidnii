@@ -187,15 +187,49 @@ export function computeViewportBounds2D(
   volumeBounds: VolumeBounds,
   normalizationScale: number = 1.0
 ): VolumeBounds {
-  // Get the base field of view for this slice orientation.
-  // Returns { mnMM, mxMM, rotation, fovMM } in NiiVue's mm space.
-  // If the slab affine was normalized, these values are in normalized mm
-  // (world * normalizationScale), not physical meters.
-  const screen = nv.screenFieldOfViewExtendedMM(sliceType);
-  let mnMM0 = screen.mnMM[0];
-  let mxMM0 = screen.mxMM[0];
-  let mnMM1 = screen.mnMM[1];
-  let mxMM1 = screen.mxMM[1];
+  // Compute the base field of view from the FULL volume bounds (in normalized
+  // mm space), then swizzle to screen axes for this slice orientation.
+  //
+  // IMPORTANT: We intentionally do NOT use nv.screenFieldOfViewExtendedMM()
+  // because that returns the extents of the *currently loaded* NVImage (the
+  // slab). After a viewport-aware reload shrinks the slab, the next call to
+  // screenFieldOfViewExtendedMM() would return a smaller FOV, creating a
+  // feedback loop that progressively shrinks the slab to nothing.
+  //
+  // Instead, we derive the base FOV from the constant full-volume bounds,
+  // scaled to normalized mm space (matching the slab NVImage's affine).
+  // We then apply the same swizzle that NiiVue uses, giving us a stable
+  // base FOV that doesn't depend on the current slab geometry.
+  const normMin: [number, number, number] = [
+    volumeBounds.min[0] * normalizationScale,
+    volumeBounds.min[1] * normalizationScale,
+    volumeBounds.min[2] * normalizationScale,
+  ];
+  const normMax: [number, number, number] = [
+    volumeBounds.max[0] * normalizationScale,
+    volumeBounds.max[1] * normalizationScale,
+    volumeBounds.max[2] * normalizationScale,
+  ];
+
+  // Swizzle to screen axes (same mapping as NiiVue's swizzleVec3MM):
+  //   AXIAL:    screen X = mm X, screen Y = mm Y
+  //   CORONAL:  screen X = mm X, screen Y = mm Z
+  //   SAGITTAL: screen X = mm Y, screen Y = mm Z
+  let mnMM0: number, mxMM0: number, mnMM1: number, mxMM1: number;
+  switch (sliceType) {
+    case SLICE_TYPE.CORONAL:
+      mnMM0 = normMin[0]; mxMM0 = normMax[0]; // screen X = mm X
+      mnMM1 = normMin[2]; mxMM1 = normMax[2]; // screen Y = mm Z
+      break;
+    case SLICE_TYPE.SAGITTAL:
+      mnMM0 = normMin[1]; mxMM0 = normMax[1]; // screen X = mm Y
+      mnMM1 = normMin[2]; mxMM1 = normMax[2]; // screen Y = mm Z
+      break;
+    default: // AXIAL
+      mnMM0 = normMin[0]; mxMM0 = normMax[0]; // screen X = mm X
+      mnMM1 = normMin[1]; mxMM1 = normMax[1]; // screen Y = mm Y
+      break;
+  }
 
   // Account for canvas aspect ratio stretching (matches draw2DMain logic)
   // NiiVue stretches the FOV to fill the canvas while preserving aspect ratio
