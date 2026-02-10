@@ -98,6 +98,12 @@ export interface OMEZarrNVImageOptions {
    * @see max3DZoom
    */
   min3DZoom?: number;
+  /**
+   * Enable viewport-aware resolution selection (default: true).
+   * When enabled, zoom/pan interactions constrain the fetch region to the
+   * visible viewport, allowing higher resolution within the same maxPixels budget.
+   */
+  viewportAware?: boolean;
 }
 
 /**

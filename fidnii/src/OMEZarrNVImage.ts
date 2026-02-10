@@ -215,6 +215,7 @@ export class OMEZarrNVImage extends NVImage {
     this.clipPlaneDebounceMs = options.clipPlaneDebounceMs ?? 300;
     this._max3DZoom = options.max3DZoom ?? 10.0;
     this._min3DZoom = options.min3DZoom ?? 0.3;
+    this._viewportAwareEnabled = options.viewportAware ?? true;
 
     // Initialize clip planes to empty (full volume visible)
     this._clipPlanes = createDefaultClipPlanes(this.multiscales);

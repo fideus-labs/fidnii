@@ -326,7 +326,7 @@ async function main() {
   window.nv = nv;
   window.nv2 = nv2;
 
-  const image = await loadImage(nv, nv2, 4_000_000);
+  const image = await loadImage(nv, nv2, 50_000_000);
   window.image = image;
 }
 
