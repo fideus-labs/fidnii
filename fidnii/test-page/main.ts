@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) Fideus Labs LLC
 // SPDX-License-Identifier: MIT
 
-import { Niivue, SLICE_TYPE } from "@niivue/niivue";
+import { Niivue, SLICE_TYPE, DRAG_MODE } from "@niivue/niivue";
 import { fromNgffZarr } from "@fideus-labs/ngff-zarr/browser";
 import { OMEZarrNVImage } from "@fideus-labs/fidnii";
 
@@ -35,6 +35,7 @@ const slabLevelEl = document.getElementById("slab-level")!;
 const slabRangeEl = document.getElementById("slab-range")!;
 const gl2LabelEl = document.getElementById("gl2-label")!;
 const viewportAwareCheckbox = document.getElementById("viewport-aware") as HTMLInputElement;
+const scrollZoomCheckbox = document.getElementById("scroll-zoom") as HTMLInputElement;
 
 // Clip plane sliders (6 axis-aligned)
 const sliders = {
@@ -282,6 +283,13 @@ viewportAwareCheckbox.addEventListener("change", () => {
   const image = window.image;
   if (!image) return;
   image.setViewportAware(viewportAwareCheckbox.checked);
+});
+
+// --- Scroll to Zoom checkbox ---
+scrollZoomCheckbox.addEventListener("change", () => {
+  const nv2 = window.nv2;
+  if (!nv2) return;
+  nv2.opts.dragMode = scrollZoomCheckbox.checked ? DRAG_MODE.pan : DRAG_MODE.contrast;
 });
 
 // --- Reload button ---
