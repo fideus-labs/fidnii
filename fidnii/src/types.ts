@@ -5,6 +5,7 @@ import type { Multiscales } from "@fideus-labs/ngff-zarr";
 import type { Niivue, NVImage } from "@niivue/niivue";
 import { SLICE_TYPE } from "@niivue/niivue";
 import type { BufferManager } from "./BufferManager.js";
+import type { PopulateTrigger } from "./events.js";
 
 /**
  * A single clip plane defined by a point and normal vector.
@@ -180,6 +181,15 @@ export interface SlabBufferState {
    * Used to convert NiiVue 2D FOV coordinates back to physical world coords.
    */
   normalizationScale: number;
+  /**
+   * Pending reload request queued while this slab was loading.
+   * Latest-wins semantics: only the most recent request is kept.
+   * Auto-drained when the current load completes.
+   */
+  pendingReload: {
+    worldCoord: [number, number, number];
+    trigger: PopulateTrigger;
+  } | null;
 }
 
 /**

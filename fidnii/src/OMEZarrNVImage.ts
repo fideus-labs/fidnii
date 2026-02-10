@@ -181,6 +181,16 @@ export class OMEZarrNVImage extends NVImage {
   /** Timeout handle for debounced viewport update */
   private _viewportUpdateTimeout: ReturnType<typeof setTimeout> | null = null;
 
+  /** Per-slab AbortController to cancel in-flight progressive loads */
+  private _slabAbortControllers: Map<SlabSliceType, AbortController> = new Map();
+
+  /**
+   * Debounce delay for viewport-aware reloads (ms).
+   * Higher than clip plane debounce to avoid excessive reloads during
+   * continuous zoom/pan interactions.
+   */
+  private static readonly VIEWPORT_DEBOUNCE_MS = 500;
+
   /**
    * Private constructor. Use OMEZarrNVImage.create() for instantiation.
    */
@@ -1032,7 +1042,7 @@ export class OMEZarrNVImage extends NVImage {
     this._viewportUpdateTimeout = setTimeout(() => {
       this._viewportUpdateTimeout = null;
       this._recomputeViewportBounds();
-    }, this.clipPlaneDebounceMs);
+    }, OMEZarrNVImage.VIEWPORT_DEBOUNCE_MS);
   }
 
   /**
@@ -1142,8 +1152,6 @@ export class OMEZarrNVImage extends NVImage {
    */
   private _reloadAllSlabs(trigger: PopulateTrigger): void {
     for (const [sliceType, slabState] of this._slabBuffers) {
-      if (slabState.isLoading) continue;
-
       // Find the world coordinate for this slab from any attached NV in this mode
       for (const [nv, attachedState] of this._attachedNiivues) {
         if (
@@ -1586,6 +1594,7 @@ export class OMEZarrNVImage extends NVImage {
       isLoading: false,
       dtype: this.dtype,
       normalizationScale: 1.0, // Updated on first slab load
+      pendingReload: null,
     };
   }
 
@@ -1634,6 +1643,12 @@ export class OMEZarrNVImage extends NVImage {
    * the full in-plane extent (respecting clip planes).
    *
    * Loading follows a progressive strategy: preview (lowest res) then target.
+   * For viewport-triggered reloads, progressive rendering is skipped and
+   * only the target level is loaded (the user already sees the previous
+   * resolution, so a single jump is smoother).
+   *
+   * If a load is already in progress, the request is queued (latest-wins)
+   * and automatically drained when the current load finishes.
    */
   private async _loadSlab(
     sliceType: SlabSliceType,
@@ -1644,12 +1659,22 @@ export class OMEZarrNVImage extends NVImage {
     if (!slabState) return;
 
     if (slabState.isLoading) {
-      // Already loading — the slab will be reloaded when the current load completes
-      // if the position has changed. We don't queue for slabs; latest position wins.
+      // Queue this request (latest wins) — auto-drained when current load finishes
+      slabState.pendingReload = { worldCoord, trigger };
+      // Abort the in-flight progressive load so it finishes faster
+      const controller = this._slabAbortControllers.get(sliceType);
+      if (controller) controller.abort();
       return;
     }
 
     slabState.isLoading = true;
+    slabState.pendingReload = null;
+
+    // Create an AbortController for this load so it can be cancelled if a
+    // newer request arrives while we're still fetching intermediate levels.
+    const abortController = new AbortController();
+    this._slabAbortControllers.set(sliceType, abortController);
+
     this._emitEvent("slabLoadingStart", {
       sliceType,
       levelIndex: slabState.targetLevelIndex,
@@ -1674,10 +1699,23 @@ export class OMEZarrNVImage extends NVImage {
       const numLevels = this.multiscales.images.length;
       const lowestLevel = numLevels - 1;
 
-      // Progressive: load from lowest through target, rendering each level.
-      // This gives the user visible feedback as each intermediate resolution loads.
-      for (let level = lowestLevel; level >= slabState.targetLevelIndex; level--) {
+      // For viewport-triggered reloads, skip progressive rendering — jump
+      // straight to the target level. The user already sees the previous
+      // resolution, so a single update is smoother than replaying the full
+      // progressive sequence which causes visual flicker during rapid
+      // zoom/pan interactions.
+      const skipProgressive = trigger === "viewportChanged";
+      const startLevel = skipProgressive ? slabState.targetLevelIndex : lowestLevel;
+
+      for (let level = startLevel; level >= slabState.targetLevelIndex; level--) {
+        // Check if this load has been superseded by a newer request
+        if (abortController.signal.aborted) break;
+
         await this._loadSlabAtLevel(slabState, sliceType, worldCoord, level, orthAxis, trigger);
+
+        // Check again after the async fetch completes
+        if (abortController.signal.aborted) break;
+
         slabState.levelIndex = level;
 
         // Yield to the browser so the current level is actually painted before
@@ -1696,6 +1734,25 @@ export class OMEZarrNVImage extends NVImage {
         slabEnd: slabState.slabEnd,
         trigger,
       });
+
+      // Auto-drain: if a newer request was queued while we were loading,
+      // start it now (like populateVolume's handlePendingPopulateRequest).
+      this._handlePendingSlabReload(sliceType);
+    }
+  }
+
+  /**
+   * Process any pending slab reload request after the current load completes.
+   * Mirrors populateVolume's handlePendingPopulateRequest pattern.
+   */
+  private _handlePendingSlabReload(sliceType: SlabSliceType): void {
+    const slabState = this._slabBuffers.get(sliceType);
+    if (!slabState) return;
+
+    const pending = slabState.pendingReload;
+    if (pending) {
+      slabState.pendingReload = null;
+      void this._loadSlab(sliceType, pending.worldCoord, pending.trigger);
     }
   }
 
