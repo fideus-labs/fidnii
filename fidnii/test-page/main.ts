@@ -298,8 +298,8 @@ async function main() {
   await nv.attachToCanvas(canvas);
   nv.setSliceType(nv.sliceTypeRender);
 
-  // Create secondary NV instance (2D slice mode)
-  const nv2 = new Niivue({ backColor: [0, 0, 0, 1] });
+  // Create secondary NV instance (2D slice mode, no crosshairs)
+  const nv2 = new Niivue({ backColor: [0, 0, 0, 1], crosshairWidth: 0 });
   await nv2.attachToCanvas(canvas2);
   nv2.setSliceType(nv2.sliceTypeAxial);
 

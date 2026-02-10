@@ -1341,15 +1341,18 @@ export class OMEZarrNVImage extends NVImage {
       const numLevels = this.multiscales.images.length;
       const lowestLevel = numLevels - 1;
 
-      // Progressive: preview first if target != lowest
-      if (lowestLevel !== slabState.targetLevelIndex) {
-        await this._loadSlabAtLevel(slabState, sliceType, worldCoord, lowestLevel, orthAxis, trigger);
-        slabState.levelIndex = lowestLevel;
-      }
+      // Progressive: load from lowest through target, rendering each level.
+      // This gives the user visible feedback as each intermediate resolution loads.
+      for (let level = lowestLevel; level >= slabState.targetLevelIndex; level--) {
+        await this._loadSlabAtLevel(slabState, sliceType, worldCoord, level, orthAxis, trigger);
+        slabState.levelIndex = level;
 
-      // Target resolution
-      await this._loadSlabAtLevel(slabState, sliceType, worldCoord, slabState.targetLevelIndex, orthAxis, trigger);
-      slabState.levelIndex = slabState.targetLevelIndex;
+        // Yield to the browser so the current level is actually painted before
+        // we start fetching the next (higher-resolution) level.
+        if (level > slabState.targetLevelIndex) {
+          await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+        }
+      }
     } finally {
       slabState.isLoading = false;
 

@@ -293,15 +293,10 @@ test.describe("Slice Mode", () => {
   });
 
   test("slab info display updates in UI", async ({ page }) => {
-    // The slab level and range should be populated after loading
-    await page.waitForTimeout(3000);
-
-    const slabLevel = await page.locator("#slab-level").textContent();
-    const slabRange = await page.locator("#slab-range").textContent();
-
-    // Should have been updated from the default "-"
-    expect(slabLevel).not.toBe("-");
-    expect(slabRange).not.toBe("-");
+    // Wait for the slab info to be updated from its default "-"
+    // (progressive loading may take a while for all levels)
+    await expect(page.locator("#slab-level")).not.toHaveText("-", { timeout: 120000 });
+    await expect(page.locator("#slab-range")).not.toHaveText("-", { timeout: 5000 });
   });
 
   test("gl2-label updates when slice type changes", async ({ page }) => {
