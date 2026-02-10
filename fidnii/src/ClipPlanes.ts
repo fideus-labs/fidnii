@@ -403,19 +403,46 @@ export function clipPlanesToBoundingBox(
  * Convert clip planes to a pixel region for a specific NgffImage.
  *
  * This calculates the axis-aligned bounding box of the clipped region
- * and converts it to pixel coordinates.
+ * and converts it to pixel coordinates. When viewportBounds is provided,
+ * the result is further constrained to only include the visible viewport
+ * area (for viewport-aware resolution selection).
  *
  * @param clipPlanes - Array of clip planes
  * @param volumeBounds - Full volume bounds in world space
  * @param ngffImage - The NgffImage to convert to
+ * @param viewportBounds - Optional viewport bounds to intersect with
  * @returns Pixel region [z, y, x] start and end indices
  */
 export function clipPlanesToPixelRegion(
   clipPlanes: ClipPlanes,
   volumeBounds: VolumeBounds,
-  ngffImage: NgffImage
+  ngffImage: NgffImage,
+  viewportBounds?: VolumeBounds
 ): PixelRegion {
-  const bounds = clipPlanesToBoundingBox(clipPlanes, volumeBounds);
+  let bounds = clipPlanesToBoundingBox(clipPlanes, volumeBounds);
+
+  // If viewport bounds are provided, intersect with them
+  if (viewportBounds) {
+    bounds = {
+      min: [
+        Math.max(bounds.min[0], viewportBounds.min[0]),
+        Math.max(bounds.min[1], viewportBounds.min[1]),
+        Math.max(bounds.min[2], viewportBounds.min[2]),
+      ],
+      max: [
+        Math.min(bounds.max[0], viewportBounds.max[0]),
+        Math.min(bounds.max[1], viewportBounds.max[1]),
+        Math.min(bounds.max[2], viewportBounds.max[2]),
+      ],
+    };
+    // Ensure valid bounds
+    for (let i = 0; i < 3; i++) {
+      if (bounds.min[i] > bounds.max[i]) {
+        bounds.min[i] = bounds.max[i] = (bounds.min[i] + bounds.max[i]) * 0.5;
+      }
+    }
+  }
+
   const shape = getVolumeShape(ngffImage);
 
   // Convert world corners to pixel coordinates

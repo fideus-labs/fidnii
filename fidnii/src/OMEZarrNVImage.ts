@@ -49,6 +49,11 @@ import {
 } from "./utils/affine.js";
 import { worldToPixel } from "./utils/coordinates.js";
 import {
+  computeViewportBounds3D,
+  computeViewportBounds2D,
+  boundsApproxEqual,
+} from "./ViewportBounds.js";
+import {
   OMEZarrNVImageEventMap,
   OMEZarrNVImageEvent,
   OMEZarrNVImageEventListener,
@@ -153,6 +158,28 @@ export class OMEZarrNVImage extends NVImage {
 
   /** Debounce timeout for slab reload per slice type */
   private _slabReloadTimeouts: Map<SlabSliceType, ReturnType<typeof setTimeout>> = new Map();
+
+  // ============================================================
+  // Viewport-Aware Resolution State
+  // ============================================================
+
+  /** Whether viewport-aware resolution selection is enabled */
+  private _viewportAwareEnabled: boolean = false;
+
+  /**
+   * Viewport bounds for the 3D render volume (union of all RENDER/MULTIPLANAR NVs).
+   * Null = full volume, no viewport constraint.
+   */
+  private _viewportBounds3D: VolumeBounds | null = null;
+
+  /**
+   * Per-slab viewport bounds (from the NV instance that displays each slab).
+   * Null entry = full volume, no viewport constraint for that slab.
+   */
+  private _viewportBoundsPerSlab: Map<SlabSliceType, VolumeBounds | null> = new Map();
+
+  /** Timeout handle for debounced viewport update */
+  private _viewportUpdateTimeout: ReturnType<typeof setTimeout> | null = null;
 
   /**
    * Private constructor. Use OMEZarrNVImage.create() for instantiation.
@@ -411,11 +438,12 @@ export class OMEZarrNVImage extends NVImage {
 
     const ngffImage = this.multiscales.images[levelIndex];
 
-    // Get the pixel region for current clip planes
+    // Get the pixel region for current clip planes (+ 3D viewport bounds if active)
     const pixelRegion = clipPlanesToPixelRegion(
       this._clipPlanes,
       this._volumeBounds,
-      ngffImage
+      ngffImage,
+      this._viewportBounds3D ?? undefined
     );
     const alignedRegion = alignToChunks(pixelRegion, ngffImage);
 
@@ -711,12 +739,13 @@ export class OMEZarrNVImage extends NVImage {
     const volumeReduced = currentPixelCount < this._previousPixelCount;
     const volumeIncreased = currentPixelCount > this._previousPixelCount;
 
-    // Get optimal resolution for new region
+    // Get optimal resolution for new region (3D viewport bounds)
     const selection = selectResolution(
       this.multiscales,
       this.maxPixels,
       this._clipPlanes,
-      this._volumeBounds
+      this._volumeBounds,
+      this._viewportBounds3D ?? undefined
     );
 
     // Direction-aware resolution change
@@ -859,6 +888,287 @@ export class OMEZarrNVImage extends NVImage {
     };
   }
 
+  // ============================================================
+  // Viewport-Aware Resolution
+  // ============================================================
+
+  /**
+   * Enable or disable viewport-aware resolution selection.
+   *
+   * When enabled, pan/zoom/rotation interactions are monitored and the fetch
+   * region is constrained to the visible viewport area. This allows higher
+   * resolution within the same `maxPixels` budget when zoomed in.
+   *
+   * @param enabled - Whether to enable viewport-aware resolution
+   */
+  setViewportAware(enabled: boolean): void {
+    if (enabled === this._viewportAwareEnabled) return;
+    this._viewportAwareEnabled = enabled;
+
+    if (enabled) {
+      // Hook viewport events on all attached NVs
+      for (const [nv, state] of this._attachedNiivues) {
+        this._hookViewportEvents(nv, state);
+      }
+      // Compute initial viewport bounds and trigger refetch
+      this._recomputeViewportBounds();
+    } else {
+      // Unhook viewport events on all attached NVs
+      for (const [nv, state] of this._attachedNiivues) {
+        this._unhookViewportEvents(nv, state);
+      }
+      // Clear viewport bounds and refetch at full volume
+      this._viewportBounds3D = null;
+      this._viewportBoundsPerSlab.clear();
+      if (this._viewportUpdateTimeout) {
+        clearTimeout(this._viewportUpdateTimeout);
+        this._viewportUpdateTimeout = null;
+      }
+      // Recompute resolution without viewport constraint
+      const selection = selectResolution(
+        this.multiscales,
+        this.maxPixels,
+        this._clipPlanes,
+        this._volumeBounds
+      );
+      if (selection.levelIndex !== this.targetLevelIndex) {
+        this.targetLevelIndex = selection.levelIndex;
+        this.populateVolume(true, "viewportChanged");
+      }
+      // Also reload slabs without viewport constraint
+      this._reloadAllSlabs("viewportChanged");
+    }
+  }
+
+  /**
+   * Get whether viewport-aware resolution selection is enabled.
+   */
+  get viewportAware(): boolean {
+    return this._viewportAwareEnabled;
+  }
+
+  /**
+   * Get the current 3D viewport bounds (null if viewport-aware is disabled
+   * or no viewport constraint is active).
+   */
+  getViewportBounds(): VolumeBounds | null {
+    if (!this._viewportBounds3D) return null;
+    return {
+      min: [...this._viewportBounds3D.min] as [number, number, number],
+      max: [...this._viewportBounds3D.max] as [number, number, number],
+    };
+  }
+
+  /**
+   * Hook viewport events (onMouseUp, onZoom3DChange, wheel) on a NV instance.
+   */
+  private _hookViewportEvents(nv: Niivue, state: AttachedNiivueState): void {
+    // Save and chain onMouseUp (fires at end of any mouse/touch interaction)
+    state.previousOnMouseUp = nv.onMouseUp as (data: unknown) => void;
+    nv.onMouseUp = (data: unknown) => {
+      if (state.previousOnMouseUp) {
+        state.previousOnMouseUp(data);
+      }
+      this._handleViewportInteractionEnd(nv);
+    };
+
+    // Save and chain onZoom3DChange (fires when volScaleMultiplier changes)
+    state.previousOnZoom3DChange = nv.onZoom3DChange;
+    nv.onZoom3DChange = (zoom: number) => {
+      if (state.previousOnZoom3DChange) {
+        state.previousOnZoom3DChange(zoom);
+      }
+      this._handleViewportInteractionEnd(nv);
+    };
+
+    // Add wheel event listener on the canvas for scroll-wheel zoom detection
+    const controller = new AbortController();
+    state.viewportAbortController = controller;
+    if (nv.canvas) {
+      nv.canvas.addEventListener(
+        "wheel",
+        () => {
+          this._handleViewportInteractionEnd(nv);
+        },
+        { signal: controller.signal, passive: true }
+      );
+    }
+  }
+
+  /**
+   * Unhook viewport events from a NV instance.
+   */
+  private _unhookViewportEvents(nv: Niivue, state: AttachedNiivueState): void {
+    // Restore onMouseUp
+    if (state.previousOnMouseUp !== undefined) {
+      nv.onMouseUp = state.previousOnMouseUp as typeof nv.onMouseUp;
+      state.previousOnMouseUp = undefined;
+    }
+
+    // Restore onZoom3DChange
+    if (state.previousOnZoom3DChange !== undefined) {
+      nv.onZoom3DChange = state.previousOnZoom3DChange;
+      state.previousOnZoom3DChange = undefined;
+    }
+
+    // Remove wheel event listener
+    if (state.viewportAbortController) {
+      state.viewportAbortController.abort();
+      state.viewportAbortController = undefined;
+    }
+  }
+
+  /**
+   * Called at the end of any viewport interaction (mouse up, touch end,
+   * zoom change, scroll wheel). Debounces the viewport bounds recomputation.
+   */
+  private _handleViewportInteractionEnd(_nv: Niivue): void {
+    if (!this._viewportAwareEnabled) return;
+
+    // Debounce: clear any pending update and schedule a new one
+    if (this._viewportUpdateTimeout) {
+      clearTimeout(this._viewportUpdateTimeout);
+    }
+    this._viewportUpdateTimeout = setTimeout(() => {
+      this._viewportUpdateTimeout = null;
+      this._recomputeViewportBounds();
+    }, this.clipPlaneDebounceMs);
+  }
+
+  /**
+   * Recompute viewport bounds from all attached NV instances and trigger
+   * resolution reselection if bounds changed significantly.
+   */
+  private _recomputeViewportBounds(): void {
+    if (!this._viewportAwareEnabled) return;
+
+    // Compute separate viewport bounds for:
+    // - 3D volume: union of all RENDER/MULTIPLANAR NV viewport bounds
+    // - Per-slab: each slab type gets its own NV's viewport bounds
+    let new3DBounds: VolumeBounds | null = null;
+    const newSlabBounds = new Map<SlabSliceType, VolumeBounds | null>();
+
+    for (const [nv, state] of this._attachedNiivues) {
+      if (
+        state.currentSliceType === SLICE_TYPE.RENDER ||
+        state.currentSliceType === SLICE_TYPE.MULTIPLANAR
+      ) {
+        // 3D render mode: compute from orthographic frustum
+        const nvBounds = computeViewportBounds3D(nv, this._volumeBounds);
+        if (!new3DBounds) {
+          new3DBounds = nvBounds;
+        } else {
+          // Union of multiple 3D views
+          new3DBounds = {
+            min: [
+              Math.min(new3DBounds.min[0], nvBounds.min[0]),
+              Math.min(new3DBounds.min[1], nvBounds.min[1]),
+              Math.min(new3DBounds.min[2], nvBounds.min[2]),
+            ],
+            max: [
+              Math.max(new3DBounds.max[0], nvBounds.max[0]),
+              Math.max(new3DBounds.max[1], nvBounds.max[1]),
+              Math.max(new3DBounds.max[2], nvBounds.max[2]),
+            ],
+          };
+        }
+      } else if (this._isSlabSliceType(state.currentSliceType)) {
+        // 2D slice mode: compute from pan/zoom
+        const sliceType = state.currentSliceType as SlabSliceType;
+        const slabState = this._slabBuffers.get(sliceType);
+        const normScale = slabState?.normalizationScale ?? 1.0;
+        const nvBounds = computeViewportBounds2D(
+          nv,
+          state.currentSliceType,
+          this._volumeBounds,
+          normScale
+        );
+        newSlabBounds.set(sliceType, nvBounds);
+      }
+    }
+
+    // Check if 3D bounds changed
+    const bounds3DChanged =
+      !new3DBounds !== !this._viewportBounds3D ||
+      (new3DBounds &&
+        this._viewportBounds3D &&
+        !boundsApproxEqual(new3DBounds, this._viewportBounds3D));
+
+    // Check if any slab bounds changed
+    let slabBoundsChanged = false;
+    for (const [sliceType, newBounds] of newSlabBounds) {
+      const oldBounds = this._viewportBoundsPerSlab.get(sliceType) ?? null;
+      if (
+        !newBounds !== !oldBounds ||
+        (newBounds && oldBounds && !boundsApproxEqual(newBounds, oldBounds))
+      ) {
+        slabBoundsChanged = true;
+        break;
+      }
+    }
+
+    if (!bounds3DChanged && !slabBoundsChanged) return;
+
+    // Update stored bounds
+    this._viewportBounds3D = new3DBounds;
+    for (const [sliceType, bounds] of newSlabBounds) {
+      this._viewportBoundsPerSlab.set(sliceType, bounds);
+    }
+
+    // Recompute 3D resolution selection with new 3D viewport bounds
+    if (bounds3DChanged) {
+      const selection = selectResolution(
+        this.multiscales,
+        this.maxPixels,
+        this._clipPlanes,
+        this._volumeBounds,
+        this._viewportBounds3D ?? undefined
+      );
+
+      if (selection.levelIndex !== this.targetLevelIndex) {
+        this.targetLevelIndex = selection.levelIndex;
+        this.populateVolume(true, "viewportChanged");
+      }
+    }
+
+    // Reload slabs with new per-slab viewport bounds
+    if (slabBoundsChanged) {
+      this._reloadAllSlabs("viewportChanged");
+    }
+  }
+
+  /**
+   * Reload all active slabs (for all slice types that have buffers).
+   */
+  private _reloadAllSlabs(trigger: PopulateTrigger): void {
+    for (const [sliceType, slabState] of this._slabBuffers) {
+      if (slabState.isLoading) continue;
+
+      // Find the world coordinate for this slab from any attached NV in this mode
+      for (const [nv, attachedState] of this._attachedNiivues) {
+        if (
+          this._isSlabSliceType(attachedState.currentSliceType) &&
+          (attachedState.currentSliceType as SlabSliceType) === sliceType
+        ) {
+          const crosshairPos = nv.scene?.crosshairPos;
+          if (!crosshairPos || nv.volumes.length === 0) continue;
+          try {
+            const mm = nv.frac2mm([
+              crosshairPos[0],
+              crosshairPos[1],
+              crosshairPos[2],
+            ]);
+            const worldCoord: [number, number, number] = [mm[0], mm[1], mm[2]];
+            this._debouncedSlabReload(sliceType, worldCoord, trigger);
+          } catch {
+            // Can't convert coordinates yet
+          }
+          break;
+        }
+      }
+    }
+  }
+
   /**
    * Get whether the image is currently loading.
    */
@@ -998,6 +1308,11 @@ export class OMEZarrNVImage extends NVImage {
 
     this._attachedNiivues.set(nv, state);
 
+    // Hook viewport events if viewport-aware mode is already enabled
+    if (this._viewportAwareEnabled) {
+      this._hookViewportEvents(nv, state);
+    }
+
     // If the NV is already in a 2D slice mode, set up the slab buffer
     const sliceType = state.currentSliceType;
     if (this._isSlabSliceType(sliceType)) {
@@ -1013,6 +1328,9 @@ export class OMEZarrNVImage extends NVImage {
   detachNiivue(nv: Niivue): void {
     const state = this._attachedNiivues.get(nv);
     if (!state) return;
+
+    // Unhook viewport events if active
+    this._unhookViewportEvents(nv, state);
 
     // Restore original callbacks
     nv.onLocationChange = state.previousOnLocationChange ?? (() => {});
@@ -1150,7 +1468,8 @@ export class OMEZarrNVImage extends NVImage {
    */
   private _debouncedSlabReload(
     sliceType: SlabSliceType,
-    worldCoord: [number, number, number]
+    worldCoord: [number, number, number],
+    trigger: PopulateTrigger = "sliceChanged"
   ): void {
     // Clear any pending reload for this slice type
     const existing = this._slabReloadTimeouts.get(sliceType);
@@ -1158,7 +1477,7 @@ export class OMEZarrNVImage extends NVImage {
 
     const timeout = setTimeout(() => {
       this._slabReloadTimeouts.delete(sliceType);
-      void this._loadSlab(sliceType, worldCoord, "sliceChanged");
+      void this._loadSlab(sliceType, worldCoord, trigger);
     }, 100); // Short debounce for slice scrolling (faster than clip plane debounce)
 
     this._slabReloadTimeouts.set(sliceType, timeout);
@@ -1255,6 +1574,7 @@ export class OMEZarrNVImage extends NVImage {
       slabEnd: -1,
       isLoading: false,
       dtype: this.dtype,
+      normalizationScale: 1.0, // Updated on first slab load
     };
   }
 
@@ -1328,13 +1648,15 @@ export class OMEZarrNVImage extends NVImage {
     try {
       const orthAxis = this._getOrthogonalAxis(sliceType);
 
-      // Recompute target resolution using 2D pixel budget
+      // Recompute target resolution using 2D pixel budget with per-slab viewport bounds
+      const slabViewportBounds = this._viewportBoundsPerSlab.get(sliceType) ?? undefined;
       const selection = select2DResolution(
         this.multiscales,
         this.maxPixels,
         this._clipPlanes,
         this._volumeBounds,
-        orthAxis
+        orthAxis,
+        slabViewportBounds
       );
       slabState.targetLevelIndex = selection.levelIndex;
 
@@ -1390,11 +1712,13 @@ export class OMEZarrNVImage extends NVImage {
     const slabStart = Math.max(0, Math.floor(orthPixel / chunkSize) * chunkSize);
     const slabEnd = Math.min(slabStart + chunkSize, volumeShape[orthAxis]);
 
-    // Get the full in-plane region (respecting clip planes)
+    // Get the full in-plane region (respecting clip planes + per-slab viewport bounds)
+    const slabViewportBounds = this._viewportBoundsPerSlab.get(sliceType) ?? undefined;
     const pixelRegion = clipPlanesToPixelRegion(
       this._clipPlanes,
       this._volumeBounds,
-      ngffImage
+      ngffImage,
+      slabViewportBounds
     );
     const alignedRegion = alignToChunks(pixelRegion, ngffImage);
 
@@ -1456,6 +1780,7 @@ export class OMEZarrNVImage extends NVImage {
       scale.z ?? scale.Z ?? 1
     );
     const normalizationScale = maxVoxelSize > 0 ? 1.0 / maxVoxelSize : 1.0;
+    slabState.normalizationScale = normalizationScale;
     const normalizedMM: [number, number, number] = [
       worldCoord[0] * normalizationScale,
       worldCoord[1] * normalizationScale,

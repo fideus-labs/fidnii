@@ -34,6 +34,7 @@ const sliceTypeSelect = document.getElementById("slice-type") as HTMLSelectEleme
 const slabLevelEl = document.getElementById("slab-level")!;
 const slabRangeEl = document.getElementById("slab-range")!;
 const gl2LabelEl = document.getElementById("gl2-label")!;
+const viewportAwareCheckbox = document.getElementById("viewport-aware") as HTMLInputElement;
 
 // Clip plane sliders (6 axis-aligned)
 const sliders = {
@@ -274,6 +275,13 @@ sliceTypeSelect.addEventListener("change", () => {
     [SLICE_TYPE.MULTIPLANAR]: "Multiplanar",
   };
   gl2LabelEl.textContent = labels[value] ?? "Unknown";
+});
+
+// --- Viewport-aware checkbox ---
+viewportAwareCheckbox.addEventListener("change", () => {
+  const image = window.image;
+  if (!image) return;
+  image.setViewportAware(viewportAwareCheckbox.checked);
 });
 
 // --- Reload button ---

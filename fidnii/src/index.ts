@@ -134,6 +134,14 @@ export {
 // Worker pool lifecycle (re-exported from ngff-zarr)
 export { terminateWorkerPool } from "@fideus-labs/ngff-zarr/browser";
 
+// Viewport bounds utilities
+export {
+  computeViewportBounds3D,
+  computeViewportBounds2D,
+  intersectBounds,
+  boundsApproxEqual,
+} from "./ViewportBounds.js";
+
 // Event system (browser-native EventTarget API)
 export { OMEZarrNVImageEvent } from "./events.js";
 export type {

@@ -173,6 +173,13 @@ export interface SlabBufferState {
   isLoading: boolean;
   /** Data type of the slab */
   dtype: ZarrDtype;
+  /**
+   * The affine normalization scale applied to the slab NVImage header.
+   * NiiVue mm values = world * normalizationScale.
+   * This is 1/maxVoxelSize where maxVoxelSize = max(sx, sy, sz).
+   * Used to convert NiiVue 2D FOV coordinates back to physical world coords.
+   */
+  normalizationScale: number;
 }
 
 /**
@@ -191,6 +198,12 @@ export interface AttachedNiivueState {
     newValue: unknown,
     oldValue: unknown
   ) => void;
+  /** Previous onMouseUp callback (to chain, for viewport-aware mode) */
+  previousOnMouseUp?: (data: unknown) => void;
+  /** Previous onZoom3DChange callback (to chain, for viewport-aware mode) */
+  previousOnZoom3DChange?: (zoom: number) => void;
+  /** AbortController for viewport-aware event listeners (wheel, etc.) */
+  viewportAbortController?: AbortController;
 }
 
 /**

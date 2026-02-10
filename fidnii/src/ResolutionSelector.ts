@@ -23,20 +23,22 @@ export type OrthogonalAxis = 0 | 1 | 2;
  * @param maxPixels - Maximum number of pixels to use
  * @param clipPlanes - Current clip planes in world space
  * @param volumeBounds - Full volume bounds in world space
+ * @param viewportBounds - Optional viewport bounds (for viewport-aware mode)
  * @returns The selected resolution level and buffer dimensions
  */
 export function selectResolution(
   multiscales: Multiscales,
   maxPixels: number,
   clipPlanes: ClipPlanes,
-  volumeBounds: VolumeBounds
+  volumeBounds: VolumeBounds,
+  viewportBounds?: VolumeBounds
 ): ResolutionSelection {
   const images = multiscales.images;
 
   // Try each resolution from highest to lowest
   for (let i = 0; i < images.length; i++) {
     const image = images[i];
-    const region = clipPlanesToPixelRegion(clipPlanes, volumeBounds, image);
+    const region = clipPlanesToPixelRegion(clipPlanes, volumeBounds, image, viewportBounds);
     const alignedRegion = alignRegionToChunks(region, image);
 
     const dimensions: [number, number, number] = [
@@ -58,7 +60,7 @@ export function selectResolution(
 
   // Fall back to lowest resolution
   const lowestImage = images[images.length - 1];
-  const region = clipPlanesToPixelRegion(clipPlanes, volumeBounds, lowestImage);
+  const region = clipPlanesToPixelRegion(clipPlanes, volumeBounds, lowestImage, viewportBounds);
   const alignedRegion = alignRegionToChunks(region, lowestImage);
 
   const dimensions: [number, number, number] = [
@@ -229,6 +231,7 @@ export function getFullVolumeDimensions(
  * @param clipPlanes - Current clip planes in world space
  * @param volumeBounds - Full volume bounds in world space
  * @param orthogonalAxis - The axis perpendicular to the slice plane (0=Z, 1=Y, 2=X)
+ * @param viewportBounds - Optional viewport bounds (for viewport-aware mode)
  * @returns The selected resolution level and slab dimensions
  */
 export function select2DResolution(
@@ -236,14 +239,15 @@ export function select2DResolution(
   maxPixels: number,
   clipPlanes: ClipPlanes,
   volumeBounds: VolumeBounds,
-  orthogonalAxis: OrthogonalAxis
+  orthogonalAxis: OrthogonalAxis,
+  viewportBounds?: VolumeBounds
 ): ResolutionSelection {
   const images = multiscales.images;
 
   // Try each resolution from highest to lowest
   for (let i = 0; i < images.length; i++) {
     const image = images[i];
-    const region = clipPlanesToPixelRegion(clipPlanes, volumeBounds, image);
+    const region = clipPlanesToPixelRegion(clipPlanes, volumeBounds, image, viewportBounds);
     const alignedRegion = alignRegionToChunks(region, image);
 
     const dimensions: [number, number, number] = [
@@ -271,7 +275,7 @@ export function select2DResolution(
 
   // Fall back to lowest resolution
   const lowestImage = images[images.length - 1];
-  const region = clipPlanesToPixelRegion(clipPlanes, volumeBounds, lowestImage);
+  const region = clipPlanesToPixelRegion(clipPlanes, volumeBounds, lowestImage, viewportBounds);
   const alignedRegion = alignRegionToChunks(region, lowestImage);
 
   const dimensions: [number, number, number] = [

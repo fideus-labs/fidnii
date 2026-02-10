@@ -11,7 +11,8 @@ import type { ClipPlanes } from "./types.js";
 export type PopulateTrigger =
   | "initial" // First load or reload with new settings
   | "clipPlanesChanged" // Clip planes were modified
-  | "sliceChanged"; // Slice position changed (slab reload)
+  | "sliceChanged" // Slice position changed (slab reload)
+  | "viewportChanged"; // Viewport pan/zoom/rotation changed
 
 /**
  * Type-safe event map for OMEZarrNVImage events.
