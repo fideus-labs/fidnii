@@ -87,6 +87,17 @@ export interface OMEZarrNVImageOptions {
    * Listen to 'populateComplete' event to know when loading finishes.
    */
   autoLoad?: boolean;
+  /**
+   * Maximum 3D render zoom level for scroll-wheel zoom (default: 10.0).
+   * NiiVue's built-in 3D zoom is hardcoded to [0.5, 2.0]. This option
+   * overrides the scroll-wheel zoom handler to allow zooming beyond that limit.
+   */
+  max3DZoom?: number;
+  /**
+   * Minimum 3D render zoom level for scroll-wheel zoom (default: 0.3).
+   * @see max3DZoom
+   */
+  min3DZoom?: number;
 }
 
 /**
@@ -214,6 +225,8 @@ export interface AttachedNiivueState {
   previousOnZoom3DChange?: (zoom: number) => void;
   /** AbortController for viewport-aware event listeners (wheel, etc.) */
   viewportAbortController?: AbortController;
+  /** AbortController for the 3D zoom override wheel listener */
+  zoomOverrideAbortController?: AbortController;
 }
 
 /**

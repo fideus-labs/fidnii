@@ -184,6 +184,16 @@ export class OMEZarrNVImage extends NVImage {
   /** Per-slab AbortController to cancel in-flight progressive loads */
   private _slabAbortControllers: Map<SlabSliceType, AbortController> = new Map();
 
+  // ============================================================
+  // 3D Zoom Override
+  // ============================================================
+
+  /** Maximum 3D render zoom level for scroll-wheel zoom */
+  private readonly _max3DZoom: number;
+
+  /** Minimum 3D render zoom level for scroll-wheel zoom */
+  private readonly _min3DZoom: number;
+
   /**
    * Debounce delay for viewport-aware reloads (ms).
    * Higher than clip plane debounce to avoid excessive reloads during
@@ -203,6 +213,8 @@ export class OMEZarrNVImage extends NVImage {
     this.niivue = options.niivue;
     this.coalescer = new RegionCoalescer();
     this.clipPlaneDebounceMs = options.clipPlaneDebounceMs ?? 300;
+    this._max3DZoom = options.max3DZoom ?? 10.0;
+    this._min3DZoom = options.min3DZoom ?? 0.3;
 
     // Initialize clip planes to empty (full volume visible)
     this._clipPlanes = createDefaultClipPlanes(this.multiscales);
@@ -1035,6 +1047,91 @@ export class OMEZarrNVImage extends NVImage {
     }
   }
 
+  // ============================================================
+  // 3D Zoom Override
+  // ============================================================
+
+  /**
+   * Install a capturing-phase wheel listener on the NV canvas that overrides
+   * NiiVue's hardcoded 3D render zoom clamp ([0.5, 2.0]).
+   *
+   * The listener intercepts scroll events over 3D render tiles and applies
+   * zoom via `nv.setScale()` (which has no internal clamp), using the
+   * configurable `_min3DZoom` / `_max3DZoom` bounds instead.
+   *
+   * Clip-plane scrolling is preserved: when a clip plane is active
+   * (depth < 1.8), the event passes through to NiiVue's native handler.
+   */
+  private _hookZoomOverride(nv: Niivue, state: AttachedNiivueState): void {
+    if (!nv.canvas) return;
+
+    const controller = new AbortController();
+    state.zoomOverrideAbortController = controller;
+
+    nv.canvas.addEventListener(
+      "wheel",
+      (e: WheelEvent) => {
+        // Convert mouse position to DPR-scaled canvas coordinates
+        const rect = nv.canvas!.getBoundingClientRect();
+        const dpr = nv.uiData.dpr ?? 1;
+        const x = (e.clientX - rect.left) * dpr;
+        const y = (e.clientY - rect.top) * dpr;
+
+        // Only intercept if mouse is over a 3D render tile
+        if (nv.inRenderTile(x, y) < 0) return;
+
+        // Preserve clip-plane scrolling: when a clip plane is active
+        // (depth < 1.8), let NiiVue handle the event normally.
+        const clips = nv.scene.clipPlaneDepthAziElevs;
+        const activeIdx = nv.uiData.activeClipPlaneIndex;
+        if (
+          nv.volumes.length > 0 &&
+          clips?.[activeIdx]?.[0] !== undefined &&
+          clips[activeIdx][0] < 1.8
+        ) {
+          return;
+        }
+
+        // Prevent NiiVue's clamped handler from running.
+        // NiiVue registers its listener in the bubbling phase, so our
+        // capturing-phase listener fires first. stopImmediatePropagation
+        // ensures no other same-element listeners fire either.
+        e.stopImmediatePropagation();
+        e.preventDefault();
+
+        // Compute new zoom (same ×1.1 / ×0.9 per step as NiiVue).
+        // Round to 2 decimal places (NiiVue rounds to 1, which causes the
+        // zoom to get stuck at small values like 0.5 where ×0.9 rounds back).
+        const zoomDir = e.deltaY < 0 ? 1 : -1;
+        const current = nv.scene.volScaleMultiplier;
+        let newZoom = current * (zoomDir > 0 ? 1.1 : 0.9);
+        newZoom = Math.round(newZoom * 100) / 100;
+        newZoom = Math.max(this._min3DZoom, Math.min(this._max3DZoom, newZoom));
+
+        nv.setScale(newZoom);
+
+        // Notify the viewport-aware system. Since we stopped propagation,
+        // the passive wheel listener from _hookViewportEvents won't fire,
+        // so we call this directly.
+        this._handleViewportInteractionEnd(nv);
+      },
+      { capture: true, signal: controller.signal }
+    );
+  }
+
+  /**
+   * Remove the 3D zoom override wheel listener from a NV instance.
+   */
+  private _unhookZoomOverride(
+    _nv: Niivue,
+    state: AttachedNiivueState
+  ): void {
+    if (state.zoomOverrideAbortController) {
+      state.zoomOverrideAbortController.abort();
+      state.zoomOverrideAbortController = undefined;
+    }
+  }
+
   /**
    * Called at the end of any viewport interaction (mouse up, touch end,
    * zoom change, scroll wheel). Debounces the viewport bounds recomputation.
@@ -1337,6 +1434,9 @@ export class OMEZarrNVImage extends NVImage {
       this._hookViewportEvents(nv, state);
     }
 
+    // Override NiiVue's hardcoded 3D zoom clamp (always-on)
+    this._hookZoomOverride(nv, state);
+
     // If the NV is already in a 2D slice mode, set up the slab buffer
     const sliceType = state.currentSliceType;
     if (this._isSlabSliceType(sliceType)) {
@@ -1355,6 +1455,9 @@ export class OMEZarrNVImage extends NVImage {
 
     // Unhook viewport events if active
     this._unhookViewportEvents(nv, state);
+
+    // Unhook 3D zoom override
+    this._unhookZoomOverride(nv, state);
 
     // Restore original callbacks
     nv.onLocationChange = state.previousOnLocationChange ?? (() => {});
