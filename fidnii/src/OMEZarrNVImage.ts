@@ -505,6 +505,13 @@ export class OMEZarrNVImage extends NVImage {
     // Refresh NiiVue
     this.niivue.updateGLVolume();
 
+    // Widen the display window if actual data exceeds the OMERO range.
+    // At higher resolutions, individual bright/dark voxels that were averaged
+    // out at lower resolutions can exceed the OMERO-specified window, causing
+    // clipping artifacts. This preserves the OMERO lower bound but widens the
+    // ceiling to encompass the full data range when needed.
+    this._widenCalRangeIfNeeded(this);
+
     // Emit loadingComplete event
     this._emitEvent("loadingComplete", {
       levelIndex,
@@ -1269,6 +1276,7 @@ export class OMEZarrNVImage extends NVImage {
     this._activeChannel = index;
     this.applyOmeroToHeader();
     this.niivue.updateGLVolume();
+    this._widenCalRangeIfNeeded(this);
   }
 
   // ============================================================
@@ -1631,6 +1639,7 @@ export class OMEZarrNVImage extends NVImage {
 
     try {
       nv.updateGLVolume();
+      this._widenCalRangeIfNeeded(targetVolume);
     } catch {
       // May fail if GL context not ready
     }
@@ -1867,6 +1876,10 @@ export class OMEZarrNVImage extends NVImage {
         if (attachedNv.volumes.includes(slabState.nvImage)) {
           attachedNv.updateGLVolume();
 
+          // Widen the display window if actual data exceeds the OMERO range.
+          // Must run after updateGLVolume() which computes global_min/global_max.
+          this._widenCalRangeIfNeeded(slabState.nvImage);
+
           // Position the crosshair at the correct slice within this slab.
           // Without this, NiiVue defaults to the center of the slab which
           // corresponds to different physical positions at each resolution level.
@@ -1960,6 +1973,54 @@ export class OMEZarrNVImage extends NVImage {
       if (calMin !== undefined) nvImage.hdr.cal_min = calMin;
       if (calMax !== undefined) nvImage.hdr.cal_max = calMax;
     }
+  }
+
+  /**
+   * Widen the display intensity range if the actual data exceeds the current
+   * cal_min/cal_max window (typically set from OMERO metadata).
+   *
+   * OMERO window settings may have been computed at a lower resolution where
+   * downsampling averaged out extreme voxels. At higher resolutions, individual
+   * bright/dark voxels can exceed the OMERO range, causing clipping artifacts
+   * (e.g., "banding" where bright structures clip to solid white).
+   *
+   * Widens cal_min/cal_max to global_min/global_max (actual data extremes at
+   * the current resolution level) so no data is clipped. The hdr.cal_min/
+   * cal_max values are NOT modified — they preserve the original OMERO values
+   * for reuse on subsequent slab reloads.
+   *
+   * Must be called AFTER updateGLVolume() so that calMinMax() has computed
+   * global_min/global_max from the actual slab data.
+   *
+   * @returns true if the display range was widened
+   */
+  private _widenCalRangeIfNeeded(nvImage: NVImage): boolean {
+    if (nvImage.global_min === undefined || nvImage.global_max === undefined) {
+      return false;
+    }
+
+    let widened = false;
+
+    // Widen the runtime display range (cal_min/cal_max) to encompass the
+    // actual data extremes (global_min/global_max) at this resolution level.
+    // The hdr values are NOT modified so the original OMERO window is
+    // preserved for next reload.
+    if (
+      nvImage.cal_max !== undefined &&
+      nvImage.global_max > nvImage.cal_max
+    ) {
+      nvImage.cal_max = nvImage.global_max;
+      widened = true;
+    }
+    if (
+      nvImage.cal_min !== undefined &&
+      nvImage.global_min < nvImage.cal_min
+    ) {
+      nvImage.cal_min = nvImage.global_min;
+      widened = true;
+    }
+
+    return widened;
   }
 
   // ============================================================
