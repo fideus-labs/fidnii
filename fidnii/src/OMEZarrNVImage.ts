@@ -1447,6 +1447,21 @@ export class OMEZarrNVImage extends NVImage {
     // Reset global_min so NiiVue recalculates intensity ranges
     slabState.nvImage.global_min = undefined;
 
+    // Compute the normalization scale used by _updateSlabHeader so we can
+    // convert the world coordinate into the slab's normalized mm space.
+    const scale = ngffImage.scale;
+    const maxVoxelSize = Math.max(
+      scale.x ?? scale.X ?? 1,
+      scale.y ?? scale.Y ?? 1,
+      scale.z ?? scale.Z ?? 1
+    );
+    const normalizationScale = maxVoxelSize > 0 ? 1.0 / maxVoxelSize : 1.0;
+    const normalizedMM: [number, number, number] = [
+      worldCoord[0] * normalizationScale,
+      worldCoord[1] * normalizationScale,
+      worldCoord[2] * normalizationScale,
+    ];
+
     // Refresh all NV instances using this slice type
     for (const [attachedNv, attachedState] of this._attachedNiivues) {
       if (
@@ -1456,6 +1471,13 @@ export class OMEZarrNVImage extends NVImage {
         // Ensure this NV has the slab volume
         if (attachedNv.volumes.includes(slabState.nvImage)) {
           attachedNv.updateGLVolume();
+
+          // Position the crosshair at the correct slice within this slab.
+          // Without this, NiiVue defaults to the center of the slab which
+          // corresponds to different physical positions at each resolution level.
+          const frac = attachedNv.mm2frac(normalizedMM);
+          attachedNv.scene.crosshairPos = frac;
+          attachedNv.drawScene();
         }
       }
     }
