@@ -9,7 +9,7 @@ export default defineConfig({
   reporter: "html",
   timeout: 120000, // 120s per test (S3 loading can be slow)
   use: {
-    baseURL: "http://localhost:5173",
+    baseURL: "http://localhost:5174",
     trace: "on-first-retry",
     // EGL is only available on Linux; macOS/Windows use native GPU
     launchOptions: {
@@ -24,7 +24,7 @@ export default defineConfig({
   ],
   webServer: {
     command: "npm run dev",
-    url: "http://localhost:5173",
+    url: "http://localhost:5174",
     reuseExistingServer: !process.env.CI,
     timeout: 60000,
   },
