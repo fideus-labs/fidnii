@@ -1,5 +1,6 @@
 {
   "name": "@fideus-labs/fidnii-monorepo",
+  "type": "module",
   "private": true,
   "scripts": {
     "build": "pnpm -r build",

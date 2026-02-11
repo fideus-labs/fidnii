@@ -343,7 +343,7 @@ export class OMEZarrNVImage extends NVImage {
 
     // Initialize with empty typed array (will be replaced when data loads)
     // We need at least 1 element to avoid issues
-    this.img = this.bufferManager.resize([1, 1, 1]) as any
+    this.img = this.bufferManager.resize([1, 1, 1]) as NVImage["img"]
 
     // Set default colormap
     this._colormap = "gray"
@@ -520,7 +520,7 @@ export class OMEZarrNVImage extends NVImage {
     targetData.set(result.data)
 
     // Update this.img to point to the (possibly new) buffer
-    this.img = this.bufferManager.getTypedArray() as any
+    this.img = this.bufferManager.getTypedArray() as NVImage["img"]
 
     // Update NVImage header with correct dimensions and transforms
     this.updateHeaderForRegion(ngffImage, alignedRegion, fetchedShape)
@@ -1528,9 +1528,9 @@ export class OMEZarrNVImage extends NVImage {
     // Access the opts.sliceType via the scene data or fall back to checking
     // the convenience properties. Niivue stores the current sliceType in opts.
     // We can read it from the NV instance's internal opts.
-    const opts = (nv as any).opts
-    if (opts && typeof opts.sliceType === "number") {
-      return opts.sliceType as SLICE_TYPE
+    const { sliceType } = nv.opts
+    if (typeof sliceType === "number") {
+      return sliceType
     }
     // Default to Render
     return SLICE_TYPE.RENDER
@@ -1723,9 +1723,9 @@ export class OMEZarrNVImage extends NVImage {
     ]
     hdr.sform_code = 1
     nvImage.name = `${this.name ?? "OME-Zarr"} [${SLICE_TYPE[sliceType]}]`
-    nvImage.img = bufferManager.resize([1, 1, 1]) as any
-    ;(nvImage as any)._colormap = "gray"
-    ;(nvImage as any)._opacity = 1.0
+    nvImage.img = bufferManager.resize([1, 1, 1]) as NVImage["img"]
+    nvImage._colormap = "gray"
+    nvImage._opacity = 1.0
 
     // Select initial resolution using 2D pixel budget
     const orthAxis = this._getOrthogonalAxis(sliceType)
@@ -1994,7 +1994,8 @@ export class OMEZarrNVImage extends NVImage {
     // Resize buffer and copy data
     const targetData = slabState.bufferManager.resize(fetchedShape)
     targetData.set(result.data)
-    slabState.nvImage.img = slabState.bufferManager.getTypedArray() as any
+    slabState.nvImage.img =
+      slabState.bufferManager.getTypedArray() as NVImage["img"]
 
     // Update slab position tracking
     slabState.slabStart = slabStart
