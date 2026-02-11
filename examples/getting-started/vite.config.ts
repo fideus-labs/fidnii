@@ -10,7 +10,4 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ["@fideus-labs/ngff-zarr", "@fideus-labs/fizarrita"],
   },
-  build: {
-    outDir: "dist",
-  },
 })
