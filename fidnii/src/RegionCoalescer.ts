@@ -4,7 +4,12 @@
 import * as zarr from "zarrita";
 import type { NgffImage } from "@fideus-labs/ngff-zarr";
 import { zarrGet } from "@fideus-labs/ngff-zarr/browser";
-import type { PixelRegion, RegionFetchResult, TypedArray } from "./types.js";
+import type {
+  ChunkCache,
+  PixelRegion,
+  RegionFetchResult,
+  TypedArray,
+} from "./types.js";
 
 /**
  * Represents a pending request that may have multiple consumers waiting for the result.
@@ -28,12 +33,26 @@ interface PendingRequest {
  * 2. Parallel fetching - Uses fizarrita's worker-pool-accelerated zarrGet
  *    for concurrent, worker-offloaded chunk fetches
  * 3. Requester tracking - Tracks who is waiting for each request
+ * 4. Chunk caching - Optional decoded-chunk cache to avoid redundant
+ *    decompression on repeated or overlapping reads
  *
  * This design supports future scenarios where multiple UI events may trigger
  * overlapping region requests simultaneously.
  */
 export class RegionCoalescer {
   private readonly pending: Map<string, PendingRequest> = new Map();
+
+  /** Optional decoded-chunk cache forwarded to fizarrita's getWorker. */
+  private readonly _cache: ChunkCache | undefined;
+
+  /**
+   * @param cache - Optional decoded-chunk cache. When provided, `zarrGet`
+   *   caches decoded chunks to avoid redundant decompression on repeated
+   *   or overlapping reads.
+   */
+  constructor(cache?: ChunkCache) {
+    this._cache = cache;
+  }
 
   /**
    * Generate a unique key for a request based on image path, level index, and region.
@@ -98,7 +117,12 @@ export class RegionCoalescer {
         zarr.slice(region.start[1], region.end[1]),
         zarr.slice(region.start[2], region.end[2]),
       ];
-      const result = await zarrGet(ngffImage.data, selection);
+      // Pass the chunk cache to fizarrita's getWorker via zarrGet.
+      // The `cache` option is available in @fideus-labs/fizarrita >=1.2.0.
+      const zarrOpts = this._cache
+        ? { cache: this._cache } as Record<string, unknown>
+        : undefined;
+      const result = await zarrGet(ngffImage.data, selection, zarrOpts);
 
       const fetchResult: RegionFetchResult = {
         data: result.data as TypedArray,

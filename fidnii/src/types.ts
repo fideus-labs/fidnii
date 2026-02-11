@@ -70,6 +70,35 @@ export interface ResolutionSelection {
 }
 
 /**
+ * Interface for a decoded-chunk cache, compatible with `Map`.
+ *
+ * Caches decoded chunks keyed by a string combining the store instance,
+ * array path, and chunk coordinates. This avoids redundant decompression
+ * when accessing overlapping selections or making repeated calls to the
+ * same data.
+ *
+ * Any object with `get(key)` and `set(key, value)` works — a plain `Map`
+ * is the simplest option. For bounded memory use an LRU cache such as
+ * `lru-cache`.
+ *
+ * @example
+ * ```ts
+ * // Use a plain Map (unbounded)
+ * const cache = new Map()
+ *
+ * // Use lru-cache (bounded)
+ * import { LRUCache } from 'lru-cache'
+ * const cache = new LRUCache({ max: 200 })
+ * ```
+ */
+export interface ChunkCache {
+  /** Look up a cached decoded chunk by key. */
+  get(key: string): unknown | undefined;
+  /** Store a decoded chunk under the given key. */
+  set(key: string, value: unknown): void;
+}
+
+/**
  * Options for creating an OMEZarrNVImage.
  */
 export interface OMEZarrNVImageOptions {
@@ -104,6 +133,26 @@ export interface OMEZarrNVImageOptions {
    * visible viewport, allowing higher resolution within the same maxPixels budget.
    */
   viewportAware?: boolean;
+  /**
+   * Maximum number of decoded-chunk cache entries (default: 200).
+   *
+   * Fidnii creates an LRU cache that avoids redundant chunk decompression
+   * on repeated or overlapping reads (e.g. clip plane adjustments, viewport
+   * panning, progressive resolution loading).
+   *
+   * Set to `0` to disable caching entirely.
+   */
+  maxCacheEntries?: number;
+  /**
+   * Optional pre-built decoded-chunk cache. When provided, overrides the
+   * internal LRU cache created from `maxCacheEntries`.
+   *
+   * Any object with `get(key)` / `set(key, value)` works — a plain `Map`
+   * or any LRU cache implementing the same interface.
+   *
+   * @see {@link ChunkCache}
+   */
+  cache?: ChunkCache;
 }
 
 /**

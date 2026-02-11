@@ -6,10 +6,12 @@ import { NVImage, SLICE_TYPE } from "@niivue/niivue";
 import type { Niivue } from "@niivue/niivue";
 import type { Multiscales, NgffImage, Omero } from "@fideus-labs/ngff-zarr";
 import { computeOmeroFromNgffImage } from "@fideus-labs/ngff-zarr/browser";
+import { LRUCache } from "lru-cache";
 
 import type {
   AttachedNiivueState,
   ChunkAlignedRegion,
+  ChunkCache,
   ClipPlane,
   ClipPlanes,
   OMEZarrNVImageOptions,
@@ -62,6 +64,7 @@ import {
 } from "./events.js";
 
 const DEFAULT_MAX_PIXELS = 50_000_000;
+const DEFAULT_MAX_CACHE_ENTRIES = 200;
 
 /**
  * OMEZarrNVImage extends NVImage to support rendering OME-Zarr images in NiiVue.
@@ -88,6 +91,9 @@ export class OMEZarrNVImage extends NVImage {
 
   /** Region coalescer for efficient chunk fetching */
   private readonly coalescer: RegionCoalescer;
+
+  /** Decoded-chunk cache shared across 3D and 2D slab loads. */
+  private readonly _chunkCache: ChunkCache | undefined;
 
   /** Current clip planes in world space */
   private _clipPlanes: ClipPlanes;
@@ -216,8 +222,17 @@ export class OMEZarrNVImage extends NVImage {
     this.multiscales = options.multiscales;
     this.maxPixels = options.maxPixels ?? DEFAULT_MAX_PIXELS;
     this.niivue = options.niivue;
-    this.coalescer = new RegionCoalescer();
     this.clipPlaneDebounceMs = options.clipPlaneDebounceMs ?? 300;
+
+    // Initialize chunk cache: user-provided > LRU(maxCacheEntries) > disabled
+    const maxEntries = options.maxCacheEntries ?? DEFAULT_MAX_CACHE_ENTRIES;
+    if (options.cache) {
+      this._chunkCache = options.cache;
+    } else if (maxEntries > 0) {
+      this._chunkCache = new LRUCache({ max: maxEntries });
+    }
+
+    this.coalescer = new RegionCoalescer(this._chunkCache);
     this._max3DZoom = options.max3DZoom ?? 10.0;
     this._min3DZoom = options.min3DZoom ?? 0.3;
     this._viewportAwareEnabled = options.viewportAware ?? true;

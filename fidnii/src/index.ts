@@ -41,6 +41,7 @@ export { OMEZarrNVImage } from "./OMEZarrNVImage.js";
 export type {
   AttachedNiivueState,
   ChunkAlignedRegion,
+  ChunkCache,
   ClipPlane,
   ClipPlanes,
   OMEZarrNVImageOptions,

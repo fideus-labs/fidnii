@@ -10,6 +10,7 @@ Render OME-Zarr images in NiiVue with progressive multi-resolution loading.
   budget
 - **Clip planes** - Up to 6 arbitrary clip planes for cropping/visualization
 - **Dynamic buffer sizing** - Matches fetched data exactly (no upsampling)
+- **Chunk caching** - LRU decoded-chunk cache avoids redundant decompression
 - **Request coalescing** - Efficient chunk fetching
 - **Event system** - Browser-native EventTarget API for loading states
 
@@ -45,6 +46,8 @@ await OMEZarrNVImage.create({ multiscales, niivue: nv });
 | `maxPixels`           | `number`      | `50_000_000` | Maximum pixels to load (controls resolution)    |
 | `autoLoad`            | `boolean`     | `true`       | Auto-add to NiiVue and start loading            |
 | `clipPlaneDebounceMs` | `number`      | `300`        | Debounce delay for clip plane updates           |
+| `maxCacheEntries`     | `number`      | `200`        | Max decoded-chunk cache entries (0 to disable)  |
+| `cache`               | `ChunkCache`  | —            | Pre-built cache (overrides `maxCacheEntries`)   |
 
 ## Events
 
@@ -114,6 +117,63 @@ image.addEventListener("populateComplete", () => {
   image.setClipPlanes([clipPlane]);
 }, { once: true });
 ```
+
+## Chunk Caching
+
+Fidnii ships with an LRU decoded-chunk cache that avoids redundant
+decompression when the same Zarr chunk is read more than once. This happens
+frequently with overlapping clip-plane selections, repeated `populateVolume`
+calls, and progressive loading where 2D slabs and 3D volumes share chunks.
+
+Caching is **enabled by default** with a 200-entry limit. No extra code is
+needed:
+
+```typescript
+// Default: 200-entry LRU cache created automatically
+const image = await OMEZarrNVImage.create({ multiscales, niivue: nv });
+```
+
+### Custom cache size
+
+```typescript
+const image = await OMEZarrNVImage.create({
+  multiscales,
+  niivue: nv,
+  maxCacheEntries: 500,
+});
+```
+
+### Disabling caching
+
+```typescript
+const image = await OMEZarrNVImage.create({
+  multiscales,
+  niivue: nv,
+  maxCacheEntries: 0,
+});
+```
+
+### Bring-your-own cache
+
+Any object that satisfies the `ChunkCache` interface (`get` / `set` with
+`string` keys and `ArrayBuffer` values) can be passed directly:
+
+```typescript
+import type { ChunkCache } from "@fideus-labs/fidnii";
+
+const myCache: ChunkCache = {
+  get(key: string) { /* ... */ },
+  set(key: string, value: ArrayBuffer) { /* ... */ },
+};
+
+const image = await OMEZarrNVImage.create({
+  multiscales,
+  niivue: nv,
+  cache: myCache,
+});
+```
+
+When `cache` is provided it takes precedence over `maxCacheEntries`.
 
 ## License
 

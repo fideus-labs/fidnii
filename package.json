@@ -13,7 +13,7 @@
     "overrides": {
       "@fideus-labs/ngff-zarr": "^0.7.2",
       "zarrita": "^0.6.1",
-      "@fideus-labs/fizarrita": "^1.1.1",
+      "@fideus-labs/fizarrita": "^1.2.0",
       "@fideus-labs/worker-pool": "^1.0.0",
       "typescript": "^5.9.3",
       "vite": "^7.3.1"
