@@ -301,7 +301,7 @@ downloadBtn.addEventListener("click", () => {
 });
 
 // Settings change handlers for live preview updates
-colormapSelect.addEventListener("wa-change", async () => {
+colormapSelect.addEventListener("change", () => {
   if (lastResult && nv && nv.volumes.length > 0) {
     const colormap = (colormapSelect as unknown as { value: string }).value ||
       "gray";
@@ -322,7 +322,7 @@ silhouetteSlider.addEventListener("input", () => {
   }
 })
 
-sliceTypeSelect.addEventListener("wa-change", () => {
+sliceTypeSelect.addEventListener("change", () => {
   if (lastResult && nv && nv.volumes.length > 0) {
     const sliceTypeStr =
       (sliceTypeSelect as unknown as { value: string }).value || "multiplanar"
