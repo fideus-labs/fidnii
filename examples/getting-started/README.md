@@ -1,13 +1,13 @@
 # fidnii Getting Started
 
 A minimal example showing how to load and display an OME-Zarr image using
-fidnii.
+[fidnii](https://github.com/fideus-labs/fidnii).
 
 ## Quick Start
 
 ```bash
-pnpm install
-pnpm dev
+npm install
+npm run dev
 ```
 
 Open http://localhost:5173 in your browser.
@@ -38,4 +38,5 @@ const multiscales = await fromNgffZarr(DATA_URL);
 await OMEZarrNVImage.create({ multiscales, niivue: nv });
 ```
 
-For more details, see the [fidnii README](../../fidnii/README.md).
+For more details, see the
+[fidnii README](https://github.com/fideus-labs/fidnii/blob/main/fidnii/README.md).
