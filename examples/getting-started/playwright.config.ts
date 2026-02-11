@@ -11,8 +11,9 @@ export default defineConfig({
   use: {
     baseURL: "http://localhost:5173",
     trace: "on-first-retry",
+    // EGL is only available on Linux; macOS/Windows use native GPU
     launchOptions: {
-      args: ["--use-gl=egl"],
+      args: process.platform === "linux" ? ["--use-gl=egl"] : [],
     },
   },
   projects: [

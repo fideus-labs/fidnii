@@ -14,9 +14,9 @@ export default defineConfig({
   use: {
     baseURL: "http://localhost:5173",
     trace: "on-first-retry",
-    // WebGL requires a real browser context
+    // WebGL requires a real browser context; EGL is only available on Linux
     launchOptions: {
-      args: ["--use-gl=egl"],
+      args: process.platform === "linux" ? ["--use-gl=egl"] : [],
     },
   },
   projects: [
