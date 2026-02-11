@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: Copyright (c) Fideus Labs LLC
 // SPDX-License-Identifier: MIT
 
-import { defineConfig } from "vite";
-import { resolve } from "path";
+import { resolve } from "node:path"
+import { defineConfig } from "vite"
 
 export default defineConfig({
   root: resolve(__dirname, "test-page"),
@@ -49,4 +49,4 @@ export default defineConfig({
       "@fideus-labs/ngff-zarr/browser",
     ],
   },
-});
+})

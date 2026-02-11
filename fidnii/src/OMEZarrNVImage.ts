@@ -1,13 +1,38 @@
 // SPDX-FileCopyrightText: Copyright (c) Fideus Labs LLC
 // SPDX-License-Identifier: MIT
 
-import { NIFTI1 } from "nifti-reader-js";
-import { NVImage, SLICE_TYPE } from "@niivue/niivue";
-import type { Niivue } from "@niivue/niivue";
-import type { Multiscales, NgffImage, Omero } from "@fideus-labs/ngff-zarr";
-import { computeOmeroFromNgffImage } from "@fideus-labs/ngff-zarr/browser";
-import { LRUCache } from "lru-cache";
+import type { Multiscales, NgffImage, Omero } from "@fideus-labs/ngff-zarr"
+import { computeOmeroFromNgffImage } from "@fideus-labs/ngff-zarr/browser"
+import type { Niivue } from "@niivue/niivue"
+import { NVImage, SLICE_TYPE } from "@niivue/niivue"
+import { LRUCache } from "lru-cache"
+import { NIFTI1 } from "nifti-reader-js"
 
+import { BufferManager } from "./BufferManager.js"
+import {
+  alignToChunks,
+  clipPlanesToNiivue,
+  clipPlanesToPixelRegion,
+  createDefaultClipPlanes,
+  MAX_CLIP_PLANES,
+  normalizeVector,
+  validateClipPlanes,
+} from "./ClipPlanes.js"
+import {
+  OMEZarrNVImageEvent,
+  type OMEZarrNVImageEventListener,
+  type OMEZarrNVImageEventListenerOptions,
+  type OMEZarrNVImageEventMap,
+  type PopulateTrigger,
+} from "./events.js"
+import { RegionCoalescer } from "./RegionCoalescer.js"
+import type { OrthogonalAxis } from "./ResolutionSelector.js"
+import {
+  getChunkShape,
+  getVolumeShape,
+  select2DResolution,
+  selectResolution,
+} from "./ResolutionSelector.js"
 import type {
   AttachedNiivueState,
   ChunkAlignedRegion,
@@ -20,51 +45,26 @@ import type {
   SlabSliceType,
   VolumeBounds,
   ZarrDtype,
-} from "./types.js";
+} from "./types.js"
 import {
   getBytesPerPixel,
   getNiftiDataType,
   parseZarritaDtype,
-} from "./types.js";
-import { BufferManager } from "./BufferManager.js";
-import { RegionCoalescer } from "./RegionCoalescer.js";
-import {
-  getChunkShape,
-  getVolumeShape,
-  select2DResolution,
-  selectResolution,
-} from "./ResolutionSelector.js";
-import type { OrthogonalAxis } from "./ResolutionSelector.js";
-import {
-  alignToChunks,
-  clipPlanesToNiivue,
-  clipPlanesToPixelRegion,
-  createDefaultClipPlanes,
-  MAX_CLIP_PLANES,
-  normalizeVector,
-  validateClipPlanes,
-} from "./ClipPlanes.js";
+} from "./types.js"
 import {
   affineToNiftiSrows,
   calculateWorldBounds,
   createAffineFromNgffImage,
-} from "./utils/affine.js";
-import { worldToPixel } from "./utils/coordinates.js";
+} from "./utils/affine.js"
+import { worldToPixel } from "./utils/coordinates.js"
 import {
   boundsApproxEqual,
   computeViewportBounds2D,
   computeViewportBounds3D,
-} from "./ViewportBounds.js";
-import {
-  OMEZarrNVImageEvent,
-  OMEZarrNVImageEventListener,
-  OMEZarrNVImageEventListenerOptions,
-  OMEZarrNVImageEventMap,
-  PopulateTrigger,
-} from "./events.js";
+} from "./ViewportBounds.js"
 
-const DEFAULT_MAX_PIXELS = 50_000_000;
-const DEFAULT_MAX_CACHE_ENTRIES = 200;
+const DEFAULT_MAX_PIXELS = 50_000_000
+const DEFAULT_MAX_CACHE_ENTRIES = 200
 
 /**
  * OMEZarrNVImage extends NVImage to support rendering OME-Zarr images in NiiVue.
@@ -78,179 +78,178 @@ const DEFAULT_MAX_CACHE_ENTRIES = 200;
  */
 export class OMEZarrNVImage extends NVImage {
   /** The OME-Zarr multiscales data */
-  readonly multiscales: Multiscales;
+  readonly multiscales: Multiscales
 
   /** Maximum number of pixels to use */
-  readonly maxPixels: number;
+  readonly maxPixels: number
 
   /** Reference to NiiVue instance */
-  private readonly niivue: Niivue;
+  private readonly niivue: Niivue
 
   /** Buffer manager for dynamically-sized pixel data */
-  private readonly bufferManager: BufferManager;
+  private readonly bufferManager: BufferManager
 
   /** Region coalescer for efficient chunk fetching */
-  private readonly coalescer: RegionCoalescer;
+  private readonly coalescer: RegionCoalescer
 
   /** Decoded-chunk cache shared across 3D and 2D slab loads. */
-  private readonly _chunkCache: ChunkCache | undefined;
+  private readonly _chunkCache: ChunkCache | undefined
 
   /** Current clip planes in world space */
-  private _clipPlanes: ClipPlanes;
+  private _clipPlanes: ClipPlanes
 
   /** Target resolution level index (based on maxPixels) */
-  private targetLevelIndex: number;
+  private targetLevelIndex: number
 
   /** Current resolution level index during progressive loading */
-  private currentLevelIndex: number;
+  private currentLevelIndex: number
 
   /** True if currently loading data */
-  private isLoading: boolean = false;
+  private isLoading: boolean = false
 
   /** Data type of the volume */
-  private readonly dtype: ZarrDtype;
+  private readonly dtype: ZarrDtype
 
   /** Full volume bounds in world space */
-  private readonly _volumeBounds: VolumeBounds;
+  private readonly _volumeBounds: VolumeBounds
 
   /** Current buffer bounds in world space (may differ from full volume when clipped) */
-  private _currentBufferBounds: VolumeBounds;
+  private _currentBufferBounds: VolumeBounds
 
   /** Previous clip plane change handler (to restore later) */
-  private previousOnClipPlaneChange?: (clipPlane: number[]) => void;
+  private previousOnClipPlaneChange?: (clipPlane: number[]) => void
 
   /** Debounce delay for clip plane updates (ms) */
-  private readonly clipPlaneDebounceMs: number;
+  private readonly clipPlaneDebounceMs: number
 
   /** Timeout handle for debounced clip plane refetch */
-  private clipPlaneRefetchTimeout: ReturnType<typeof setTimeout> | null = null;
+  private clipPlaneRefetchTimeout: ReturnType<typeof setTimeout> | null = null
 
   /** Previous clip planes state for direction comparison */
-  private _previousClipPlanes: ClipPlanes = [];
+  private _previousClipPlanes: ClipPlanes = []
 
   /** Previous pixel count at current resolution (for direction comparison) */
-  private _previousPixelCount: number = 0;
+  private _previousPixelCount: number = 0
 
   /** Cached/computed OMERO metadata for visualization (cal_min/cal_max) */
-  private _omero: Omero | undefined;
+  private _omero: Omero | undefined
 
   /** Active channel index for OMERO window selection (default: 0) */
-  private _activeChannel: number = 0;
+  private _activeChannel: number = 0
 
   /** Resolution level at which OMERO was last computed (to track recomputation) */
-  private _omeroComputedForLevel: number = -1;
+  private _omeroComputedForLevel: number = -1
 
   /** Internal EventTarget for event dispatching (composition pattern) */
-  private readonly _eventTarget = new EventTarget();
+  private readonly _eventTarget = new EventTarget()
 
   /** Pending populate request (latest wins - replaces any previous pending) */
   private _pendingPopulateRequest: {
-    skipPreview: boolean;
-    trigger: PopulateTrigger;
-  } | null = null;
+    skipPreview: boolean
+    trigger: PopulateTrigger
+  } | null = null
 
   /** Current populate trigger (set at start of populateVolume, used by events) */
-  private _currentPopulateTrigger: PopulateTrigger = "initial";
+  private _currentPopulateTrigger: PopulateTrigger = "initial"
 
   // ============================================================
   // Multi-NV / Slab Buffer State
   // ============================================================
 
   /** Attached Niivue instances and their state */
-  private _attachedNiivues: Map<Niivue, AttachedNiivueState> = new Map();
+  private _attachedNiivues: Map<Niivue, AttachedNiivueState> = new Map()
 
   /** Per-slice-type slab buffers (lazily created) */
-  private _slabBuffers: Map<SlabSliceType, SlabBufferState> = new Map();
+  private _slabBuffers: Map<SlabSliceType, SlabBufferState> = new Map()
 
   /** Debounce timeout for slab reload per slice type */
   private _slabReloadTimeouts: Map<
     SlabSliceType,
     ReturnType<typeof setTimeout>
-  > = new Map();
+  > = new Map()
 
   // ============================================================
   // Viewport-Aware Resolution State
   // ============================================================
 
   /** Whether viewport-aware resolution selection is enabled */
-  private _viewportAwareEnabled: boolean = false;
+  private _viewportAwareEnabled: boolean = false
 
   /**
    * Viewport bounds for the 3D render volume (union of all RENDER/MULTIPLANAR NVs).
    * Null = full volume, no viewport constraint.
    */
-  private _viewportBounds3D: VolumeBounds | null = null;
+  private _viewportBounds3D: VolumeBounds | null = null
 
   /**
    * Per-slab viewport bounds (from the NV instance that displays each slab).
    * Null entry = full volume, no viewport constraint for that slab.
    */
   private _viewportBoundsPerSlab: Map<SlabSliceType, VolumeBounds | null> =
-    new Map();
+    new Map()
 
   /** Timeout handle for debounced viewport update */
-  private _viewportUpdateTimeout: ReturnType<typeof setTimeout> | null = null;
+  private _viewportUpdateTimeout: ReturnType<typeof setTimeout> | null = null
 
   /** Per-slab AbortController to cancel in-flight progressive loads */
-  private _slabAbortControllers: Map<SlabSliceType, AbortController> =
-    new Map();
+  private _slabAbortControllers: Map<SlabSliceType, AbortController> = new Map()
 
   // ============================================================
   // 3D Zoom Override
   // ============================================================
 
   /** Maximum 3D render zoom level for scroll-wheel zoom */
-  private readonly _max3DZoom: number;
+  private readonly _max3DZoom: number
 
   /** Minimum 3D render zoom level for scroll-wheel zoom */
-  private readonly _min3DZoom: number;
+  private readonly _min3DZoom: number
 
   /**
    * Debounce delay for viewport-aware reloads (ms).
    * Higher than clip plane debounce to avoid excessive reloads during
    * continuous zoom/pan interactions.
    */
-  private static readonly VIEWPORT_DEBOUNCE_MS = 500;
+  private static readonly VIEWPORT_DEBOUNCE_MS = 500
 
   /**
    * Private constructor. Use OMEZarrNVImage.create() for instantiation.
    */
   private constructor(options: OMEZarrNVImageOptions) {
     // Call NVImage constructor with no data buffer
-    super();
+    super()
 
-    this.multiscales = options.multiscales;
-    this.maxPixels = options.maxPixels ?? DEFAULT_MAX_PIXELS;
-    this.niivue = options.niivue;
-    this.clipPlaneDebounceMs = options.clipPlaneDebounceMs ?? 300;
+    this.multiscales = options.multiscales
+    this.maxPixels = options.maxPixels ?? DEFAULT_MAX_PIXELS
+    this.niivue = options.niivue
+    this.clipPlaneDebounceMs = options.clipPlaneDebounceMs ?? 300
 
     // Initialize chunk cache: user-provided > LRU(maxCacheEntries) > disabled
-    const maxEntries = options.maxCacheEntries ?? DEFAULT_MAX_CACHE_ENTRIES;
+    const maxEntries = options.maxCacheEntries ?? DEFAULT_MAX_CACHE_ENTRIES
     if (options.cache) {
-      this._chunkCache = options.cache;
+      this._chunkCache = options.cache
     } else if (maxEntries > 0) {
-      this._chunkCache = new LRUCache({ max: maxEntries });
+      this._chunkCache = new LRUCache({ max: maxEntries })
     }
 
-    this.coalescer = new RegionCoalescer(this._chunkCache);
-    this._max3DZoom = options.max3DZoom ?? 10.0;
-    this._min3DZoom = options.min3DZoom ?? 0.3;
-    this._viewportAwareEnabled = options.viewportAware ?? true;
+    this.coalescer = new RegionCoalescer(this._chunkCache)
+    this._max3DZoom = options.max3DZoom ?? 10.0
+    this._min3DZoom = options.min3DZoom ?? 0.3
+    this._viewportAwareEnabled = options.viewportAware ?? true
 
     // Initialize clip planes to empty (full volume visible)
-    this._clipPlanes = createDefaultClipPlanes(this.multiscales);
+    this._clipPlanes = createDefaultClipPlanes(this.multiscales)
 
     // Get data type from highest resolution image
-    const highResImage = this.multiscales.images[0];
-    this.dtype = parseZarritaDtype(highResImage.data.dtype);
+    const highResImage = this.multiscales.images[0]
+    this.dtype = parseZarritaDtype(highResImage.data.dtype)
 
     // Calculate volume bounds from highest resolution for most accurate bounds
-    const highResAffine = createAffineFromNgffImage(highResImage);
-    const highResShape = getVolumeShape(highResImage);
-    this._volumeBounds = calculateWorldBounds(highResAffine, highResShape);
+    const highResAffine = createAffineFromNgffImage(highResImage)
+    const highResShape = getVolumeShape(highResImage)
+    this._volumeBounds = calculateWorldBounds(highResAffine, highResShape)
 
     // Initially, buffer bounds = full volume bounds (no clipping yet)
-    this._currentBufferBounds = { ...this._volumeBounds };
+    this._currentBufferBounds = { ...this._volumeBounds }
 
     // Calculate target resolution based on pixel budget
     const selection = selectResolution(
@@ -258,16 +257,16 @@ export class OMEZarrNVImage extends NVImage {
       this.maxPixels,
       this._clipPlanes,
       this._volumeBounds,
-    );
-    this.targetLevelIndex = selection.levelIndex;
-    this.currentLevelIndex = this.multiscales.images.length - 1;
+    )
+    this.targetLevelIndex = selection.levelIndex
+    this.currentLevelIndex = this.multiscales.images.length - 1
 
     // Create buffer manager (dynamic sizing, no pre-allocation)
-    this.bufferManager = new BufferManager(this.maxPixels, this.dtype);
+    this.bufferManager = new BufferManager(this.maxPixels, this.dtype)
 
     // Initialize NVImage properties with placeholder values
     // Actual values will be set when data is first loaded
-    this.initializeNVImageProperties();
+    this.initializeNVImageProperties()
   }
 
   /**
@@ -284,30 +283,30 @@ export class OMEZarrNVImage extends NVImage {
    * @returns Promise resolving to the OMEZarrNVImage instance
    */
   static async create(options: OMEZarrNVImageOptions): Promise<OMEZarrNVImage> {
-    const image = new OMEZarrNVImage(options);
+    const image = new OMEZarrNVImage(options)
 
     // Store and replace the clip plane change handler
-    image.previousOnClipPlaneChange = image.niivue.onClipPlaneChange;
+    image.previousOnClipPlaneChange = image.niivue.onClipPlaneChange
     image.niivue.onClipPlaneChange = (clipPlane: number[]) => {
       // Call original handler if it exists
       if (image.previousOnClipPlaneChange) {
-        image.previousOnClipPlaneChange(clipPlane);
+        image.previousOnClipPlaneChange(clipPlane)
       }
       // Handle clip plane change
-      image.onNiivueClipPlaneChange(clipPlane);
-    };
-
-    // Auto-attach the primary NV instance for slice type / location tracking
-    image.attachNiivue(image.niivue);
-
-    // Auto-load by default (add to NiiVue + start progressive loading)
-    const autoLoad = options.autoLoad ?? true;
-    if (autoLoad) {
-      image.niivue.addVolume(image);
-      void image.populateVolume(); // Fire-and-forget, returns immediately
+      image.onNiivueClipPlaneChange(clipPlane)
     }
 
-    return image;
+    // Auto-attach the primary NV instance for slice type / location tracking
+    image.attachNiivue(image.niivue)
+
+    // Auto-load by default (add to NiiVue + start progressive loading)
+    const autoLoad = options.autoLoad ?? true
+    if (autoLoad) {
+      image.niivue.addVolume(image)
+      void image.populateVolume() // Fire-and-forget, returns immediately
+    }
+
+    return image
   }
 
   /**
@@ -316,18 +315,18 @@ export class OMEZarrNVImage extends NVImage {
    */
   private initializeNVImageProperties(): void {
     // Create NIfTI header with placeholder values
-    const hdr = new NIFTI1();
-    this.hdr = hdr;
+    const hdr = new NIFTI1()
+    this.hdr = hdr
 
     // Placeholder dimensions (will be updated when data loads)
-    hdr.dims = [3, 1, 1, 1, 1, 1, 1, 1];
+    hdr.dims = [3, 1, 1, 1, 1, 1, 1, 1]
 
     // Set data type
-    hdr.datatypeCode = getNiftiDataType(this.dtype);
-    hdr.numBitsPerVoxel = getBytesPerPixel(this.dtype) * 8;
+    hdr.datatypeCode = getNiftiDataType(this.dtype)
+    hdr.numBitsPerVoxel = getBytesPerPixel(this.dtype) * 8
 
     // Placeholder pixel dimensions
-    hdr.pixDims = [1, 1, 1, 1, 0, 0, 0, 0];
+    hdr.pixDims = [1, 1, 1, 1, 0, 0, 0, 0]
 
     // Placeholder affine (identity)
     hdr.affine = [
@@ -335,20 +334,20 @@ export class OMEZarrNVImage extends NVImage {
       [0, 1, 0, 0],
       [0, 0, 1, 0],
       [0, 0, 0, 1],
-    ];
+    ]
 
-    hdr.sform_code = 1; // Scanner coordinates
+    hdr.sform_code = 1 // Scanner coordinates
 
     // Set name
-    this.name = this.multiscales.metadata?.name ?? "OME-Zarr";
+    this.name = this.multiscales.metadata?.name ?? "OME-Zarr"
 
     // Initialize with empty typed array (will be replaced when data loads)
     // We need at least 1 element to avoid issues
-    this.img = this.bufferManager.resize([1, 1, 1]) as any;
+    this.img = this.bufferManager.resize([1, 1, 1]) as any
 
     // Set default colormap
-    this._colormap = "gray";
-    this._opacity = 1.0;
+    this._colormap = "gray"
+    this._opacity = 1.0
   }
 
   /**
@@ -376,26 +375,26 @@ export class OMEZarrNVImage extends NVImage {
         this._emitEvent("loadingSkipped", {
           reason: "queued-replaced",
           trigger: this._pendingPopulateRequest.trigger,
-        });
+        })
       }
       // Queue this request (no event - just queuing)
-      this._pendingPopulateRequest = { skipPreview, trigger };
-      return;
+      this._pendingPopulateRequest = { skipPreview, trigger }
+      return
     }
 
-    this.isLoading = true;
-    this._currentPopulateTrigger = trigger;
-    this._pendingPopulateRequest = null; // Clear any stale pending request
+    this.isLoading = true
+    this._currentPopulateTrigger = trigger
+    this._pendingPopulateRequest = null // Clear any stale pending request
 
     try {
-      const numLevels = this.multiscales.images.length;
-      const lowestLevel = numLevels - 1;
+      const numLevels = this.multiscales.images.length
+      const lowestLevel = numLevels - 1
 
       // Quick preview from lowest resolution (if different from target and not skipped)
       if (!skipPreview && lowestLevel !== this.targetLevelIndex) {
-        await this.loadResolutionLevel(lowestLevel, "preview");
-        const prevLevel = this.currentLevelIndex;
-        this.currentLevelIndex = lowestLevel;
+        await this.loadResolutionLevel(lowestLevel, "preview")
+        const prevLevel = this.currentLevelIndex
+        this.currentLevelIndex = lowestLevel
 
         // Emit resolutionChange for preview load
         if (prevLevel !== lowestLevel) {
@@ -404,14 +403,14 @@ export class OMEZarrNVImage extends NVImage {
             targetLevel: this.targetLevelIndex,
             previousLevel: prevLevel,
             trigger: this._currentPopulateTrigger,
-          });
+          })
         }
       }
 
       // Final quality at target resolution
-      await this.loadResolutionLevel(this.targetLevelIndex, "target");
-      const prevLevelBeforeTarget = this.currentLevelIndex;
-      this.currentLevelIndex = this.targetLevelIndex;
+      await this.loadResolutionLevel(this.targetLevelIndex, "target")
+      const prevLevelBeforeTarget = this.currentLevelIndex
+      this.currentLevelIndex = this.targetLevelIndex
 
       // Emit resolutionChange for target load
       if (prevLevelBeforeTarget !== this.targetLevelIndex) {
@@ -420,23 +419,23 @@ export class OMEZarrNVImage extends NVImage {
           targetLevel: this.targetLevelIndex,
           previousLevel: prevLevelBeforeTarget,
           trigger: this._currentPopulateTrigger,
-        });
+        })
       }
 
       // Update previous state for direction-aware resolution selection
       // Always calculate at level 0 for consistent comparison across resolution changes
-      this._previousClipPlanes = this.copyClipPlanes(this._clipPlanes);
-      const referenceImage = this.multiscales.images[0];
+      this._previousClipPlanes = this.copyClipPlanes(this._clipPlanes)
+      const referenceImage = this.multiscales.images[0]
       const region = clipPlanesToPixelRegion(
         this._clipPlanes,
         this._volumeBounds,
         referenceImage,
-      );
-      const aligned = alignToChunks(region, referenceImage);
-      this._previousPixelCount = this.calculateAlignedPixelCount(aligned);
+      )
+      const aligned = alignToChunks(region, referenceImage)
+      this._previousPixelCount = this.calculateAlignedPixelCount(aligned)
     } finally {
-      this.isLoading = false;
-      this.handlePendingPopulateRequest();
+      this.isLoading = false
+      this.handlePendingPopulateRequest()
     }
   }
 
@@ -445,12 +444,12 @@ export class OMEZarrNVImage extends NVImage {
    * If no pending request, emits populateComplete.
    */
   private handlePendingPopulateRequest(): void {
-    const pending = this._pendingPopulateRequest;
+    const pending = this._pendingPopulateRequest
     if (pending !== null) {
-      this._pendingPopulateRequest = null;
+      this._pendingPopulateRequest = null
       // Use void to indicate we're intentionally not awaiting
-      void this.populateVolume(pending.skipPreview, pending.trigger);
-      return;
+      void this.populateVolume(pending.skipPreview, pending.trigger)
+      return
     }
 
     // No more pending requests - emit populateComplete
@@ -458,7 +457,7 @@ export class OMEZarrNVImage extends NVImage {
       currentLevel: this.currentLevelIndex,
       targetLevel: this.targetLevelIndex,
       trigger: this._currentPopulateTrigger,
-    });
+    })
   }
 
   /**
@@ -481,9 +480,9 @@ export class OMEZarrNVImage extends NVImage {
     this._emitEvent("loadingStart", {
       levelIndex,
       trigger: this._currentPopulateTrigger,
-    });
+    })
 
-    const ngffImage = this.multiscales.images[levelIndex];
+    const ngffImage = this.multiscales.images[levelIndex]
 
     // Get the pixel region for current clip planes (+ 3D viewport bounds if active)
     const pixelRegion = clipPlanesToPixelRegion(
@@ -491,69 +490,69 @@ export class OMEZarrNVImage extends NVImage {
       this._volumeBounds,
       ngffImage,
       this._viewportBounds3D ?? undefined,
-    );
-    const alignedRegion = alignToChunks(pixelRegion, ngffImage);
+    )
+    const alignedRegion = alignToChunks(pixelRegion, ngffImage)
 
     // Calculate the shape of data to fetch
     const fetchedShape: [number, number, number] = [
       alignedRegion.chunkAlignedEnd[0] - alignedRegion.chunkAlignedStart[0],
       alignedRegion.chunkAlignedEnd[1] - alignedRegion.chunkAlignedStart[1],
       alignedRegion.chunkAlignedEnd[2] - alignedRegion.chunkAlignedStart[2],
-    ];
+    ]
 
     // Fetch the data
     const fetchRegion: PixelRegion = {
       start: alignedRegion.chunkAlignedStart,
       end: alignedRegion.chunkAlignedEnd,
-    };
+    }
 
     const result = await this.coalescer.fetchRegion(
       ngffImage,
       levelIndex,
       fetchRegion,
       requesterId,
-    );
+    )
 
     // Resize buffer to match fetched data exactly (no upsampling!)
-    const targetData = this.bufferManager.resize(fetchedShape);
+    const targetData = this.bufferManager.resize(fetchedShape)
 
     // Direct copy of fetched data
-    targetData.set(result.data);
+    targetData.set(result.data)
 
     // Update this.img to point to the (possibly new) buffer
-    this.img = this.bufferManager.getTypedArray() as any;
+    this.img = this.bufferManager.getTypedArray() as any
 
     // Update NVImage header with correct dimensions and transforms
-    this.updateHeaderForRegion(ngffImage, alignedRegion, fetchedShape);
+    this.updateHeaderForRegion(ngffImage, alignedRegion, fetchedShape)
 
     // Compute or apply OMERO metadata for cal_min/cal_max
-    await this.ensureOmeroMetadata(ngffImage, levelIndex);
+    await this.ensureOmeroMetadata(ngffImage, levelIndex)
 
     // Reset global_min so NiiVue's refreshLayers() re-runs calMinMax() on real data.
     // Without this, if calMinMax() was previously called on placeholder/empty data
     // (e.g., when setting colormap before loading), global_min would already be set
     // and NiiVue would skip recalculating intensity ranges, leaving cal_min/cal_max
     // at stale values (typically 0/0), causing an all-white render.
-    this.global_min = undefined;
+    this.global_min = undefined
 
     // Update NiiVue clip planes
-    this.updateNiivueClipPlanes();
+    this.updateNiivueClipPlanes()
 
     // Refresh NiiVue
-    this.niivue.updateGLVolume();
+    this.niivue.updateGLVolume()
 
     // Widen the display window if actual data exceeds the OMERO range.
     // At higher resolutions, individual bright/dark voxels that were averaged
     // out at lower resolutions can exceed the OMERO-specified window, causing
     // clipping artifacts. This preserves the OMERO lower bound but widens the
     // ceiling to encompass the full data range when needed.
-    this._widenCalRangeIfNeeded(this);
+    this._widenCalRangeIfNeeded(this)
 
     // Emit loadingComplete event
     this._emitEvent("loadingComplete", {
       levelIndex,
       trigger: this._currentPopulateTrigger,
-    });
+    })
   }
 
   /**
@@ -572,16 +571,16 @@ export class OMEZarrNVImage extends NVImage {
     region: ChunkAlignedRegion,
     fetchedShape: [number, number, number],
   ): void {
-    if (!this.hdr) return;
+    if (!this.hdr) return
 
     // Get voxel size from this resolution level (no upsampling adjustment needed!)
-    const scale = ngffImage.scale;
-    const sx = scale.x ?? scale.X ?? 1;
-    const sy = scale.y ?? scale.Y ?? 1;
-    const sz = scale.z ?? scale.Z ?? 1;
+    const scale = ngffImage.scale
+    const sx = scale.x ?? scale.X ?? 1
+    const sy = scale.y ?? scale.Y ?? 1
+    const sz = scale.z ?? scale.Z ?? 1
 
     // Set pixDims directly from resolution's voxel size
-    this.hdr.pixDims = [1, sx, sy, sz, 0, 0, 0, 0];
+    this.hdr.pixDims = [1, sx, sy, sz, 0, 0, 0, 0]
 
     // Set dims to match fetched data (buffer now equals fetched size)
     // NIfTI dims: [ndim, x, y, z, t, ...]
@@ -594,27 +593,22 @@ export class OMEZarrNVImage extends NVImage {
       1,
       1,
       1,
-    ];
+    ]
 
     // Build affine with offset for region start
-    const affine = createAffineFromNgffImage(ngffImage);
+    const affine = createAffineFromNgffImage(ngffImage)
 
     // Adjust translation for region offset
     // Buffer pixel [0,0,0] corresponds to source pixel region.chunkAlignedStart
-    const regionStart = region.chunkAlignedStart;
+    const regionStart = region.chunkAlignedStart
     // regionStart is [z, y, x], affine translation is [x, y, z] (indices 12, 13, 14)
-    affine[12] += regionStart[2] * sx; // x offset
-    affine[13] += regionStart[1] * sy; // y offset
-    affine[14] += regionStart[0] * sz; // z offset
+    affine[12] += regionStart[2] * sx // x offset
+    affine[13] += regionStart[1] * sy // y offset
+    affine[14] += regionStart[0] * sz // z offset
 
     // Update affine in header
-    const srows = affineToNiftiSrows(affine);
-    this.hdr.affine = [
-      srows.srow_x,
-      srows.srow_y,
-      srows.srow_z,
-      [0, 0, 0, 1],
-    ];
+    const srows = affineToNiftiSrows(affine)
+    this.hdr.affine = [srows.srow_x, srows.srow_y, srows.srow_z, [0, 0, 0, 1]]
 
     // Update current buffer bounds
     // Buffer starts at region.chunkAlignedStart and has extent fetchedShape
@@ -629,10 +623,10 @@ export class OMEZarrNVImage extends NVImage {
         affine[13] + fetchedShape[1] * sy,
         affine[14] + fetchedShape[0] * sz,
       ],
-    };
+    }
 
     // Recalculate RAS orientation
-    this.calculateRAS();
+    this.calculateRAS()
   }
 
   /**
@@ -648,13 +642,13 @@ export class OMEZarrNVImage extends NVImage {
     const niivueClipPlanes = clipPlanesToNiivue(
       this._clipPlanes,
       this._currentBufferBounds,
-    );
+    )
 
     if (niivueClipPlanes.length > 0) {
-      this.niivue.scene.clipPlaneDepthAziElevs = niivueClipPlanes;
+      this.niivue.scene.clipPlaneDepthAziElevs = niivueClipPlanes
     } else {
       // Clear clip planes - set to "disabled" state (depth > 1.8)
-      this.niivue.scene.clipPlaneDepthAziElevs = [[2, 0, 0]];
+      this.niivue.scene.clipPlaneDepthAziElevs = [[2, 0, 0]]
     }
   }
 
@@ -665,23 +659,23 @@ export class OMEZarrNVImage extends NVImage {
    * This sets the display intensity range for NiiVue rendering.
    */
   private applyOmeroToHeader(): void {
-    if (!this.hdr || !this._omero?.channels?.length) return;
+    if (!this.hdr || !this._omero?.channels?.length) return
 
     // Clamp active channel to valid range
     const channelIndex = Math.min(
       this._activeChannel,
       this._omero.channels.length - 1,
-    );
-    const channel = this._omero.channels[channelIndex];
-    const window = channel?.window;
+    )
+    const channel = this._omero.channels[channelIndex]
+    const window = channel?.window
 
     if (window) {
       // Prefer start/end (display window based on quantiles) over min/max (data range)
-      const calMin = window.start ?? window.min;
-      const calMax = window.end ?? window.max;
+      const calMin = window.start ?? window.min
+      const calMax = window.end ?? window.max
 
-      if (calMin !== undefined) this.hdr.cal_min = calMin;
-      if (calMax !== undefined) this.hdr.cal_max = calMax;
+      if (calMin !== undefined) this.hdr.cal_min = calMin
+      if (calMax !== undefined) this.hdr.cal_max = calMax
     }
   }
 
@@ -702,30 +696,30 @@ export class OMEZarrNVImage extends NVImage {
     ngffImage: NgffImage,
     levelIndex: number,
   ): Promise<void> {
-    const existingOmero = this.multiscales.metadata?.omero;
+    const existingOmero = this.multiscales.metadata?.omero
 
     if (existingOmero && !this._omero) {
       // Use existing OMERO metadata from the file (first time)
-      this._omero = existingOmero;
-      this.applyOmeroToHeader();
-      return;
+      this._omero = existingOmero
+      this.applyOmeroToHeader()
+      return
     }
 
     if (!existingOmero) {
       // No OMERO in file - compute dynamically
       // Compute at preview (lowest) and target levels, then keep for consistency
-      const lowestLevel = this.multiscales.images.length - 1;
-      const isPreviewLevel = levelIndex === lowestLevel;
-      const isTargetLevel = levelIndex === this.targetLevelIndex;
-      const needsCompute = isPreviewLevel ||
-        (isTargetLevel &&
-          this._omeroComputedForLevel !== this.targetLevelIndex);
+      const lowestLevel = this.multiscales.images.length - 1
+      const isPreviewLevel = levelIndex === lowestLevel
+      const isTargetLevel = levelIndex === this.targetLevelIndex
+      const needsCompute =
+        isPreviewLevel ||
+        (isTargetLevel && this._omeroComputedForLevel !== this.targetLevelIndex)
 
       if (needsCompute) {
-        const computedOmero = await computeOmeroFromNgffImage(ngffImage);
-        this._omero = computedOmero;
-        this._omeroComputedForLevel = levelIndex;
-        this.applyOmeroToHeader();
+        const computedOmero = await computeOmeroFromNgffImage(ngffImage)
+        this._omero = computedOmero
+        this._omeroComputedForLevel = levelIndex
+        this.applyOmeroToHeader()
       }
     }
   }
@@ -752,31 +746,31 @@ export class OMEZarrNVImage extends NVImage {
    */
   setClipPlanes(planes: ClipPlanes): void {
     // Validate the planes
-    validateClipPlanes(planes);
+    validateClipPlanes(planes)
 
     // Check if this is a "reset" operation (clearing all planes)
-    const isReset = planes.length === 0 && this._previousClipPlanes.length > 0;
+    const isReset = planes.length === 0 && this._previousClipPlanes.length > 0
 
     // Store new clip planes
     this._clipPlanes = planes.map((p) => ({
       point: [...p.point] as [number, number, number],
       normal: normalizeVector([...p.normal] as [number, number, number]),
-    }));
+    }))
 
     // Always update NiiVue clip planes immediately (visual feedback)
-    this.updateNiivueClipPlanes();
-    this.niivue.drawScene();
+    this.updateNiivueClipPlanes()
+    this.niivue.drawScene()
 
     // Clear any pending debounced refetch
     if (this.clipPlaneRefetchTimeout) {
-      clearTimeout(this.clipPlaneRefetchTimeout);
-      this.clipPlaneRefetchTimeout = null;
+      clearTimeout(this.clipPlaneRefetchTimeout)
+      this.clipPlaneRefetchTimeout = null
     }
 
     // Debounce the data refetch decision
     this.clipPlaneRefetchTimeout = setTimeout(() => {
-      this.handleDebouncedClipPlaneUpdate(isReset);
-    }, this.clipPlaneDebounceMs);
+      this.handleDebouncedClipPlaneUpdate(isReset)
+    }, this.clipPlaneDebounceMs)
   }
 
   /**
@@ -787,23 +781,23 @@ export class OMEZarrNVImage extends NVImage {
    * Visual clipping is handled by NiiVue clip planes (updated immediately in setClipPlanes).
    */
   private handleDebouncedClipPlaneUpdate(isReset: boolean): void {
-    this.clipPlaneRefetchTimeout = null;
+    this.clipPlaneRefetchTimeout = null
 
     // Always use level 0 for consistent pixel count comparison across resolution changes
-    const referenceImage = this.multiscales.images[0];
+    const referenceImage = this.multiscales.images[0]
 
     // Calculate current region at reference resolution
     const currentRegion = clipPlanesToPixelRegion(
       this._clipPlanes,
       this._volumeBounds,
       referenceImage,
-    );
-    const currentAligned = alignToChunks(currentRegion, referenceImage);
-    const currentPixelCount = this.calculateAlignedPixelCount(currentAligned);
+    )
+    const currentAligned = alignToChunks(currentRegion, referenceImage)
+    const currentPixelCount = this.calculateAlignedPixelCount(currentAligned)
 
     // Determine volume change direction (comparing at consistent reference level)
-    const volumeReduced = currentPixelCount < this._previousPixelCount;
-    const volumeIncreased = currentPixelCount > this._previousPixelCount;
+    const volumeReduced = currentPixelCount < this._previousPixelCount
+    const volumeIncreased = currentPixelCount > this._previousPixelCount
 
     // Get optimal resolution for new region (3D viewport bounds)
     const selection = selectResolution(
@@ -812,36 +806,37 @@ export class OMEZarrNVImage extends NVImage {
       this._clipPlanes,
       this._volumeBounds,
       this._viewportBounds3D ?? undefined,
-    );
+    )
 
     // Direction-aware resolution change
-    let newTargetLevel = this.targetLevelIndex;
+    let newTargetLevel = this.targetLevelIndex
 
     if (isReset) {
       // Reset/clear: always recalculate optimal resolution
-      newTargetLevel = selection.levelIndex;
+      newTargetLevel = selection.levelIndex
     } else if (volumeReduced && selection.levelIndex < this.targetLevelIndex) {
       // Volume reduced → allow higher resolution (lower level index)
-      newTargetLevel = selection.levelIndex;
+      newTargetLevel = selection.levelIndex
     } else if (
-      volumeIncreased && selection.levelIndex > this.targetLevelIndex
+      volumeIncreased &&
+      selection.levelIndex > this.targetLevelIndex
     ) {
       // Volume increased → allow lower resolution (higher level index) if needed to fit
-      newTargetLevel = selection.levelIndex;
+      newTargetLevel = selection.levelIndex
     }
     // Otherwise: keep current level (no unnecessary resolution changes)
 
     // Only refetch when resolution level changes
     // Visual clipping is handled by NiiVue clip planes (already updated in setClipPlanes)
     if (newTargetLevel !== this.targetLevelIndex) {
-      this.targetLevelIndex = newTargetLevel;
-      this.populateVolume(true, "clipPlanesChanged"); // Skip preview for clip plane updates
+      this.targetLevelIndex = newTargetLevel
+      this.populateVolume(true, "clipPlanesChanged") // Skip preview for clip plane updates
     }
 
     // Emit clipPlanesChange event (after debounce)
     this._emitEvent("clipPlanesChange", {
       clipPlanes: this.copyClipPlanes(this._clipPlanes),
-    });
+    })
   }
 
   /**
@@ -852,7 +847,7 @@ export class OMEZarrNVImage extends NVImage {
       (aligned.chunkAlignedEnd[0] - aligned.chunkAlignedStart[0]) *
       (aligned.chunkAlignedEnd[1] - aligned.chunkAlignedStart[1]) *
       (aligned.chunkAlignedEnd[2] - aligned.chunkAlignedStart[2])
-    );
+    )
   }
 
   /**
@@ -862,7 +857,7 @@ export class OMEZarrNVImage extends NVImage {
     return planes.map((p) => ({
       point: [...p.point] as [number, number, number],
       normal: [...p.normal] as [number, number, number],
-    }));
+    }))
   }
 
   /**
@@ -874,7 +869,7 @@ export class OMEZarrNVImage extends NVImage {
     return this._clipPlanes.map((p) => ({
       point: [...p.point] as [number, number, number],
       normal: [...p.normal] as [number, number, number],
-    }));
+    }))
   }
 
   /**
@@ -887,7 +882,7 @@ export class OMEZarrNVImage extends NVImage {
     if (this._clipPlanes.length >= MAX_CLIP_PLANES) {
       throw new Error(
         `Cannot add clip plane: already at maximum of ${MAX_CLIP_PLANES} planes`,
-      );
+      )
     }
 
     const newPlanes = [
@@ -896,9 +891,9 @@ export class OMEZarrNVImage extends NVImage {
         point: [...plane.point] as [number, number, number],
         normal: [...plane.normal] as [number, number, number],
       },
-    ];
+    ]
 
-    this.setClipPlanes(newPlanes);
+    this.setClipPlanes(newPlanes)
   }
 
   /**
@@ -911,39 +906,39 @@ export class OMEZarrNVImage extends NVImage {
     if (index < 0 || index >= this._clipPlanes.length) {
       throw new Error(
         `Invalid clip plane index: ${index} (have ${this._clipPlanes.length} planes)`,
-      );
+      )
     }
 
-    const newPlanes = this._clipPlanes.filter((_, i) => i !== index);
-    this.setClipPlanes(newPlanes);
+    const newPlanes = this._clipPlanes.filter((_, i) => i !== index)
+    this.setClipPlanes(newPlanes)
   }
 
   /**
    * Clear all clip planes (show full volume).
    */
   clearClipPlanes(): void {
-    this.setClipPlanes([]);
+    this.setClipPlanes([])
   }
 
   /**
    * Get the current resolution level index.
    */
   getCurrentLevelIndex(): number {
-    return this.currentLevelIndex;
+    return this.currentLevelIndex
   }
 
   /**
    * Get the target resolution level index.
    */
   getTargetLevelIndex(): number {
-    return this.targetLevelIndex;
+    return this.targetLevelIndex
   }
 
   /**
    * Get the number of resolution levels.
    */
   getNumLevels(): number {
-    return this.multiscales.images.length;
+    return this.multiscales.images.length
   }
 
   /**
@@ -953,7 +948,7 @@ export class OMEZarrNVImage extends NVImage {
     return {
       min: [...this._volumeBounds.min],
       max: [...this._volumeBounds.max],
-    };
+    }
   }
 
   // ============================================================
@@ -970,27 +965,27 @@ export class OMEZarrNVImage extends NVImage {
    * @param enabled - Whether to enable viewport-aware resolution
    */
   setViewportAware(enabled: boolean): void {
-    if (enabled === this._viewportAwareEnabled) return;
-    this._viewportAwareEnabled = enabled;
+    if (enabled === this._viewportAwareEnabled) return
+    this._viewportAwareEnabled = enabled
 
     if (enabled) {
       // Hook viewport events on all attached NVs
       for (const [nv, state] of this._attachedNiivues) {
-        this._hookViewportEvents(nv, state);
+        this._hookViewportEvents(nv, state)
       }
       // Compute initial viewport bounds and trigger refetch
-      this._recomputeViewportBounds();
+      this._recomputeViewportBounds()
     } else {
       // Unhook viewport events on all attached NVs
       for (const [nv, state] of this._attachedNiivues) {
-        this._unhookViewportEvents(nv, state);
+        this._unhookViewportEvents(nv, state)
       }
       // Clear viewport bounds and refetch at full volume
-      this._viewportBounds3D = null;
-      this._viewportBoundsPerSlab.clear();
+      this._viewportBounds3D = null
+      this._viewportBoundsPerSlab.clear()
       if (this._viewportUpdateTimeout) {
-        clearTimeout(this._viewportUpdateTimeout);
-        this._viewportUpdateTimeout = null;
+        clearTimeout(this._viewportUpdateTimeout)
+        this._viewportUpdateTimeout = null
       }
       // Recompute resolution without viewport constraint
       const selection = selectResolution(
@@ -998,13 +993,13 @@ export class OMEZarrNVImage extends NVImage {
         this.maxPixels,
         this._clipPlanes,
         this._volumeBounds,
-      );
+      )
       if (selection.levelIndex !== this.targetLevelIndex) {
-        this.targetLevelIndex = selection.levelIndex;
-        this.populateVolume(true, "viewportChanged");
+        this.targetLevelIndex = selection.levelIndex
+        this.populateVolume(true, "viewportChanged")
       }
       // Also reload slabs without viewport constraint
-      this._reloadAllSlabs("viewportChanged");
+      this._reloadAllSlabs("viewportChanged")
     }
   }
 
@@ -1012,7 +1007,7 @@ export class OMEZarrNVImage extends NVImage {
    * Get whether viewport-aware resolution selection is enabled.
    */
   get viewportAware(): boolean {
-    return this._viewportAwareEnabled;
+    return this._viewportAwareEnabled
   }
 
   /**
@@ -1020,11 +1015,11 @@ export class OMEZarrNVImage extends NVImage {
    * or no viewport constraint is active).
    */
   getViewportBounds(): VolumeBounds | null {
-    if (!this._viewportBounds3D) return null;
+    if (!this._viewportBounds3D) return null
     return {
       min: [...this._viewportBounds3D.min] as [number, number, number],
       max: [...this._viewportBounds3D.max] as [number, number, number],
-    };
+    }
   }
 
   /**
@@ -1032,34 +1027,34 @@ export class OMEZarrNVImage extends NVImage {
    */
   private _hookViewportEvents(nv: Niivue, state: AttachedNiivueState): void {
     // Save and chain onMouseUp (fires at end of any mouse/touch interaction)
-    state.previousOnMouseUp = nv.onMouseUp as (data: unknown) => void;
+    state.previousOnMouseUp = nv.onMouseUp as (data: unknown) => void
     nv.onMouseUp = (data: unknown) => {
       if (state.previousOnMouseUp) {
-        state.previousOnMouseUp(data);
+        state.previousOnMouseUp(data)
       }
-      this._handleViewportInteractionEnd(nv);
-    };
+      this._handleViewportInteractionEnd(nv)
+    }
 
     // Save and chain onZoom3DChange (fires when volScaleMultiplier changes)
-    state.previousOnZoom3DChange = nv.onZoom3DChange;
+    state.previousOnZoom3DChange = nv.onZoom3DChange
     nv.onZoom3DChange = (zoom: number) => {
       if (state.previousOnZoom3DChange) {
-        state.previousOnZoom3DChange(zoom);
+        state.previousOnZoom3DChange(zoom)
       }
-      this._handleViewportInteractionEnd(nv);
-    };
+      this._handleViewportInteractionEnd(nv)
+    }
 
     // Add wheel event listener on the canvas for scroll-wheel zoom detection
-    const controller = new AbortController();
-    state.viewportAbortController = controller;
+    const controller = new AbortController()
+    state.viewportAbortController = controller
     if (nv.canvas) {
       nv.canvas.addEventListener(
         "wheel",
         () => {
-          this._handleViewportInteractionEnd(nv);
+          this._handleViewportInteractionEnd(nv)
         },
         { signal: controller.signal, passive: true },
-      );
+      )
     }
   }
 
@@ -1069,20 +1064,20 @@ export class OMEZarrNVImage extends NVImage {
   private _unhookViewportEvents(nv: Niivue, state: AttachedNiivueState): void {
     // Restore onMouseUp
     if (state.previousOnMouseUp !== undefined) {
-      nv.onMouseUp = state.previousOnMouseUp as typeof nv.onMouseUp;
-      state.previousOnMouseUp = undefined;
+      nv.onMouseUp = state.previousOnMouseUp as typeof nv.onMouseUp
+      state.previousOnMouseUp = undefined
     }
 
     // Restore onZoom3DChange
     if (state.previousOnZoom3DChange !== undefined) {
-      nv.onZoom3DChange = state.previousOnZoom3DChange;
-      state.previousOnZoom3DChange = undefined;
+      nv.onZoom3DChange = state.previousOnZoom3DChange
+      state.previousOnZoom3DChange = undefined
     }
 
     // Remove wheel event listener
     if (state.viewportAbortController) {
-      state.viewportAbortController.abort();
-      state.viewportAbortController = undefined;
+      state.viewportAbortController.abort()
+      state.viewportAbortController = undefined
     }
   }
 
@@ -1102,72 +1097,71 @@ export class OMEZarrNVImage extends NVImage {
    * (depth < 1.8), the event passes through to NiiVue's native handler.
    */
   private _hookZoomOverride(nv: Niivue, state: AttachedNiivueState): void {
-    if (!nv.canvas) return;
+    if (!nv.canvas) return
 
-    const controller = new AbortController();
-    state.zoomOverrideAbortController = controller;
+    const controller = new AbortController()
+    state.zoomOverrideAbortController = controller
 
     nv.canvas.addEventListener(
       "wheel",
       (e: WheelEvent) => {
         // Convert mouse position to DPR-scaled canvas coordinates
-        const rect = nv.canvas!.getBoundingClientRect();
-        const dpr = nv.uiData.dpr ?? 1;
-        const x = (e.clientX - rect.left) * dpr;
-        const y = (e.clientY - rect.top) * dpr;
+        const canvas = nv.canvas
+        if (!canvas) return
+        const rect = canvas.getBoundingClientRect()
+        const dpr = nv.uiData.dpr ?? 1
+        const x = (e.clientX - rect.left) * dpr
+        const y = (e.clientY - rect.top) * dpr
 
         // Only intercept if mouse is over a 3D render tile
-        if (nv.inRenderTile(x, y) < 0) return;
+        if (nv.inRenderTile(x, y) < 0) return
 
         // Preserve clip-plane scrolling: when a clip plane is active
         // (depth < 1.8), let NiiVue handle the event normally.
-        const clips = nv.scene.clipPlaneDepthAziElevs;
-        const activeIdx = nv.uiData.activeClipPlaneIndex;
+        const clips = nv.scene.clipPlaneDepthAziElevs
+        const activeIdx = nv.uiData.activeClipPlaneIndex
         if (
           nv.volumes.length > 0 &&
           clips?.[activeIdx]?.[0] !== undefined &&
           clips[activeIdx][0] < 1.8
         ) {
-          return;
+          return
         }
 
         // Prevent NiiVue's clamped handler from running.
         // NiiVue registers its listener in the bubbling phase, so our
         // capturing-phase listener fires first. stopImmediatePropagation
         // ensures no other same-element listeners fire either.
-        e.stopImmediatePropagation();
-        e.preventDefault();
+        e.stopImmediatePropagation()
+        e.preventDefault()
 
         // Compute new zoom (same ×1.1 / ×0.9 per step as NiiVue).
         // Round to 2 decimal places (NiiVue rounds to 1, which causes the
         // zoom to get stuck at small values like 0.5 where ×0.9 rounds back).
-        const zoomDir = e.deltaY < 0 ? 1 : -1;
-        const current = nv.scene.volScaleMultiplier;
-        let newZoom = current * (zoomDir > 0 ? 1.1 : 0.9);
-        newZoom = Math.round(newZoom * 100) / 100;
-        newZoom = Math.max(this._min3DZoom, Math.min(this._max3DZoom, newZoom));
+        const zoomDir = e.deltaY < 0 ? 1 : -1
+        const current = nv.scene.volScaleMultiplier
+        let newZoom = current * (zoomDir > 0 ? 1.1 : 0.9)
+        newZoom = Math.round(newZoom * 100) / 100
+        newZoom = Math.max(this._min3DZoom, Math.min(this._max3DZoom, newZoom))
 
-        nv.setScale(newZoom);
+        nv.setScale(newZoom)
 
         // Notify the viewport-aware system. Since we stopped propagation,
         // the passive wheel listener from _hookViewportEvents won't fire,
         // so we call this directly.
-        this._handleViewportInteractionEnd(nv);
+        this._handleViewportInteractionEnd(nv)
       },
       { capture: true, signal: controller.signal },
-    );
+    )
   }
 
   /**
    * Remove the 3D zoom override wheel listener from a NV instance.
    */
-  private _unhookZoomOverride(
-    _nv: Niivue,
-    state: AttachedNiivueState,
-  ): void {
+  private _unhookZoomOverride(_nv: Niivue, state: AttachedNiivueState): void {
     if (state.zoomOverrideAbortController) {
-      state.zoomOverrideAbortController.abort();
-      state.zoomOverrideAbortController = undefined;
+      state.zoomOverrideAbortController.abort()
+      state.zoomOverrideAbortController = undefined
     }
   }
 
@@ -1176,16 +1170,16 @@ export class OMEZarrNVImage extends NVImage {
    * zoom change, scroll wheel). Debounces the viewport bounds recomputation.
    */
   private _handleViewportInteractionEnd(_nv: Niivue): void {
-    if (!this._viewportAwareEnabled) return;
+    if (!this._viewportAwareEnabled) return
 
     // Debounce: clear any pending update and schedule a new one
     if (this._viewportUpdateTimeout) {
-      clearTimeout(this._viewportUpdateTimeout);
+      clearTimeout(this._viewportUpdateTimeout)
     }
     this._viewportUpdateTimeout = setTimeout(() => {
-      this._viewportUpdateTimeout = null;
-      this._recomputeViewportBounds();
-    }, OMEZarrNVImage.VIEWPORT_DEBOUNCE_MS);
+      this._viewportUpdateTimeout = null
+      this._recomputeViewportBounds()
+    }, OMEZarrNVImage.VIEWPORT_DEBOUNCE_MS)
   }
 
   /**
@@ -1193,13 +1187,13 @@ export class OMEZarrNVImage extends NVImage {
    * resolution reselection if bounds changed significantly.
    */
   private _recomputeViewportBounds(): void {
-    if (!this._viewportAwareEnabled) return;
+    if (!this._viewportAwareEnabled) return
 
     // Compute separate viewport bounds for:
     // - 3D volume: union of all RENDER/MULTIPLANAR NV viewport bounds
     // - Per-slab: each slab type gets its own NV's viewport bounds
-    let new3DBounds: VolumeBounds | null = null;
-    const newSlabBounds = new Map<SlabSliceType, VolumeBounds | null>();
+    let new3DBounds: VolumeBounds | null = null
+    const newSlabBounds = new Map<SlabSliceType, VolumeBounds | null>()
 
     for (const [nv, state] of this._attachedNiivues) {
       if (
@@ -1207,9 +1201,9 @@ export class OMEZarrNVImage extends NVImage {
         state.currentSliceType === SLICE_TYPE.MULTIPLANAR
       ) {
         // 3D render mode: compute from orthographic frustum
-        const nvBounds = computeViewportBounds3D(nv, this._volumeBounds);
+        const nvBounds = computeViewportBounds3D(nv, this._volumeBounds)
         if (!new3DBounds) {
-          new3DBounds = nvBounds;
+          new3DBounds = nvBounds
         } else {
           // Union of multiple 3D views
           new3DBounds = {
@@ -1223,48 +1217,49 @@ export class OMEZarrNVImage extends NVImage {
               Math.max(new3DBounds.max[1], nvBounds.max[1]),
               Math.max(new3DBounds.max[2], nvBounds.max[2]),
             ],
-          };
+          }
         }
       } else if (this._isSlabSliceType(state.currentSliceType)) {
         // 2D slice mode: compute from pan/zoom
-        const sliceType = state.currentSliceType as SlabSliceType;
-        const slabState = this._slabBuffers.get(sliceType);
-        const normScale = slabState?.normalizationScale ?? 1.0;
+        const sliceType = state.currentSliceType as SlabSliceType
+        const slabState = this._slabBuffers.get(sliceType)
+        const normScale = slabState?.normalizationScale ?? 1.0
         const nvBounds = computeViewportBounds2D(
           nv,
           state.currentSliceType,
           this._volumeBounds,
           normScale,
-        );
-        newSlabBounds.set(sliceType, nvBounds);
+        )
+        newSlabBounds.set(sliceType, nvBounds)
       }
     }
 
     // Check if 3D bounds changed
-    const bounds3DChanged = !new3DBounds !== !this._viewportBounds3D ||
+    const bounds3DChanged =
+      !new3DBounds !== !this._viewportBounds3D ||
       (new3DBounds &&
         this._viewportBounds3D &&
-        !boundsApproxEqual(new3DBounds, this._viewportBounds3D));
+        !boundsApproxEqual(new3DBounds, this._viewportBounds3D))
 
     // Check if any slab bounds changed
-    let slabBoundsChanged = false;
+    let slabBoundsChanged = false
     for (const [sliceType, newBounds] of newSlabBounds) {
-      const oldBounds = this._viewportBoundsPerSlab.get(sliceType) ?? null;
+      const oldBounds = this._viewportBoundsPerSlab.get(sliceType) ?? null
       if (
         !newBounds !== !oldBounds ||
         (newBounds && oldBounds && !boundsApproxEqual(newBounds, oldBounds))
       ) {
-        slabBoundsChanged = true;
-        break;
+        slabBoundsChanged = true
+        break
       }
     }
 
-    if (!bounds3DChanged && !slabBoundsChanged) return;
+    if (!bounds3DChanged && !slabBoundsChanged) return
 
     // Update stored bounds
-    this._viewportBounds3D = new3DBounds;
+    this._viewportBounds3D = new3DBounds
     for (const [sliceType, bounds] of newSlabBounds) {
-      this._viewportBoundsPerSlab.set(sliceType, bounds);
+      this._viewportBoundsPerSlab.set(sliceType, bounds)
     }
 
     // Recompute 3D resolution selection with new 3D viewport bounds
@@ -1275,17 +1270,17 @@ export class OMEZarrNVImage extends NVImage {
         this._clipPlanes,
         this._volumeBounds,
         this._viewportBounds3D ?? undefined,
-      );
+      )
 
       if (selection.levelIndex !== this.targetLevelIndex) {
-        this.targetLevelIndex = selection.levelIndex;
-        this.populateVolume(true, "viewportChanged");
+        this.targetLevelIndex = selection.levelIndex
+        this.populateVolume(true, "viewportChanged")
       }
     }
 
     // Reload slabs with new per-slab viewport bounds
     if (slabBoundsChanged) {
-      this._reloadAllSlabs("viewportChanged");
+      this._reloadAllSlabs("viewportChanged")
     }
   }
 
@@ -1300,28 +1295,28 @@ export class OMEZarrNVImage extends NVImage {
           this._isSlabSliceType(attachedState.currentSliceType) &&
           (attachedState.currentSliceType as SlabSliceType) === sliceType
         ) {
-          const crosshairPos = nv.scene?.crosshairPos;
-          if (!crosshairPos || nv.volumes.length === 0) continue;
+          const crosshairPos = nv.scene?.crosshairPos
+          if (!crosshairPos || nv.volumes.length === 0) continue
           try {
             const mm = nv.frac2mm([
               crosshairPos[0],
               crosshairPos[1],
               crosshairPos[2],
-            ]);
+            ])
             // frac2mm returns values in the slab NVImage's mm space, which
             // is normalized (world * normalizationScale). Convert back to
             // physical world coordinates for worldToPixel and other callers.
-            const ns = slabState.normalizationScale;
+            const ns = slabState.normalizationScale
             const worldCoord: [number, number, number] = [
               mm[0] / ns,
               mm[1] / ns,
               mm[2] / ns,
-            ];
-            this._debouncedSlabReload(sliceType, worldCoord, trigger);
+            ]
+            this._debouncedSlabReload(sliceType, worldCoord, trigger)
           } catch {
             // Can't convert coordinates yet
           }
-          break;
+          break
         }
       }
     }
@@ -1331,14 +1326,14 @@ export class OMEZarrNVImage extends NVImage {
    * Get whether the image is currently loading.
    */
   getIsLoading(): boolean {
-    return this.isLoading;
+    return this.isLoading
   }
 
   /**
    * Wait for all pending fetches to complete.
    */
   async waitForIdle(): Promise<void> {
-    await this.coalescer.onIdle();
+    await this.coalescer.onIdle()
   }
 
   // ============================================================
@@ -1360,7 +1355,7 @@ export class OMEZarrNVImage extends NVImage {
    * @returns OMERO metadata or undefined if not yet loaded/computed
    */
   getOmero(): Omero | undefined {
-    return this._omero;
+    return this._omero
   }
 
   /**
@@ -1372,7 +1367,7 @@ export class OMEZarrNVImage extends NVImage {
    * @returns Current active channel index (0-based)
    */
   getActiveChannel(): number {
-    return this._activeChannel;
+    return this._activeChannel
   }
 
   /**
@@ -1401,17 +1396,17 @@ export class OMEZarrNVImage extends NVImage {
    */
   setActiveChannel(index: number): void {
     if (!this._omero?.channels?.length) {
-      throw new Error("No OMERO metadata available");
+      throw new Error("No OMERO metadata available")
     }
     if (index < 0 || index >= this._omero.channels.length) {
       throw new Error(
         `Invalid channel index: ${index} (have ${this._omero.channels.length} channels)`,
-      );
+      )
     }
-    this._activeChannel = index;
-    this.applyOmeroToHeader();
-    this.niivue.updateGLVolume();
-    this._widenCalRangeIfNeeded(this);
+    this._activeChannel = index
+    this.applyOmeroToHeader()
+    this.niivue.updateGLVolume()
+    this._widenCalRangeIfNeeded(this)
   }
 
   // ============================================================
@@ -1432,15 +1427,15 @@ export class OMEZarrNVImage extends NVImage {
    * @param nv - The Niivue instance to attach
    */
   attachNiivue(nv: Niivue): void {
-    if (this._attachedNiivues.has(nv)) return; // Already attached
+    if (this._attachedNiivues.has(nv)) return // Already attached
 
     const state: AttachedNiivueState = {
       nv,
       currentSliceType: this._detectSliceType(nv),
       previousOnLocationChange: nv.onLocationChange,
-      previousOnOptsChange: nv
-        .onOptsChange as AttachedNiivueState["previousOnOptsChange"],
-    };
+      previousOnOptsChange:
+        nv.onOptsChange as AttachedNiivueState["previousOnOptsChange"],
+    }
 
     // Hook onOptsChange to detect slice type changes
     nv.onOptsChange = (
@@ -1450,36 +1445,36 @@ export class OMEZarrNVImage extends NVImage {
     ) => {
       // Chain to previous handler
       if (state.previousOnOptsChange) {
-        state.previousOnOptsChange(propertyName, newValue, oldValue);
+        state.previousOnOptsChange(propertyName, newValue, oldValue)
       }
       if (propertyName === "sliceType") {
-        this._handleSliceTypeChange(nv, newValue as SLICE_TYPE);
+        this._handleSliceTypeChange(nv, newValue as SLICE_TYPE)
       }
-    };
+    }
 
     // Hook onLocationChange to detect slice position changes
     nv.onLocationChange = (location: unknown) => {
       // Chain to previous handler
       if (state.previousOnLocationChange) {
-        state.previousOnLocationChange(location);
+        state.previousOnLocationChange(location)
       }
-      this._handleLocationChange(nv, location);
-    };
+      this._handleLocationChange(nv, location)
+    }
 
-    this._attachedNiivues.set(nv, state);
+    this._attachedNiivues.set(nv, state)
 
     // Hook viewport events if viewport-aware mode is already enabled
     if (this._viewportAwareEnabled) {
-      this._hookViewportEvents(nv, state);
+      this._hookViewportEvents(nv, state)
     }
 
     // Override NiiVue's hardcoded 3D zoom clamp (always-on)
-    this._hookZoomOverride(nv, state);
+    this._hookZoomOverride(nv, state)
 
     // If the NV is already in a 2D slice mode, set up the slab buffer
-    const sliceType = state.currentSliceType;
+    const sliceType = state.currentSliceType
     if (this._isSlabSliceType(sliceType)) {
-      this._ensureSlabForNiivue(nv, sliceType as SlabSliceType);
+      this._ensureSlabForNiivue(nv, sliceType as SlabSliceType)
     }
   }
 
@@ -1489,21 +1484,21 @@ export class OMEZarrNVImage extends NVImage {
    * @param nv - The Niivue instance to detach
    */
   detachNiivue(nv: Niivue): void {
-    const state = this._attachedNiivues.get(nv);
-    if (!state) return;
+    const state = this._attachedNiivues.get(nv)
+    if (!state) return
 
     // Unhook viewport events if active
-    this._unhookViewportEvents(nv, state);
+    this._unhookViewportEvents(nv, state)
 
     // Unhook 3D zoom override
-    this._unhookZoomOverride(nv, state);
+    this._unhookZoomOverride(nv, state)
 
     // Restore original callbacks
-    nv.onLocationChange = state.previousOnLocationChange ?? (() => {});
-    nv.onOptsChange =
-      (state.previousOnOptsChange ?? (() => {})) as typeof nv.onOptsChange;
+    nv.onLocationChange = state.previousOnLocationChange ?? (() => {})
+    nv.onOptsChange = (state.previousOnOptsChange ??
+      (() => {})) as typeof nv.onOptsChange
 
-    this._attachedNiivues.delete(nv);
+    this._attachedNiivues.delete(nv)
   }
 
   /**
@@ -1514,14 +1509,14 @@ export class OMEZarrNVImage extends NVImage {
    * @returns The slab buffer state, or undefined if not yet created
    */
   getSlabBufferState(sliceType: SlabSliceType): SlabBufferState | undefined {
-    return this._slabBuffers.get(sliceType);
+    return this._slabBuffers.get(sliceType)
   }
 
   /**
    * Get all attached Niivue instances.
    */
   getAttachedNiivues(): Niivue[] {
-    return Array.from(this._attachedNiivues.keys());
+    return Array.from(this._attachedNiivues.keys())
   }
 
   // ---- Private slab helpers ----
@@ -1533,12 +1528,12 @@ export class OMEZarrNVImage extends NVImage {
     // Access the opts.sliceType via the scene data or fall back to checking
     // the convenience properties. Niivue stores the current sliceType in opts.
     // We can read it from the NV instance's internal opts.
-    const opts = (nv as any).opts;
+    const opts = (nv as any).opts
     if (opts && typeof opts.sliceType === "number") {
-      return opts.sliceType as SLICE_TYPE;
+      return opts.sliceType as SLICE_TYPE
     }
     // Default to Render
-    return SLICE_TYPE.RENDER;
+    return SLICE_TYPE.RENDER
   }
 
   /**
@@ -1549,7 +1544,7 @@ export class OMEZarrNVImage extends NVImage {
       st === SLICE_TYPE.AXIAL ||
       st === SLICE_TYPE.CORONAL ||
       st === SLICE_TYPE.SAGITTAL
-    );
+    )
   }
 
   /**
@@ -1562,11 +1557,11 @@ export class OMEZarrNVImage extends NVImage {
   private _getOrthogonalAxis(sliceType: SlabSliceType): OrthogonalAxis {
     switch (sliceType) {
       case SLICE_TYPE.AXIAL:
-        return 0; // Z
+        return 0 // Z
       case SLICE_TYPE.CORONAL:
-        return 1; // Y
+        return 1 // Y
       case SLICE_TYPE.SAGITTAL:
-        return 2; // X
+        return 2 // X
     }
   }
 
@@ -1574,20 +1569,20 @@ export class OMEZarrNVImage extends NVImage {
    * Handle a slice type change on an attached Niivue instance.
    */
   private _handleSliceTypeChange(nv: Niivue, newSliceType: SLICE_TYPE): void {
-    const state = this._attachedNiivues.get(nv);
-    if (!state) return;
+    const state = this._attachedNiivues.get(nv)
+    if (!state) return
 
-    const oldSliceType = state.currentSliceType;
-    state.currentSliceType = newSliceType;
+    const oldSliceType = state.currentSliceType
+    state.currentSliceType = newSliceType
 
-    if (oldSliceType === newSliceType) return;
+    if (oldSliceType === newSliceType) return
 
     if (this._isSlabSliceType(newSliceType)) {
       // Switching TO a 2D slab mode: swap in the slab NVImage
-      this._ensureSlabForNiivue(nv, newSliceType as SlabSliceType);
+      this._ensureSlabForNiivue(nv, newSliceType as SlabSliceType)
     } else {
       // Switching TO Render or Multiplanar mode: swap back to the main (3D) NVImage
-      this._swapVolumeInNiivue(nv, this as NVImage);
+      this._swapVolumeInNiivue(nv, this as NVImage)
     }
   }
 
@@ -1596,44 +1591,40 @@ export class OMEZarrNVImage extends NVImage {
    * Checks if the current slice position has moved outside the loaded slab.
    */
   private _handleLocationChange(nv: Niivue, _location: unknown): void {
-    const state = this._attachedNiivues.get(nv);
-    if (!state || !this._isSlabSliceType(state.currentSliceType)) return;
+    const state = this._attachedNiivues.get(nv)
+    if (!state || !this._isSlabSliceType(state.currentSliceType)) return
 
-    const sliceType = state.currentSliceType as SlabSliceType;
-    const slabState = this._slabBuffers.get(sliceType);
-    if (!slabState || slabState.slabStart < 0) return; // Slab not yet created or loaded
+    const sliceType = state.currentSliceType as SlabSliceType
+    const slabState = this._slabBuffers.get(sliceType)
+    if (!slabState || slabState.slabStart < 0) return // Slab not yet created or loaded
 
     // Get the current crosshair position in fractional coordinates [0..1]
-    const crosshairPos = nv.scene?.crosshairPos;
-    if (!crosshairPos || nv.volumes.length === 0) return;
+    const crosshairPos = nv.scene?.crosshairPos
+    if (!crosshairPos || nv.volumes.length === 0) return
 
-    let worldCoord: [number, number, number];
+    let worldCoord: [number, number, number]
     try {
-      const mm = nv.frac2mm([
-        crosshairPos[0],
-        crosshairPos[1],
-        crosshairPos[2],
-      ]);
+      const mm = nv.frac2mm([crosshairPos[0], crosshairPos[1], crosshairPos[2]])
       // frac2mm returns values in the slab NVImage's normalized mm space
       // (world * normalizationScale). Convert back to physical world.
-      const ns = slabState.normalizationScale;
-      worldCoord = [mm[0] / ns, mm[1] / ns, mm[2] / ns];
+      const ns = slabState.normalizationScale
+      worldCoord = [mm[0] / ns, mm[1] / ns, mm[2] / ns]
     } catch {
-      return; // Can't convert coordinates yet
+      return // Can't convert coordinates yet
     }
 
     // Convert world to pixel at the slab's current resolution level
-    const ngffImage = this.multiscales.images[slabState.levelIndex];
-    const pixelCoord = worldToPixel(worldCoord, ngffImage);
+    const ngffImage = this.multiscales.images[slabState.levelIndex]
+    const pixelCoord = worldToPixel(worldCoord, ngffImage)
 
     // Check the orthogonal axis
-    const orthAxis = this._getOrthogonalAxis(sliceType);
-    const pixelPos = pixelCoord[orthAxis];
+    const orthAxis = this._getOrthogonalAxis(sliceType)
+    const pixelPos = pixelCoord[orthAxis]
 
     // Is the pixel position outside the currently loaded slab?
     if (pixelPos < slabState.slabStart || pixelPos >= slabState.slabEnd) {
       // Need to reload the slab for the new position
-      this._debouncedSlabReload(sliceType, worldCoord);
+      this._debouncedSlabReload(sliceType, worldCoord)
     }
   }
 
@@ -1646,15 +1637,15 @@ export class OMEZarrNVImage extends NVImage {
     trigger: PopulateTrigger = "sliceChanged",
   ): void {
     // Clear any pending reload for this slice type
-    const existing = this._slabReloadTimeouts.get(sliceType);
-    if (existing) clearTimeout(existing);
+    const existing = this._slabReloadTimeouts.get(sliceType)
+    if (existing) clearTimeout(existing)
 
     const timeout = setTimeout(() => {
-      this._slabReloadTimeouts.delete(sliceType);
-      void this._loadSlab(sliceType, worldCoord, trigger);
-    }, 100); // Short debounce for slice scrolling (faster than clip plane debounce)
+      this._slabReloadTimeouts.delete(sliceType)
+      void this._loadSlab(sliceType, worldCoord, trigger)
+    }, 100) // Short debounce for slice scrolling (faster than clip plane debounce)
 
-    this._slabReloadTimeouts.set(sliceType, timeout);
+    this._slabReloadTimeouts.set(sliceType, timeout)
   }
 
   /**
@@ -1662,36 +1653,36 @@ export class OMEZarrNVImage extends NVImage {
    * If needed, creates the slab buffer and triggers an initial load.
    */
   private _ensureSlabForNiivue(nv: Niivue, sliceType: SlabSliceType): void {
-    let slabState = this._slabBuffers.get(sliceType);
+    let slabState = this._slabBuffers.get(sliceType)
 
     if (!slabState) {
       // Lazily create the slab buffer
-      slabState = this._createSlabBuffer(sliceType);
-      this._slabBuffers.set(sliceType, slabState);
+      slabState = this._createSlabBuffer(sliceType)
+      this._slabBuffers.set(sliceType, slabState)
     }
 
     // Swap the slab's NVImage into this NV instance
-    this._swapVolumeInNiivue(nv, slabState.nvImage);
+    this._swapVolumeInNiivue(nv, slabState.nvImage)
 
     // Get the current crosshair position and load the slab.
     // Use the volume bounds center as a fallback if crosshair isn't available yet.
-    let worldCoord: [number, number, number];
+    let worldCoord: [number, number, number]
     try {
-      const crosshairPos = nv.scene?.crosshairPos;
+      const crosshairPos = nv.scene?.crosshairPos
       if (crosshairPos && nv.volumes.length > 0) {
         const mm = nv.frac2mm([
           crosshairPos[0],
           crosshairPos[1],
           crosshairPos[2],
-        ]);
-        worldCoord = [mm[0], mm[1], mm[2]];
+        ])
+        worldCoord = [mm[0], mm[1], mm[2]]
       } else {
         // Fall back to volume center
         worldCoord = [
           (this._volumeBounds.min[0] + this._volumeBounds.max[0]) / 2,
           (this._volumeBounds.min[1] + this._volumeBounds.max[1]) / 2,
           (this._volumeBounds.min[2] + this._volumeBounds.max[2]) / 2,
-        ];
+        ]
       }
     } catch {
       // Fall back to volume center if frac2mm fails
@@ -1699,52 +1690,52 @@ export class OMEZarrNVImage extends NVImage {
         (this._volumeBounds.min[0] + this._volumeBounds.max[0]) / 2,
         (this._volumeBounds.min[1] + this._volumeBounds.max[1]) / 2,
         (this._volumeBounds.min[2] + this._volumeBounds.max[2]) / 2,
-      ];
+      ]
     }
 
     void this._loadSlab(sliceType, worldCoord, "initial").catch((err) => {
       console.error(
         `[fidnii] Error loading slab for ${SLICE_TYPE[sliceType]}:`,
         err,
-      );
-    });
+      )
+    })
   }
 
   /**
    * Create a new slab buffer state for a slice type.
    */
   private _createSlabBuffer(sliceType: SlabSliceType): SlabBufferState {
-    const bufferManager = new BufferManager(this.maxPixels, this.dtype);
-    const nvImage = new NVImage();
+    const bufferManager = new BufferManager(this.maxPixels, this.dtype)
+    const nvImage = new NVImage()
 
     // Initialize with placeholder NIfTI header (same as main image setup)
-    const hdr = new NIFTI1();
-    nvImage.hdr = hdr;
-    hdr.dims = [3, 1, 1, 1, 1, 1, 1, 1];
-    hdr.datatypeCode = getNiftiDataType(this.dtype);
-    hdr.numBitsPerVoxel = getBytesPerPixel(this.dtype) * 8;
-    hdr.pixDims = [1, 1, 1, 1, 0, 0, 0, 0];
+    const hdr = new NIFTI1()
+    nvImage.hdr = hdr
+    hdr.dims = [3, 1, 1, 1, 1, 1, 1, 1]
+    hdr.datatypeCode = getNiftiDataType(this.dtype)
+    hdr.numBitsPerVoxel = getBytesPerPixel(this.dtype) * 8
+    hdr.pixDims = [1, 1, 1, 1, 0, 0, 0, 0]
     hdr.affine = [
       [1, 0, 0, 0],
       [0, 1, 0, 0],
       [0, 0, 1, 0],
       [0, 0, 0, 1],
-    ];
-    hdr.sform_code = 1;
-    nvImage.name = `${this.name ?? "OME-Zarr"} [${SLICE_TYPE[sliceType]}]`;
-    nvImage.img = bufferManager.resize([1, 1, 1]) as any;
-    (nvImage as any)._colormap = "gray";
-    (nvImage as any)._opacity = 1.0;
+    ]
+    hdr.sform_code = 1
+    nvImage.name = `${this.name ?? "OME-Zarr"} [${SLICE_TYPE[sliceType]}]`
+    nvImage.img = bufferManager.resize([1, 1, 1]) as any
+    ;(nvImage as any)._colormap = "gray"
+    ;(nvImage as any)._opacity = 1.0
 
     // Select initial resolution using 2D pixel budget
-    const orthAxis = this._getOrthogonalAxis(sliceType);
+    const orthAxis = this._getOrthogonalAxis(sliceType)
     const selection = select2DResolution(
       this.multiscales,
       this.maxPixels,
       this._clipPlanes,
       this._volumeBounds,
       orthAxis,
-    );
+    )
 
     return {
       nvImage,
@@ -1757,7 +1748,7 @@ export class OMEZarrNVImage extends NVImage {
       dtype: this.dtype,
       normalizationScale: 1.0, // Updated on first slab load
       pendingReload: null,
-    };
+    }
   }
 
   /**
@@ -1766,16 +1757,16 @@ export class OMEZarrNVImage extends NVImage {
    */
   private _swapVolumeInNiivue(nv: Niivue, targetVolume: NVImage): void {
     // Find and remove any volumes we own (the main image or any slab NVImages)
-    const ourVolumes = new Set<NVImage>([this as NVImage]);
+    const ourVolumes = new Set<NVImage>([this as NVImage])
     for (const slab of this._slabBuffers.values()) {
-      ourVolumes.add(slab.nvImage);
+      ourVolumes.add(slab.nvImage)
     }
 
     // Remove our volumes from nv (in reverse to avoid index shifting issues)
-    const toRemove = nv.volumes.filter((v) => ourVolumes.has(v));
+    const toRemove = nv.volumes.filter((v) => ourVolumes.has(v))
     for (const vol of toRemove) {
       try {
-        nv.removeVolume(vol);
+        nv.removeVolume(vol)
       } catch {
         // Ignore errors during removal (volume may not be fully initialized)
       }
@@ -1784,16 +1775,16 @@ export class OMEZarrNVImage extends NVImage {
     // Add the target volume if not already present
     if (!nv.volumes.includes(targetVolume)) {
       try {
-        nv.addVolume(targetVolume);
+        nv.addVolume(targetVolume)
       } catch (err) {
-        console.warn("[fidnii] Failed to add volume to NV:", err);
-        return;
+        console.warn("[fidnii] Failed to add volume to NV:", err)
+        return
       }
     }
 
     try {
-      nv.updateGLVolume();
-      this._widenCalRangeIfNeeded(targetVolume);
+      nv.updateGLVolume()
+      this._widenCalRangeIfNeeded(targetVolume)
     } catch {
       // May fail if GL context not ready
     }
@@ -1818,38 +1809,38 @@ export class OMEZarrNVImage extends NVImage {
     worldCoord: [number, number, number],
     trigger: PopulateTrigger,
   ): Promise<void> {
-    const slabState = this._slabBuffers.get(sliceType);
-    if (!slabState) return;
+    const slabState = this._slabBuffers.get(sliceType)
+    if (!slabState) return
 
     if (slabState.isLoading) {
       // Queue this request (latest wins) — auto-drained when current load finishes
-      slabState.pendingReload = { worldCoord, trigger };
+      slabState.pendingReload = { worldCoord, trigger }
       // Abort the in-flight progressive load so it finishes faster
-      const controller = this._slabAbortControllers.get(sliceType);
-      if (controller) controller.abort();
-      return;
+      const controller = this._slabAbortControllers.get(sliceType)
+      if (controller) controller.abort()
+      return
     }
 
-    slabState.isLoading = true;
-    slabState.pendingReload = null;
+    slabState.isLoading = true
+    slabState.pendingReload = null
 
     // Create an AbortController for this load so it can be cancelled if a
     // newer request arrives while we're still fetching intermediate levels.
-    const abortController = new AbortController();
-    this._slabAbortControllers.set(sliceType, abortController);
+    const abortController = new AbortController()
+    this._slabAbortControllers.set(sliceType, abortController)
 
     this._emitEvent("slabLoadingStart", {
       sliceType,
       levelIndex: slabState.targetLevelIndex,
       trigger,
-    });
+    })
 
     try {
-      const orthAxis = this._getOrthogonalAxis(sliceType);
+      const orthAxis = this._getOrthogonalAxis(sliceType)
 
       // Recompute target resolution using 2D pixel budget with per-slab viewport bounds
-      const slabViewportBounds = this._viewportBoundsPerSlab.get(sliceType) ??
-        undefined;
+      const slabViewportBounds =
+        this._viewportBoundsPerSlab.get(sliceType) ?? undefined
       const selection = select2DResolution(
         this.multiscales,
         this.maxPixels,
@@ -1857,21 +1848,21 @@ export class OMEZarrNVImage extends NVImage {
         this._volumeBounds,
         orthAxis,
         slabViewportBounds,
-      );
-      slabState.targetLevelIndex = selection.levelIndex;
+      )
+      slabState.targetLevelIndex = selection.levelIndex
 
-      const numLevels = this.multiscales.images.length;
-      const lowestLevel = numLevels - 1;
+      const numLevels = this.multiscales.images.length
+      const lowestLevel = numLevels - 1
 
       // For viewport-triggered reloads, skip progressive rendering — jump
       // straight to the target level. The user already sees the previous
       // resolution, so a single update is smoother than replaying the full
       // progressive sequence which causes visual flicker during rapid
       // zoom/pan interactions.
-      const skipProgressive = trigger === "viewportChanged";
+      const skipProgressive = trigger === "viewportChanged"
       const startLevel = skipProgressive
         ? slabState.targetLevelIndex
-        : lowestLevel;
+        : lowestLevel
 
       for (
         let level = startLevel;
@@ -1879,7 +1870,7 @@ export class OMEZarrNVImage extends NVImage {
         level--
       ) {
         // Check if this load has been superseded by a newer request
-        if (abortController.signal.aborted) break;
+        if (abortController.signal.aborted) break
 
         await this._loadSlabAtLevel(
           slabState,
@@ -1888,23 +1879,23 @@ export class OMEZarrNVImage extends NVImage {
           level,
           orthAxis,
           trigger,
-        );
+        )
 
         // Check again after the async fetch completes
-        if (abortController.signal.aborted) break;
+        if (abortController.signal.aborted) break
 
-        slabState.levelIndex = level;
+        slabState.levelIndex = level
 
         // Yield to the browser so the current level is actually painted before
         // we start fetching the next (higher-resolution) level.
         if (level > slabState.targetLevelIndex) {
           await new Promise<void>((resolve) =>
-            requestAnimationFrame(() => resolve())
-          );
+            requestAnimationFrame(() => resolve()),
+          )
         }
       }
     } finally {
-      slabState.isLoading = false;
+      slabState.isLoading = false
 
       this._emitEvent("slabLoadingComplete", {
         sliceType,
@@ -1912,11 +1903,11 @@ export class OMEZarrNVImage extends NVImage {
         slabStart: slabState.slabStart,
         slabEnd: slabState.slabEnd,
         trigger,
-      });
+      })
 
       // Auto-drain: if a newer request was queued while we were loading,
       // start it now (like populateVolume's handlePendingPopulateRequest).
-      this._handlePendingSlabReload(sliceType);
+      this._handlePendingSlabReload(sliceType)
     }
   }
 
@@ -1925,13 +1916,13 @@ export class OMEZarrNVImage extends NVImage {
    * Mirrors populateVolume's handlePendingPopulateRequest pattern.
    */
   private _handlePendingSlabReload(sliceType: SlabSliceType): void {
-    const slabState = this._slabBuffers.get(sliceType);
-    if (!slabState) return;
+    const slabState = this._slabBuffers.get(sliceType)
+    if (!slabState) return
 
-    const pending = slabState.pendingReload;
+    const pending = slabState.pendingReload
     if (pending) {
-      slabState.pendingReload = null;
-      void this._loadSlab(sliceType, pending.worldCoord, pending.trigger);
+      slabState.pendingReload = null
+      void this._loadSlab(sliceType, pending.worldCoord, pending.trigger)
     }
   }
 
@@ -1946,21 +1937,18 @@ export class OMEZarrNVImage extends NVImage {
     orthAxis: OrthogonalAxis,
     _trigger: PopulateTrigger,
   ): Promise<void> {
-    const ngffImage = this.multiscales.images[levelIndex];
-    const chunkShape = getChunkShape(ngffImage);
-    const volumeShape = getVolumeShape(ngffImage);
+    const ngffImage = this.multiscales.images[levelIndex]
+    const chunkShape = getChunkShape(ngffImage)
+    const volumeShape = getVolumeShape(ngffImage)
 
     // Convert world position to pixel position at this level
-    const pixelCoord = worldToPixel(worldCoord, ngffImage);
-    const orthPixel = pixelCoord[orthAxis];
+    const pixelCoord = worldToPixel(worldCoord, ngffImage)
+    const orthPixel = pixelCoord[orthAxis]
 
     // Find the chunk-aligned slab in the orthogonal axis
-    const chunkSize = chunkShape[orthAxis];
-    const slabStart = Math.max(
-      0,
-      Math.floor(orthPixel / chunkSize) * chunkSize,
-    );
-    const slabEnd = Math.min(slabStart + chunkSize, volumeShape[orthAxis]);
+    const chunkSize = chunkShape[orthAxis]
+    const slabStart = Math.max(0, Math.floor(orthPixel / chunkSize) * chunkSize)
+    const slabEnd = Math.min(slabStart + chunkSize, volumeShape[orthAxis])
 
     // Get the full in-plane region (respecting clip planes only).
     // Viewport bounds are intentionally NOT passed here — they are used only
@@ -1971,46 +1959,46 @@ export class OMEZarrNVImage extends NVImage {
       this._clipPlanes,
       this._volumeBounds,
       ngffImage,
-    );
-    const alignedRegion = alignToChunks(pixelRegion, ngffImage);
+    )
+    const alignedRegion = alignToChunks(pixelRegion, ngffImage)
 
     // Override the orthogonal axis with our slab extent
     const fetchStart: [number, number, number] = [
       alignedRegion.chunkAlignedStart[0],
       alignedRegion.chunkAlignedStart[1],
       alignedRegion.chunkAlignedStart[2],
-    ];
+    ]
     const fetchEnd: [number, number, number] = [
       alignedRegion.chunkAlignedEnd[0],
       alignedRegion.chunkAlignedEnd[1],
       alignedRegion.chunkAlignedEnd[2],
-    ];
-    fetchStart[orthAxis] = slabStart;
-    fetchEnd[orthAxis] = slabEnd;
+    ]
+    fetchStart[orthAxis] = slabStart
+    fetchEnd[orthAxis] = slabEnd
 
     const fetchedShape: [number, number, number] = [
       fetchEnd[0] - fetchStart[0],
       fetchEnd[1] - fetchStart[1],
       fetchEnd[2] - fetchStart[2],
-    ];
+    ]
 
     // Fetch the data
-    const fetchRegion: PixelRegion = { start: fetchStart, end: fetchEnd };
+    const fetchRegion: PixelRegion = { start: fetchStart, end: fetchEnd }
     const result = await this.coalescer.fetchRegion(
       ngffImage,
       levelIndex,
       fetchRegion,
       `slab-${SLICE_TYPE[sliceType]}-${levelIndex}`,
-    );
+    )
 
     // Resize buffer and copy data
-    const targetData = slabState.bufferManager.resize(fetchedShape);
-    targetData.set(result.data);
-    slabState.nvImage.img = slabState.bufferManager.getTypedArray() as any;
+    const targetData = slabState.bufferManager.resize(fetchedShape)
+    targetData.set(result.data)
+    slabState.nvImage.img = slabState.bufferManager.getTypedArray() as any
 
     // Update slab position tracking
-    slabState.slabStart = slabStart;
-    slabState.slabEnd = slabEnd;
+    slabState.slabStart = slabStart
+    slabState.slabEnd = slabEnd
 
     // Update the NVImage header for this slab region
     this._updateSlabHeader(
@@ -2019,31 +2007,31 @@ export class OMEZarrNVImage extends NVImage {
       fetchStart,
       fetchEnd,
       fetchedShape,
-    );
+    )
 
     // Apply OMERO metadata if available
     if (this._omero) {
-      this._applyOmeroToSlabHeader(slabState.nvImage);
+      this._applyOmeroToSlabHeader(slabState.nvImage)
     }
 
     // Reset global_min so NiiVue recalculates intensity ranges
-    slabState.nvImage.global_min = undefined;
+    slabState.nvImage.global_min = undefined
 
     // Compute the normalization scale used by _updateSlabHeader so we can
     // convert the world coordinate into the slab's normalized mm space.
-    const scale = ngffImage.scale;
+    const scale = ngffImage.scale
     const maxVoxelSize = Math.max(
       scale.x ?? scale.X ?? 1,
       scale.y ?? scale.Y ?? 1,
       scale.z ?? scale.Z ?? 1,
-    );
-    const normalizationScale = maxVoxelSize > 0 ? 1.0 / maxVoxelSize : 1.0;
-    slabState.normalizationScale = normalizationScale;
+    )
+    const normalizationScale = maxVoxelSize > 0 ? 1.0 / maxVoxelSize : 1.0
+    slabState.normalizationScale = normalizationScale
     const normalizedMM: [number, number, number] = [
       worldCoord[0] * normalizationScale,
       worldCoord[1] * normalizationScale,
       worldCoord[2] * normalizationScale,
-    ];
+    ]
 
     // Refresh all NV instances using this slice type
     for (const [attachedNv, attachedState] of this._attachedNiivues) {
@@ -2053,24 +2041,24 @@ export class OMEZarrNVImage extends NVImage {
       ) {
         // Ensure this NV has the slab volume
         if (attachedNv.volumes.includes(slabState.nvImage)) {
-          attachedNv.updateGLVolume();
+          attachedNv.updateGLVolume()
 
           // Widen the display window if actual data exceeds the OMERO range.
           // Must run after updateGLVolume() which computes global_min/global_max.
-          this._widenCalRangeIfNeeded(slabState.nvImage);
+          this._widenCalRangeIfNeeded(slabState.nvImage)
 
           // Position the crosshair at the correct slice within this slab.
           // Without this, NiiVue defaults to the center of the slab which
           // corresponds to different physical positions at each resolution level.
-          const frac = attachedNv.mm2frac(normalizedMM);
+          const frac = attachedNv.mm2frac(normalizedMM)
           // Clamp to [0,1] — when viewport-aware mode constrains the slab to
           // a subregion, the crosshair world position may be outside the slab's
           // spatial extent, causing mm2frac to return out-of-range values.
-          frac[0] = Math.max(0, Math.min(1, frac[0]));
-          frac[1] = Math.max(0, Math.min(1, frac[1]));
-          frac[2] = Math.max(0, Math.min(1, frac[2]));
-          attachedNv.scene.crosshairPos = frac;
-          attachedNv.drawScene();
+          frac[0] = Math.max(0, Math.min(1, frac[0]))
+          frac[1] = Math.max(0, Math.min(1, frac[1]))
+          frac[2] = Math.max(0, Math.min(1, frac[2]))
+          attachedNv.scene.crosshairPos = frac
+          attachedNv.drawScene()
         }
       }
     }
@@ -2086,25 +2074,25 @@ export class OMEZarrNVImage extends NVImage {
     _fetchEnd: [number, number, number],
     fetchedShape: [number, number, number],
   ): void {
-    if (!nvImage.hdr) return;
+    if (!nvImage.hdr) return
 
-    const scale = ngffImage.scale;
-    const sx = scale.x ?? scale.X ?? 1;
-    const sy = scale.y ?? scale.Y ?? 1;
-    const sz = scale.z ?? scale.Z ?? 1;
+    const scale = ngffImage.scale
+    const sx = scale.x ?? scale.X ?? 1
+    const sy = scale.y ?? scale.Y ?? 1
+    const sz = scale.z ?? scale.Z ?? 1
 
     // NiiVue's 2D slice renderer has precision issues when voxel sizes are
     // very small (e.g. OME-Zarr datasets in meters where pixDims ~ 2e-5).
     // Since the slab NVImage is rendered independently in its own Niivue
     // instance, we can normalize coordinates to ~1mm voxels without affecting
     // the 3D render. We scale uniformly to preserve aspect ratio.
-    const maxVoxelSize = Math.max(sx, sy, sz);
-    const normalizationScale = maxVoxelSize > 0 ? 1.0 / maxVoxelSize : 1.0;
-    const nsx = sx * normalizationScale;
-    const nsy = sy * normalizationScale;
-    const nsz = sz * normalizationScale;
+    const maxVoxelSize = Math.max(sx, sy, sz)
+    const normalizationScale = maxVoxelSize > 0 ? 1.0 / maxVoxelSize : 1.0
+    const nsx = sx * normalizationScale
+    const nsy = sy * normalizationScale
+    const nsz = sz * normalizationScale
 
-    nvImage.hdr.pixDims = [1, nsx, nsy, nsz, 0, 0, 0, 0];
+    nvImage.hdr.pixDims = [1, nsx, nsy, nsz, 0, 0, 0, 0]
     // NIfTI dims: [ndim, x, y, z, t, ...]
     nvImage.hdr.dims = [
       3,
@@ -2115,51 +2103,51 @@ export class OMEZarrNVImage extends NVImage {
       1,
       1,
       1,
-    ];
+    ]
 
     // Build affine with offset for region start, then normalize
-    const affine = createAffineFromNgffImage(ngffImage);
+    const affine = createAffineFromNgffImage(ngffImage)
     // Adjust translation for region offset (fetchStart is [z, y, x])
-    affine[12] += fetchStart[2] * sx; // x offset
-    affine[13] += fetchStart[1] * sy; // y offset
-    affine[14] += fetchStart[0] * sz; // z offset
+    affine[12] += fetchStart[2] * sx // x offset
+    affine[13] += fetchStart[1] * sy // y offset
+    affine[14] += fetchStart[0] * sz // z offset
 
     // Apply normalization to the entire affine (scale columns + translation)
     for (let i = 0; i < 15; i++) {
-      affine[i] *= normalizationScale;
+      affine[i] *= normalizationScale
     }
     // affine[15] stays 1
 
-    const srows = affineToNiftiSrows(affine);
+    const srows = affineToNiftiSrows(affine)
     nvImage.hdr.affine = [
       srows.srow_x,
       srows.srow_y,
       srows.srow_z,
       [0, 0, 0, 1],
-    ];
+    ]
 
-    nvImage.hdr.sform_code = 1;
-    nvImage.calculateRAS();
+    nvImage.hdr.sform_code = 1
+    nvImage.calculateRAS()
   }
 
   /**
    * Apply OMERO metadata to a slab NVImage header.
    */
   private _applyOmeroToSlabHeader(nvImage: NVImage): void {
-    if (!nvImage.hdr || !this._omero?.channels?.length) return;
+    if (!nvImage.hdr || !this._omero?.channels?.length) return
 
     const channelIndex = Math.min(
       this._activeChannel,
       this._omero.channels.length - 1,
-    );
-    const channel = this._omero.channels[channelIndex];
-    const window = channel?.window;
+    )
+    const channel = this._omero.channels[channelIndex]
+    const window = channel?.window
 
     if (window) {
-      const calMin = window.start ?? window.min;
-      const calMax = window.end ?? window.max;
-      if (calMin !== undefined) nvImage.hdr.cal_min = calMin;
-      if (calMax !== undefined) nvImage.hdr.cal_max = calMax;
+      const calMin = window.start ?? window.min
+      const calMax = window.end ?? window.max
+      if (calMin !== undefined) nvImage.hdr.cal_min = calMin
+      if (calMax !== undefined) nvImage.hdr.cal_max = calMax
     }
   }
 
@@ -2184,31 +2172,25 @@ export class OMEZarrNVImage extends NVImage {
    */
   private _widenCalRangeIfNeeded(nvImage: NVImage): boolean {
     if (nvImage.global_min === undefined || nvImage.global_max === undefined) {
-      return false;
+      return false
     }
 
-    let widened = false;
+    let widened = false
 
     // Widen the runtime display range (cal_min/cal_max) to encompass the
     // actual data extremes (global_min/global_max) at this resolution level.
     // The hdr values are NOT modified so the original OMERO window is
     // preserved for next reload.
-    if (
-      nvImage.cal_max !== undefined &&
-      nvImage.global_max > nvImage.cal_max
-    ) {
-      nvImage.cal_max = nvImage.global_max;
-      widened = true;
+    if (nvImage.cal_max !== undefined && nvImage.global_max > nvImage.cal_max) {
+      nvImage.cal_max = nvImage.global_max
+      widened = true
     }
-    if (
-      nvImage.cal_min !== undefined &&
-      nvImage.global_min < nvImage.cal_min
-    ) {
-      nvImage.cal_min = nvImage.global_min;
-      widened = true;
+    if (nvImage.cal_min !== undefined && nvImage.global_min < nvImage.cal_min) {
+      nvImage.cal_min = nvImage.global_min
+      widened = true
     }
 
-    return widened;
+    return widened
   }
 
   // ============================================================
@@ -2242,11 +2224,7 @@ export class OMEZarrNVImage extends NVImage {
     listener: OMEZarrNVImageEventListener<K>,
     options?: OMEZarrNVImageEventListenerOptions,
   ): void {
-    this._eventTarget.addEventListener(
-      type,
-      listener as EventListener,
-      options,
-    );
+    this._eventTarget.addEventListener(type, listener as EventListener, options)
   }
 
   /**
@@ -2265,7 +2243,7 @@ export class OMEZarrNVImage extends NVImage {
       type,
       listener as EventListener,
       options,
-    );
+    )
   }
 
   /**
@@ -2277,10 +2255,10 @@ export class OMEZarrNVImage extends NVImage {
     detail: OMEZarrNVImageEventMap[K],
   ): void {
     try {
-      const event = new OMEZarrNVImageEvent(eventName, detail);
-      this._eventTarget.dispatchEvent(event);
+      const event = new OMEZarrNVImageEvent(eventName, detail)
+      this._eventTarget.dispatchEvent(event)
     } catch (error) {
-      console.error(`Error in ${eventName} event listener:`, error);
+      console.error(`Error in ${eventName} event listener:`, error)
     }
   }
 }

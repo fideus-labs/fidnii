@@ -2,93 +2,95 @@
  * Image to OME-Zarr conversion pipeline
  */
 
-import { readImage } from "@itk-wasm/image-io";
 // Import from browser subpath for browser-compatible functions
 import {
   createMetadataWithVersion,
-  Methods,
+  type Methods,
   type Multiscales,
   Multiscales as MultiscalesClass,
   type NgffImage,
   NgffImage as NgffImageClass,
   toMultiscales,
-} from "@fideus-labs/ngff-zarr";
-export { Methods } from "@fideus-labs/ngff-zarr";
+} from "@fideus-labs/ngff-zarr"
+import { readImage } from "@itk-wasm/image-io"
+
+export { Methods } from "@fideus-labs/ngff-zarr"
+
 // Import browser-specific toNgffZarrOzx which returns Uint8Array
 // (Node version takes a path and returns void)
 import {
   computeOmeroFromNgffImage,
   toNgffZarrOzx,
-} from "@fideus-labs/ngff-zarr/browser";
+  zarrSet,
+} from "@fideus-labs/ngff-zarr/browser"
 // itkImageToNgffImage is not in browser exports, but the main module has browser condition
 // that should resolve to browser-mod.js - we need to use the main import for this
-import type { Image } from "itk-wasm";
-import * as zarr from "zarrita";
-import { zarrSet } from "@fideus-labs/ngff-zarr/browser";
+import type { Image } from "itk-wasm"
+import * as zarr from "zarrita"
 
 // Inline itkImageToNgffImage since it's not exported from browser module
 // This is a simplified version based on ngff-zarr's implementation
 async function itkImageToNgffImage(itkImage: Image): Promise<NgffImageClass> {
-  const shape = [...itkImage.size].reverse();
-  const spacing = itkImage.spacing;
-  const origin = itkImage.origin;
-  const ndim = shape.length;
-  const imageType = itkImage.imageType;
-  const isVector = imageType.components > 1;
+  const shape = [...itkImage.size].reverse()
+  const spacing = itkImage.spacing
+  const origin = itkImage.origin
+  const ndim = shape.length
+  const imageType = itkImage.imageType
+  const isVector = imageType.components > 1
 
   // Determine dimension names
-  let dims: string[];
+  let dims: string[]
   if (ndim === 3 && isVector) {
-    dims = ["y", "x", "c"];
+    dims = ["y", "x", "c"]
   } else if (ndim < 4) {
-    dims = ["z", "y", "x"].slice(-ndim);
+    dims = ["z", "y", "x"].slice(-ndim)
   } else if (ndim < 5) {
-    dims = isVector ? ["z", "y", "x", "c"] : ["t", "z", "y", "x"];
+    dims = isVector ? ["z", "y", "x", "c"] : ["t", "z", "y", "x"]
   } else if (ndim < 6) {
-    dims = ["t", "z", "y", "x", "c"];
+    dims = ["t", "z", "y", "x", "c"]
   } else {
-    throw new Error(`Unsupported number of dimensions: ${ndim}`);
+    throw new Error(`Unsupported number of dimensions: ${ndim}`)
   }
 
   // Identify spatial dimensions
-  const allSpatialDims = new Set(["x", "y", "z"]);
-  const spatialDims = dims.filter((dim) => allSpatialDims.has(dim));
+  const allSpatialDims = new Set(["x", "y", "z"])
+  const spatialDims = dims.filter((dim) => allSpatialDims.has(dim))
 
   // Create scale from spacing (reversed to match array order)
-  const scale: Record<string, number> = {};
-  const reversedSpacing = spacing.slice().reverse();
+  const scale: Record<string, number> = {}
+  const reversedSpacing = spacing.slice().reverse()
   spatialDims.forEach((dim, idx) => {
-    scale[dim] = reversedSpacing[idx];
-  });
+    scale[dim] = reversedSpacing[idx]
+  })
 
   // Create translation from origin (reversed to match array order)
-  const translation: Record<string, number> = {};
-  const reversedOrigin = origin.slice().reverse();
+  const translation: Record<string, number> = {}
+  const reversedOrigin = origin.slice().reverse()
   spatialDims.forEach((dim, idx) => {
-    translation[dim] = reversedOrigin[idx];
-  });
+    translation[dim] = reversedOrigin[idx]
+  })
 
   // Create Zarr array from ITK-Wasm data
-  const store = new Map<string, Uint8Array>();
-  const root = zarr.root(store);
-  const chunkShape = shape.map((s: number) => Math.min(s, 256));
+  const store = new Map<string, Uint8Array>()
+  const root = zarr.root(store)
+  const chunkShape = shape.map((s: number) => Math.min(s, 256))
 
   const zarrArray = await zarr.create(root.resolve("image"), {
     shape: shape,
     chunk_shape: chunkShape,
     data_type: imageType.componentType as zarr.DataType,
     fill_value: 0,
-  });
+  })
 
   // Write the ITK-Wasm data to the zarr array
-  const selection = new Array(ndim).fill(null);
-  const strides = getStrides(shape);
+  const selection = new Array(ndim).fill(null)
+  const strides = getStrides(shape)
   const dataChunk = {
     data: itkImage.data as zarr.TypedArray<typeof imageType.componentType>,
     shape: shape,
     stride: strides,
-  };
-  await zarrSet(zarrArray, selection, dataChunk);
+  }
+  await zarrSet(zarrArray, selection, dataChunk)
 
   return new NgffImageClass({
     data: zarrArray,
@@ -99,36 +101,36 @@ async function itkImageToNgffImage(itkImage: Image): Promise<NgffImageClass> {
     axesUnits: undefined,
     axesOrientations: undefined,
     computedCallbacks: undefined,
-  });
+  })
 }
 
 // Calculate C-order strides for a shape
 function getStrides(shape: number[]): number[] {
-  const strides = new Array(shape.length);
-  strides[shape.length - 1] = 1;
+  const strides = new Array(shape.length)
+  strides[shape.length - 1] = 1
   for (let i = shape.length - 2; i >= 0; i--) {
-    strides[i] = strides[i + 1] * shape[i + 1];
+    strides[i] = strides[i + 1] * shape[i + 1]
   }
-  return strides;
+  return strides
 }
 
 export interface ConversionOptions {
-  chunkSize: number;
-  method: Methods;
+  chunkSize: number
+  method: Methods
 }
 
 export interface ConversionProgress {
-  stage: "reading" | "converting" | "downsampling" | "packaging" | "done";
-  percent: number;
-  message: string;
+  stage: "reading" | "converting" | "downsampling" | "packaging" | "done"
+  percent: number
+  message: string
 }
 
-export type ProgressCallback = (progress: ConversionProgress) => void;
+export type ProgressCallback = (progress: ConversionProgress) => void
 
 export interface ConversionResult {
-  multiscales: Multiscales;
-  ozxData: Uint8Array;
-  filename: string;
+  multiscales: Multiscales
+  ozxData: Uint8Array
+  filename: string
 }
 
 /**
@@ -144,46 +146,46 @@ export async function convertToOmeZarr(
     percent: number,
     message: string,
   ) => {
-    onProgress?.({ stage, percent, message });
-  };
+    onProgress?.({ stage, percent, message })
+  }
 
   // Stage 1: Read the image file
-  report("reading", 0, "Reading image file...");
-  const arrayBuffer = await file.arrayBuffer();
+  report("reading", 0, "Reading image file...")
+  const arrayBuffer = await file.arrayBuffer()
 
-  report("reading", 10, "Decoding image...");
+  report("reading", 10, "Decoding image...")
   const { image: itkImage, webWorker } = await readImage({
     data: new Uint8Array(arrayBuffer),
     path: file.name,
-  });
-  webWorker?.terminate();
+  })
+  webWorker?.terminate()
 
   // Stage 2: Convert to NgffImage
-  report("converting", 20, "Converting to NGFF format...");
-  const ngffImage = await itkImageToNgffImage(itkImage);
+  report("converting", 20, "Converting to NGFF format...")
+  const ngffImage = await itkImageToNgffImage(itkImage)
 
   // Stage 2b: Compute OMERO visualization metadata from highest resolution image
-  report("converting", 25, "Computing OMERO visualization metadata...");
-  const omero = await computeOmeroFromNgffImage(ngffImage);
+  report("converting", 25, "Computing OMERO visualization metadata...")
+  const omero = await computeOmeroFromNgffImage(ngffImage)
 
   // Stage 3: Generate multiscales (downsampling)
-  report("downsampling", 30, "Generating multiscale pyramid...");
+  report("downsampling", 30, "Generating multiscale pyramid...")
 
   const multiscalesV04 = await toMultiscales(ngffImage, {
     method: options.method,
     chunks: options.chunkSize,
-  });
+  })
 
   report(
     "downsampling",
     70,
     `Created ${multiscalesV04.images.length} scale levels`,
-  );
+  )
 
   // toMultiscales creates version 0.4 by default, but toNgffZarrOzx requires 0.5
   // Create a new Multiscales with version 0.5 metadata and OMERO visualization data
-  const metadataV05 = createMetadataWithVersion(multiscalesV04.metadata, "0.5");
-  metadataV05.omero = omero; // Attach computed OMERO visualization metadata
+  const metadataV05 = createMetadataWithVersion(multiscalesV04.metadata, "0.5")
+  metadataV05.omero = omero // Attach computed OMERO visualization metadata
 
   const multiscales = new MultiscalesClass({
     images: multiscalesV04.images,
@@ -191,25 +193,25 @@ export async function convertToOmeZarr(
     scaleFactors: multiscalesV04.scaleFactors,
     method: multiscalesV04.method,
     chunks: multiscalesV04.chunks,
-  });
+  })
 
   // Stage 4: Package as OZX
-  report("packaging", 80, "Creating OZX file...");
+  report("packaging", 80, "Creating OZX file...")
   const ozxData = await toNgffZarrOzx(multiscales, {
     enabledRfcs: [4], // Enable RFC-4 for anatomical orientation
-  });
+  })
 
   // Generate output filename
-  const baseName = file.name.replace(/\.[^/.]+$/, "");
-  const filename = `${baseName}.ome.zarr.ozx`;
+  const baseName = file.name.replace(/\.[^/.]+$/, "")
+  const filename = `${baseName}.ome.zarr.ozx`
 
-  report("done", 100, "Conversion complete!");
+  report("done", 100, "Conversion complete!")
 
   return {
     multiscales,
     ozxData,
     filename,
-  };
+  }
 }
 
 /**
@@ -218,51 +220,51 @@ export async function convertToOmeZarr(
 export function downloadFile(data: Uint8Array, filename: string): void {
   const blob = new Blob([data as unknown as BlobPart], {
     type: "application/zip",
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
 }
 
 /**
  * Format file size for display
  */
 export function formatFileSize(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+  if (bytes === 0) return "0 B"
+  const k = 1024
+  const sizes = ["B", "KB", "MB", "GB"]
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return `${parseFloat((bytes / k ** i).toFixed(2))} ${sizes[i]}`
 }
 
 /**
  * Get multiscales info for display in the table
  */
 export interface ScaleInfo {
-  level: number;
-  path: string;
-  shape: string;
-  chunks: string;
-  size: string;
+  level: number
+  path: string
+  shape: string
+  chunks: string
+  size: string
 }
 
 export function getMultiscalesInfo(multiscales: Multiscales): ScaleInfo[] {
   return multiscales.images.map((image: NgffImage, index: number) => {
-    const dataset = multiscales.metadata.datasets[index];
-    const shape = image.data.shape;
-    const chunks = image.data.chunks ||
-      shape.map((s: number) => Math.min(s, 64));
+    const dataset = multiscales.metadata.datasets[index]
+    const shape = image.data.shape
+    const chunks =
+      image.data.chunks || shape.map((s: number) => Math.min(s, 64))
 
     // Estimate size: shape product * bytes per element
-    const dtype = image.data.dtype;
-    const bytesPerElement = getBytesPerElement(dtype);
-    const totalElements = shape.reduce((a: number, b: number) => a * b, 1);
-    const estimatedSize = totalElements * bytesPerElement;
+    const dtype = image.data.dtype
+    const bytesPerElement = getBytesPerElement(dtype)
+    const totalElements = shape.reduce((a: number, b: number) => a * b, 1)
+    const estimatedSize = totalElements * bytesPerElement
 
     return {
       level: index,
@@ -270,8 +272,8 @@ export function getMultiscalesInfo(multiscales: Multiscales): ScaleInfo[] {
       shape: shape.join(" x "),
       chunks: chunks.join(" x "),
       size: formatFileSize(estimatedSize),
-    };
-  });
+    }
+  })
 }
 
 function getBytesPerElement(dtype: string): number {
@@ -286,6 +288,6 @@ function getBytesPerElement(dtype: string): number {
     uint64: 8,
     float32: 4,
     float64: 8,
-  };
-  return dtypeBytes[dtype] || 4;
+  }
+  return dtypeBytes[dtype] || 4
 }

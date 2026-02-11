@@ -177,14 +177,18 @@ docs/
 
 ### 📝 Commands
 
-| Command                               | Description                       |
-| ------------------------------------- | --------------------------------- |
-| `pnpm build`                          | Build all packages                |
-| `pnpm dev`                            | Start dev servers for all packages|
-| `pnpm test`                           | Run all Playwright tests          |
+| Command                               | Description                          |
+| ------------------------------------- | ------------------------------------ |
+| `pnpm build`                          | Build all packages                   |
+| `pnpm dev`                            | Start dev servers for all packages   |
+| `pnpm test`                           | Run all Playwright tests             |
+| `pnpm check`                          | Lint, format, and organize imports   |
+| `pnpm lint`                           | Lint only (Biome)                    |
+| `pnpm format`                         | Auto-format all files (Biome)        |
 | `pnpm exec tsc --noEmit`             | Type-check the library (from `fidnii/`) |
-| `pnpm exec playwright test`          | Run tests in current package      |
-| `pnpm exec playwright test -g "name"`| Run a single test by name         |
+| `pnpm exec playwright test`          | Run tests in current package         |
+| `pnpm exec playwright test -g "name"`| Run a single test by name            |
+| `pnpm changeset`                      | Add a changeset for release tracking |
 
 The dev server runs on port 5173 with COOP/COEP headers for SharedArrayBuffer
 support. Tests run against Chromium with WebGL via EGL and have a 120-second
@@ -196,13 +200,20 @@ Contributions are welcome! Here's what you need to know:
 
 ### 🎨 Code Style
 
-Code is formatted with **deno fmt**. The key rules:
+Code is linted and formatted with [Biome](https://biomejs.dev/).
+The key rules:
 
 - 2-space indentation, no tabs
 - **No semicolons**
 - Double quotes
 - 80-column line width
 - Trailing commas in multi-line constructs
+- Imports auto-sorted (external packages first, then relative)
+
+```bash
+pnpm check          # Lint + format check (same as CI)
+pnpm format         # Auto-format all files
+```
 
 ### 📏 Conventions
 
@@ -212,14 +223,51 @@ Code is formatted with **deno fmt**. The key rules:
 - Every source file starts with SPDX license headers
 - All exported APIs must have JSDoc documentation
 
-### ✅ Type Checking
+### ✅ Quality Gates
 
-TypeScript strict mode is the quality gate. There is no separate linter.
+TypeScript strict mode and Biome are both enforced in CI.
 
 ```bash
-# Run from fidnii/
-pnpm exec tsc --noEmit
+pnpm check                    # Biome lint + format + imports
+pnpm exec tsc --noEmit        # Type-check (from fidnii/)
 ```
+
+### 📝 Conventional Commits
+
+Commit messages must follow the
+[Conventional Commits](https://www.conventionalcommits.org/) specification.
+This is enforced by [commitlint](https://commitlint.js.org/) via a
+`commit-msg` git hook.
+
+```
+feat: add viewport-aware resolution selection
+fix: correct affine transform for non-square voxels
+docs: update clip planes API reference
+```
+
+### 📦 Changesets
+
+This project uses [Changesets](https://github.com/changesets/changesets) for
+release management. When your PR includes a user-facing change to
+`@fideus-labs/fidnii`, add a changeset:
+
+```bash
+pnpm changeset
+```
+
+Follow the prompts to select the package and describe the change. A markdown
+file is created in `.changeset/` and committed with your PR. When changesets
+are merged to `main`, a "Version Packages" PR is automatically opened with
+the accumulated changelog and version bump.
+
+### 🪝 Git Hooks
+
+[Lefthook](https://github.com/evilmartians/lefthook) manages git hooks
+(installed automatically via `pnpm install`):
+
+- **pre-commit** -- runs `biome check --write` on staged files and re-stages
+  fixes
+- **commit-msg** -- validates the commit message with commitlint
 
 ### 🧪 Testing
 

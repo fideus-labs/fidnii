@@ -6,4 +6,5 @@ ignoredBuiltDependencies:
   - esbuild
 
 onlyBuiltDependencies:
+  - lefthook
   - protobufjs

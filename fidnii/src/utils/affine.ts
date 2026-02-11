@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: Copyright (c) Fideus Labs LLC
 // SPDX-License-Identifier: MIT
 
-import { mat4 } from "gl-matrix";
-import type { NgffImage } from "@fideus-labs/ngff-zarr";
+import type { NgffImage } from "@fideus-labs/ngff-zarr"
+import { mat4 } from "gl-matrix"
 
 /**
  * Create a 4x4 affine transformation matrix from OME-Zarr scale and translation.
@@ -27,50 +27,50 @@ export function createAffineFromOMEZarr(
   scale: Record<string, number>,
   translation: Record<string, number>,
 ): mat4 {
-  const affine = mat4.create();
+  const affine = mat4.create()
 
   // NIfTI expects the matrix in a specific orientation
   // The affine maps from (i, j, k) voxel indices to (x, y, z) world coordinates
   // For OME-Zarr with [z, y, x] ordering, we need to handle the axis mapping
 
   // Extract scale and translation for each axis
-  const sx = scale.x ?? scale.X ?? 1;
-  const sy = scale.y ?? scale.Y ?? 1;
-  const sz = scale.z ?? scale.Z ?? 1;
+  const sx = scale.x ?? scale.X ?? 1
+  const sy = scale.y ?? scale.Y ?? 1
+  const sz = scale.z ?? scale.Z ?? 1
 
-  const tx = translation.x ?? translation.X ?? 0;
-  const ty = translation.y ?? translation.Y ?? 0;
-  const tz = translation.z ?? translation.Z ?? 0;
+  const tx = translation.x ?? translation.X ?? 0
+  const ty = translation.y ?? translation.Y ?? 0
+  const tz = translation.z ?? translation.Z ?? 0
 
   // Build affine matrix
   // NIfTI convention: first index (i) -> x, second (j) -> y, third (k) -> z
   // OME-Zarr stores data as [z, y, x], so we need to account for this
 
   // Column 0: x direction (from third array index in [z,y,x])
-  affine[0] = sx;
-  affine[1] = 0;
-  affine[2] = 0;
-  affine[3] = 0;
+  affine[0] = sx
+  affine[1] = 0
+  affine[2] = 0
+  affine[3] = 0
 
   // Column 1: y direction (from second array index in [z,y,x])
-  affine[4] = 0;
-  affine[5] = sy;
-  affine[6] = 0;
-  affine[7] = 0;
+  affine[4] = 0
+  affine[5] = sy
+  affine[6] = 0
+  affine[7] = 0
 
   // Column 2: z direction (from first array index in [z,y,x])
-  affine[8] = 0;
-  affine[9] = 0;
-  affine[10] = sz;
-  affine[11] = 0;
+  affine[8] = 0
+  affine[9] = 0
+  affine[10] = sz
+  affine[11] = 0
 
   // Column 3: translation
-  affine[12] = tx;
-  affine[13] = ty;
-  affine[14] = tz;
-  affine[15] = 1;
+  affine[12] = tx
+  affine[13] = ty
+  affine[14] = tz
+  affine[15] = 1
 
-  return affine;
+  return affine
 }
 
 /**
@@ -80,7 +80,7 @@ export function createAffineFromOMEZarr(
  * @returns 4x4 affine matrix
  */
 export function createAffineFromNgffImage(ngffImage: NgffImage): mat4 {
-  return createAffineFromOMEZarr(ngffImage.scale, ngffImage.translation);
+  return createAffineFromOMEZarr(ngffImage.scale, ngffImage.translation)
 }
 
 /**
@@ -91,9 +91,9 @@ export function createAffineFromNgffImage(ngffImage: NgffImage): mat4 {
  * @returns Object with srow_x, srow_y, srow_z arrays
  */
 export function affineToNiftiSrows(affine: mat4): {
-  srow_x: [number, number, number, number];
-  srow_y: [number, number, number, number];
-  srow_z: [number, number, number, number];
+  srow_x: [number, number, number, number]
+  srow_y: [number, number, number, number]
+  srow_z: [number, number, number, number]
 } {
   // gl-matrix uses column-major order
   // Row 0 (srow_x): elements 0, 4, 8, 12
@@ -103,7 +103,7 @@ export function affineToNiftiSrows(affine: mat4): {
     srow_x: [affine[0], affine[4], affine[8], affine[12]],
     srow_y: [affine[1], affine[5], affine[9], affine[13]],
     srow_z: [affine[2], affine[6], affine[10], affine[14]],
-  };
+  }
 }
 
 /**
@@ -114,11 +114,11 @@ export function affineToNiftiSrows(affine: mat4): {
  */
 export function getPixelDimensions(affine: mat4): [number, number, number] {
   // The pixel dimensions are the lengths of the column vectors
-  const dx = Math.sqrt(affine[0] ** 2 + affine[1] ** 2 + affine[2] ** 2);
-  const dy = Math.sqrt(affine[4] ** 2 + affine[5] ** 2 + affine[6] ** 2);
-  const dz = Math.sqrt(affine[8] ** 2 + affine[9] ** 2 + affine[10] ** 2);
+  const dx = Math.sqrt(affine[0] ** 2 + affine[1] ** 2 + affine[2] ** 2)
+  const dy = Math.sqrt(affine[4] ** 2 + affine[5] ** 2 + affine[6] ** 2)
+  const dz = Math.sqrt(affine[8] ** 2 + affine[9] ** 2 + affine[10] ** 2)
 
-  return [dx, dy, dz];
+  return [dx, dy, dz]
 }
 
 /**
@@ -137,33 +137,33 @@ export function updateAffineForRegion(
   regionStart: [number, number, number],
   scaleFactor: [number, number, number],
 ): mat4 {
-  const result = mat4.clone(originalAffine);
+  const result = mat4.clone(originalAffine)
 
   // Scale the voxel dimensions
   // Column 0 (x direction)
-  result[0] *= scaleFactor[2]; // x scale factor
-  result[1] *= scaleFactor[2];
-  result[2] *= scaleFactor[2];
+  result[0] *= scaleFactor[2] // x scale factor
+  result[1] *= scaleFactor[2]
+  result[2] *= scaleFactor[2]
 
   // Column 1 (y direction)
-  result[4] *= scaleFactor[1]; // y scale factor
-  result[5] *= scaleFactor[1];
-  result[6] *= scaleFactor[1];
+  result[4] *= scaleFactor[1] // y scale factor
+  result[5] *= scaleFactor[1]
+  result[6] *= scaleFactor[1]
 
   // Column 2 (z direction)
-  result[8] *= scaleFactor[0]; // z scale factor
-  result[9] *= scaleFactor[0];
-  result[10] *= scaleFactor[0];
+  result[8] *= scaleFactor[0] // z scale factor
+  result[9] *= scaleFactor[0]
+  result[10] *= scaleFactor[0]
 
   // Update translation for region offset
   // New origin = original_origin + regionStart * original_voxel_size
-  const originalPixelDims = getPixelDimensions(originalAffine);
+  const originalPixelDims = getPixelDimensions(originalAffine)
 
-  result[12] += regionStart[2] * originalPixelDims[0]; // x offset
-  result[13] += regionStart[1] * originalPixelDims[1]; // y offset
-  result[14] += regionStart[0] * originalPixelDims[2]; // z offset
+  result[12] += regionStart[2] * originalPixelDims[0] // x offset
+  result[13] += regionStart[1] * originalPixelDims[1] // y offset
+  result[14] += regionStart[0] * originalPixelDims[2] // z offset
 
-  return result;
+  return result
 }
 
 /**
@@ -178,7 +178,7 @@ export function calculateWorldBounds(
   dimensions: [number, number, number],
 ): { min: [number, number, number]; max: [number, number, number] } {
   // Calculate all 8 corners of the volume in world space
-  const [dimZ, dimY, dimX] = dimensions;
+  const [dimZ, dimY, dimX] = dimensions
   const corners = [
     [0, 0, 0],
     [dimX, 0, 0],
@@ -188,31 +188,31 @@ export function calculateWorldBounds(
     [dimX, 0, dimZ],
     [0, dimY, dimZ],
     [dimX, dimY, dimZ],
-  ];
+  ]
 
   let minX = Infinity,
     minY = Infinity,
-    minZ = Infinity;
+    minZ = Infinity
   let maxX = -Infinity,
     maxY = -Infinity,
-    maxZ = -Infinity;
+    maxZ = -Infinity
 
   for (const [i, j, k] of corners) {
     // Apply affine: world = affine * [i, j, k, 1]^T
-    const wx = affine[0] * i + affine[4] * j + affine[8] * k + affine[12];
-    const wy = affine[1] * i + affine[5] * j + affine[9] * k + affine[13];
-    const wz = affine[2] * i + affine[6] * j + affine[10] * k + affine[14];
+    const wx = affine[0] * i + affine[4] * j + affine[8] * k + affine[12]
+    const wy = affine[1] * i + affine[5] * j + affine[9] * k + affine[13]
+    const wz = affine[2] * i + affine[6] * j + affine[10] * k + affine[14]
 
-    minX = Math.min(minX, wx);
-    minY = Math.min(minY, wy);
-    minZ = Math.min(minZ, wz);
-    maxX = Math.max(maxX, wx);
-    maxY = Math.max(maxY, wy);
-    maxZ = Math.max(maxZ, wz);
+    minX = Math.min(minX, wx)
+    minY = Math.min(minY, wy)
+    minZ = Math.min(minZ, wz)
+    maxX = Math.max(maxX, wx)
+    maxY = Math.max(maxY, wy)
+    maxZ = Math.max(maxZ, wz)
   }
 
   return {
     min: [minX, minY, minZ],
     max: [maxX, maxY, maxZ],
-  };
+  }
 }

@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: Copyright (c) Fideus Labs LLC
 // SPDX-License-Identifier: MIT
 
-import type { TypedArray, TypedArrayConstructor, ZarrDtype } from "./types.js";
-import { getBytesPerPixel, getTypedArrayConstructor } from "./types.js";
+import type { TypedArray, TypedArrayConstructor, ZarrDtype } from "./types.js"
+import { getBytesPerPixel, getTypedArrayConstructor } from "./types.js"
 
 /**
  * Manages a dynamically-sized pixel buffer for volume data.
@@ -15,12 +15,12 @@ import { getBytesPerPixel, getTypedArrayConstructor } from "./types.js";
  * - Reallocate if newSize > currentCapacity OR newSize < 25% of currentCapacity
  */
 export class BufferManager {
-  private buffer: ArrayBuffer;
-  private currentDimensions: [number, number, number];
-  private readonly maxPixels: number;
-  private readonly TypedArrayCtor: TypedArrayConstructor;
-  private readonly bytesPerPixel: number;
-  private readonly dtype: ZarrDtype;
+  private buffer: ArrayBuffer
+  private currentDimensions: [number, number, number]
+  private readonly maxPixels: number
+  private readonly TypedArrayCtor: TypedArrayConstructor
+  private readonly bytesPerPixel: number
+  private readonly dtype: ZarrDtype
 
   /**
    * Create a new BufferManager.
@@ -29,14 +29,14 @@ export class BufferManager {
    * @param dtype - Data type for the buffer
    */
   constructor(maxPixels: number, dtype: ZarrDtype) {
-    this.maxPixels = maxPixels;
-    this.dtype = dtype;
-    this.TypedArrayCtor = getTypedArrayConstructor(dtype);
-    this.bytesPerPixel = getBytesPerPixel(dtype);
+    this.maxPixels = maxPixels
+    this.dtype = dtype
+    this.TypedArrayCtor = getTypedArrayConstructor(dtype)
+    this.bytesPerPixel = getBytesPerPixel(dtype)
 
     // Initialize with empty buffer - will be allocated on first resize
-    this.currentDimensions = [0, 0, 0];
-    this.buffer = new ArrayBuffer(0);
+    this.currentDimensions = [0, 0, 0]
+    this.buffer = new ArrayBuffer(0)
   }
 
   /**
@@ -53,40 +53,39 @@ export class BufferManager {
    * @returns TypedArray view over the (possibly new) buffer
    */
   resize(dimensions: [number, number, number]): TypedArray {
-    const requiredPixels = dimensions[0] * dimensions[1] * dimensions[2];
+    const requiredPixels = dimensions[0] * dimensions[1] * dimensions[2]
 
     if (requiredPixels > this.maxPixels) {
       console.warn(
-        `[fidnii] BufferManager: Requested dimensions [${
-          dimensions.join(", ")
-        }] = ${requiredPixels} pixels exceeds maxPixels (${this.maxPixels}). ` +
+        `[fidnii] BufferManager: Requested dimensions [${dimensions.join(
+          ", ",
+        )}] = ${requiredPixels} pixels exceeds maxPixels (${this.maxPixels}). ` +
           `Proceeding anyway (likely at lowest resolution).`,
-      );
+      )
     }
 
-    const currentCapacityPixels = this.buffer.byteLength / this.bytesPerPixel;
-    const utilizationRatio = currentCapacityPixels > 0
-      ? requiredPixels / currentCapacityPixels
-      : 0;
+    const currentCapacityPixels = this.buffer.byteLength / this.bytesPerPixel
+    const utilizationRatio =
+      currentCapacityPixels > 0 ? requiredPixels / currentCapacityPixels : 0
 
-    const needsReallocation = requiredPixels > currentCapacityPixels ||
-      utilizationRatio < 0.25;
+    const needsReallocation =
+      requiredPixels > currentCapacityPixels || utilizationRatio < 0.25
 
     if (needsReallocation) {
       // Allocate new buffer
-      const newByteLength = requiredPixels * this.bytesPerPixel;
-      this.buffer = new ArrayBuffer(newByteLength);
+      const newByteLength = requiredPixels * this.bytesPerPixel
+      this.buffer = new ArrayBuffer(newByteLength)
     }
 
-    this.currentDimensions = [...dimensions];
-    return this.getTypedArray();
+    this.currentDimensions = [...dimensions]
+    return this.getTypedArray()
   }
 
   /**
    * Get the underlying ArrayBuffer.
    */
   getBuffer(): ArrayBuffer {
-    return this.buffer;
+    return this.buffer
   }
 
   /**
@@ -95,17 +94,18 @@ export class BufferManager {
    * The view is sized to match currentDimensions, not the full buffer capacity.
    */
   getTypedArray(): TypedArray {
-    const pixelCount = this.currentDimensions[0] *
+    const pixelCount =
+      this.currentDimensions[0] *
       this.currentDimensions[1] *
-      this.currentDimensions[2];
-    return new this.TypedArrayCtor(this.buffer, 0, pixelCount);
+      this.currentDimensions[2]
+    return new this.TypedArrayCtor(this.buffer, 0, pixelCount)
   }
 
   /**
    * Get the current buffer dimensions [z, y, x].
    */
   getDimensions(): [number, number, number] {
-    return [...this.currentDimensions];
+    return [...this.currentDimensions]
   }
 
   /**
@@ -116,49 +116,49 @@ export class BufferManager {
       this.currentDimensions[0] *
       this.currentDimensions[1] *
       this.currentDimensions[2]
-    );
+    )
   }
 
   /**
    * Get the buffer capacity in pixels.
    */
   getCapacity(): number {
-    return this.buffer.byteLength / this.bytesPerPixel;
+    return this.buffer.byteLength / this.bytesPerPixel
   }
 
   /**
    * Get the bytes per pixel.
    */
   getBytesPerPixel(): number {
-    return this.bytesPerPixel;
+    return this.bytesPerPixel
   }
 
   /**
    * Get the data type.
    */
   getDtype(): ZarrDtype {
-    return this.dtype;
+    return this.dtype
   }
 
   /**
    * Get the maximum pixels budget.
    */
   getMaxPixels(): number {
-    return this.maxPixels;
+    return this.maxPixels
   }
 
   /**
    * Clear the current buffer region to zeros.
    */
   clear(): void {
-    const pixelCount = this.getPixelCount();
+    const pixelCount = this.getPixelCount()
     if (pixelCount > 0) {
       const view = new Uint8Array(
         this.buffer,
         0,
         pixelCount * this.bytesPerPixel,
-      );
-      view.fill(0);
+      )
+      view.fill(0)
     }
   }
 
@@ -169,8 +169,8 @@ export class BufferManager {
    * @returns True if current buffer can fit the dimensions
    */
   canAccommodate(dimensions: [number, number, number]): boolean {
-    const requiredPixels = dimensions[0] * dimensions[1] * dimensions[2];
-    const currentCapacityPixels = this.buffer.byteLength / this.bytesPerPixel;
-    return requiredPixels <= currentCapacityPixels;
+    const requiredPixels = dimensions[0] * dimensions[1] * dimensions[2]
+    const currentCapacityPixels = this.buffer.byteLength / this.bytesPerPixel
+    return requiredPixels <= currentCapacityPixels
   }
 }

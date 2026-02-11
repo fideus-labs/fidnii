@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) Fideus Labs LLC
 // SPDX-License-Identifier: MIT
 
-import { defineConfig, devices } from "@playwright/test";
+import { defineConfig, devices } from "@playwright/test"
 
 export default defineConfig({
   testDir: "./tests",
@@ -31,4 +31,4 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     timeout: 60000,
   },
-});
+})

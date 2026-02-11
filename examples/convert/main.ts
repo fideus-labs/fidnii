@@ -10,8 +10,10 @@ import "@awesome.me/webawesome/dist/components/progress-bar/progress-bar.js"
 import "@awesome.me/webawesome/dist/components/select/select.js"
 import "@awesome.me/webawesome/dist/components/slider/slider.js"
 
-import { Niivue, SLICE_TYPE } from "@niivue/niivue"
 import { OMEZarrNVImage } from "@fideus-labs/fidnii"
+import type { Multiscales } from "@fideus-labs/ngff-zarr"
+import { Niivue, SLICE_TYPE } from "@niivue/niivue"
+
 import {
   type ConversionProgress,
   type ConversionResult,
@@ -19,45 +21,42 @@ import {
   downloadFile,
   formatFileSize,
   getMultiscalesInfo,
-  Methods,
+  type Methods,
 } from "./converter.ts"
-import type { Multiscales } from "@fideus-labs/ngff-zarr"
 
 // Color scheme: follow the browser/OS preference
-const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+const darkQuery = window.matchMedia("(prefers-color-scheme: dark)")
 
 function applyColorScheme(prefersDark: boolean): void {
   document.documentElement.classList.toggle("wa-dark", prefersDark)
 }
 
-applyColorScheme(darkQuery.matches);
-darkQuery.addEventListener("change", (e) => applyColorScheme(e.matches));
+applyColorScheme(darkQuery.matches)
+darkQuery.addEventListener("change", (e) => applyColorScheme(e.matches))
 
 // DOM Elements
-const dropZone = document.getElementById("drop-zone") as HTMLDivElement;
-const browseBtn = document.getElementById("browse-btn") as HTMLElement;
-const fileInput = document.getElementById("file-input") as HTMLInputElement;
-const fileInfo = document.getElementById("file-info") as HTMLDivElement;
-const convertBtn = document.getElementById("convert-btn") as HTMLElement;
-const downloadBtn = document.getElementById("download-btn") as HTMLElement;
+const dropZone = document.getElementById("drop-zone") as HTMLDivElement
+const browseBtn = document.getElementById("browse-btn") as HTMLElement
+const fileInput = document.getElementById("file-input") as HTMLInputElement
+const fileInfo = document.getElementById("file-info") as HTMLDivElement
+const convertBtn = document.getElementById("convert-btn") as HTMLElement
+const downloadBtn = document.getElementById("download-btn") as HTMLElement
 const progressContainer = document.getElementById(
   "progress-container",
-) as HTMLDivElement;
-const progressBar = document.getElementById("progress-bar") as HTMLElement;
-const progressText = document.getElementById("progress-text") as HTMLElement;
-const placeholder = document.getElementById("placeholder") as HTMLDivElement;
-const canvas = document.getElementById("gl") as HTMLCanvasElement;
+) as HTMLDivElement
+const progressBar = document.getElementById("progress-bar") as HTMLElement
+const progressText = document.getElementById("progress-text") as HTMLElement
+const placeholder = document.getElementById("placeholder") as HTMLDivElement
+const canvas = document.getElementById("gl") as HTMLCanvasElement
 const multiscalesCard = document.getElementById(
   "multiscales-card",
-) as HTMLElement;
+) as HTMLElement
 const multiscalesTable = document.getElementById(
   "multiscales-table",
-) as HTMLTableElement;
+) as HTMLTableElement
 
 // Settings inputs
-const chunkSizeInput = document.getElementById(
-  "chunk-size",
-) as HTMLInputElement
+const chunkSizeInput = document.getElementById("chunk-size") as HTMLInputElement
 const methodSelect = document.getElementById("method") as HTMLSelectElement
 const colormapSelect = document.getElementById("colormap") as HTMLSelectElement
 const sliceTypeSelect = document.getElementById(
@@ -129,40 +128,40 @@ function handleFile(file: File): void {
 
 // Drag and drop
 dropZone.addEventListener("dragover", (e) => {
-  e.preventDefault();
-  dropZone.classList.add("dragover");
-});
+  e.preventDefault()
+  dropZone.classList.add("dragover")
+})
 
 dropZone.addEventListener("dragleave", () => {
-  dropZone.classList.remove("dragover");
-});
+  dropZone.classList.remove("dragover")
+})
 
 dropZone.addEventListener("drop", (e) => {
-  e.preventDefault();
-  dropZone.classList.remove("dragover");
+  e.preventDefault()
+  dropZone.classList.remove("dragover")
 
-  const files = e.dataTransfer?.files;
+  const files = e.dataTransfer?.files
   if (files && files.length > 0) {
-    handleFile(files[0]);
+    handleFile(files[0])
   }
-});
+})
 
 // Browse button
 browseBtn.addEventListener("click", () => {
-  fileInput.click();
-});
+  fileInput.click()
+})
 
 fileInput.addEventListener("change", () => {
-  const files = fileInput.files;
+  const files = fileInput.files
   if (files && files.length > 0) {
-    handleFile(files[0]);
+    handleFile(files[0])
   }
-});
+})
 
 // Progress handling
 function updateProgress(progress: ConversionProgress): void {
-  progressBar.setAttribute("value", String(progress.percent));
-  progressText.textContent = progress.message;
+  progressBar.setAttribute("value", String(progress.percent))
+  progressText.textContent = progress.message
 }
 
 /** Enable or disable the 3D-only preview controls. */
@@ -187,8 +186,8 @@ async function showPreview(result: ConversionResult): Promise<void> {
   const volumeIs3D = is3DVolume(result.multiscales)
 
   // Get colormap setting
-  const colormap = (colormapSelect as unknown as { value: string }).value ||
-    "gray"
+  const colormap =
+    (colormapSelect as unknown as { value: string }).value || "gray"
 
   // Create NVImage from multiscales
   const image = await OMEZarrNVImage.create({
@@ -214,8 +213,7 @@ async function showPreview(result: ConversionResult): Promise<void> {
     const sliceType = SLICE_TYPE_MAP[sliceTypeStr] ?? SLICE_TYPE.MULTIPLANAR
 
     // Set hero fraction BEFORE setSliceType so it takes effect on first draw
-    nv.opts.heroImageFraction =
-      sliceType === SLICE_TYPE.MULTIPLANAR ? 0.6 : 0
+    nv.opts.heroImageFraction = sliceType === SLICE_TYPE.MULTIPLANAR ? 0.6 : 0
     nv.setSliceType(sliceType)
     await updateGradientSettings()
     nv.updateGLVolume()
@@ -232,25 +230,25 @@ async function showPreview(result: ConversionResult): Promise<void> {
 
 // Update multiscales table
 function updateMultiscalesTable(result: ConversionResult): void {
-  const info = getMultiscalesInfo(result.multiscales);
+  const info = getMultiscalesInfo(result.multiscales)
   const tbody = multiscalesTable.querySelector(
     "tbody",
-  ) as HTMLTableSectionElement;
-  tbody.innerHTML = "";
+  ) as HTMLTableSectionElement
+  tbody.innerHTML = ""
 
   for (const scale of info) {
-    const row = document.createElement("tr");
+    const row = document.createElement("tr")
     row.innerHTML = `
       <td>${scale.level}</td>
       <td class="mono">${scale.path}</td>
       <td class="mono">${scale.shape}</td>
       <td class="mono">${scale.chunks}</td>
       <td>${scale.size}</td>
-    `;
-    tbody.appendChild(row);
+    `
+    tbody.appendChild(row)
   }
 
-  multiscalesCard.classList.remove("hidden");
+  multiscalesCard.classList.remove("hidden")
 }
 
 // Conversion logic (shared by auto-convert and manual re-convert)
@@ -267,10 +265,8 @@ async function startConversion(): Promise<void> {
         (chunkSizeInput as unknown as { value: string }).value || "96",
         10,
       ),
-      method: (
-        (methodSelect as unknown as { value: string }).value ||
-          "itkwasm_gaussian"
-      ) as Methods,
+      method: ((methodSelect as unknown as { value: string }).value ||
+        "itkwasm_gaussian") as Methods,
     }
 
     lastResult = await convertToOmeZarr(selectedFile, options, updateProgress)
@@ -304,19 +300,19 @@ convertBtn.addEventListener("click", () => {
 // Download again button
 downloadBtn.addEventListener("click", () => {
   if (lastResult) {
-    downloadFile(lastResult.ozxData, lastResult.filename);
+    downloadFile(lastResult.ozxData, lastResult.filename)
   }
-});
+})
 
 // Settings change handlers for live preview updates
 colormapSelect.addEventListener("change", () => {
   if (lastResult && nv && nv.volumes.length > 0) {
-    const colormap = (colormapSelect as unknown as { value: string }).value ||
-      "gray";
-    nv.volumes[0].colormap = colormap;
-    nv.updateGLVolume();
+    const colormap =
+      (colormapSelect as unknown as { value: string }).value || "gray"
+    nv.volumes[0].colormap = colormap
+    nv.updateGLVolume()
   }
-});
+})
 
 opacitySlider.addEventListener("input", () => {
   if (lastResult && nv && nv.volumes.length > 0) {
@@ -336,8 +332,7 @@ sliceTypeSelect.addEventListener("change", () => {
       (sliceTypeSelect as unknown as { value: string }).value || "multiplanar"
     const sliceType = SLICE_TYPE_MAP[sliceTypeStr] ?? SLICE_TYPE.MULTIPLANAR
     nv.setSliceType(sliceType)
-    nv.opts.heroImageFraction =
-      sliceType === SLICE_TYPE.MULTIPLANAR ? 0.6 : 0
+    nv.opts.heroImageFraction = sliceType === SLICE_TYPE.MULTIPLANAR ? 0.6 : 0
     nv.updateGLVolume()
   }
 })

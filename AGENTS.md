@@ -20,9 +20,19 @@ The library (`fidnii/`) builds with plain `tsc` to `fidnii/dist/` (ESM `.js` +
 `.d.ts`). Examples use Vite for bundling. The dev server runs on port 5173 with
 COOP/COEP headers enabled for SharedArrayBuffer support.
 
+## Linting & Formatting
+
+[Biome](https://biomejs.dev/) handles linting, formatting, and import sorting:
+
+```bash
+pnpm check                # Lint + format + import sorting (same as CI)
+pnpm lint                 # Lint only
+pnpm format               # Auto-format all files
+```
+
 ## Type Checking
 
-There is no separate linter. TypeScript strict mode is the quality gate:
+TypeScript strict mode is also enforced:
 
 ```bash
 pnpm exec tsc --noEmit    # Run from fidnii/ to type-check without emitting
@@ -54,9 +64,9 @@ Useful flags: `--headed` (visible browser), `--debug` (step-through),
 
 ## Code Style
 
-### Formatting (deno fmt)
+### Formatting (Biome)
 
-Code is formatted with `deno fmt`. Do not add semicolons.
+Code is formatted with [Biome](https://biomejs.dev/). Do not add semicolons.
 
 - **Indentation**: 2 spaces, no tabs
 - **Semicolons**: None

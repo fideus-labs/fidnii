@@ -34,30 +34,11 @@
  * ```
  */
 
-// Main class
-export { OMEZarrNVImage } from "./OMEZarrNVImage.js";
+// Worker pool lifecycle (re-exported from ngff-zarr)
+export { terminateWorkerPool } from "@fideus-labs/ngff-zarr/browser"
 
-// Types
-export type {
-  AttachedNiivueState,
-  ChunkAlignedRegion,
-  ChunkCache,
-  ClipPlane,
-  ClipPlanes,
-  OMEZarrNVImageOptions,
-  PixelRegion,
-  RegionFetchResult,
-  ResolutionSelection,
-  SlabBufferState,
-  SlabSliceType,
-  TypedArray,
-  VolumeBounds,
-  ZarrDtype,
-} from "./types.js";
-
-// Re-export SLICE_TYPE from types (which re-exports from niivue)
-export { SLICE_TYPE } from "./types.js";
-
+// Buffer manager
+export { BufferManager } from "./BufferManager.js"
 // Clip planes utilities
 export {
   alignToChunks,
@@ -77,8 +58,20 @@ export {
   normalToAzimuthElevation,
   pointToPlaneDistance,
   validateClipPlanes,
-} from "./ClipPlanes.js";
-
+} from "./ClipPlanes.js"
+export type {
+  OMEZarrNVImageEventListener,
+  OMEZarrNVImageEventListenerOptions,
+  OMEZarrNVImageEventMap,
+  PopulateTrigger,
+} from "./events.js"
+// Event system (browser-native EventTarget API)
+export { OMEZarrNVImageEvent } from "./events.js"
+// Main class
+export { OMEZarrNVImage } from "./OMEZarrNVImage.js"
+// Region coalescer
+export { RegionCoalescer } from "./RegionCoalescer.js"
+export type { OrthogonalAxis } from "./ResolutionSelector.js"
 // Resolution selector utilities
 export {
   alignRegionToChunks,
@@ -89,16 +82,43 @@ export {
   getVolumeShape,
   select2DResolution,
   selectResolution,
-} from "./ResolutionSelector.js";
-
-export type { OrthogonalAxis } from "./ResolutionSelector.js";
-
-// Buffer manager
-export { BufferManager } from "./BufferManager.js";
-
-// Region coalescer
-export { RegionCoalescer } from "./RegionCoalescer.js";
-
+} from "./ResolutionSelector.js"
+// Types
+export type {
+  AttachedNiivueState,
+  ChunkAlignedRegion,
+  ChunkCache,
+  ClipPlane,
+  ClipPlanes,
+  OMEZarrNVImageOptions,
+  PixelRegion,
+  RegionFetchResult,
+  ResolutionSelection,
+  SlabBufferState,
+  SlabSliceType,
+  TypedArray,
+  VolumeBounds,
+  ZarrDtype,
+} from "./types.js"
+// Re-export SLICE_TYPE from types (which re-exports from niivue)
+// Type utilities
+export {
+  getBytesPerPixel,
+  getNiftiDataType,
+  getTypedArrayConstructor,
+  NiftiDataType,
+  parseZarritaDtype,
+  SLICE_TYPE,
+} from "./types.js"
+// Affine utilities
+export {
+  affineToNiftiSrows,
+  calculateWorldBounds,
+  createAffineFromNgffImage,
+  createAffineFromOMEZarr,
+  getPixelDimensions,
+  updateAffineForRegion,
+} from "./utils/affine.js"
 // Coordinate utilities
 export {
   ceilPixelCoord,
@@ -111,43 +131,11 @@ export {
   worldToNormalized,
   worldToPixel,
   worldToPixelAffine,
-} from "./utils/coordinates.js";
-
-// Affine utilities
-export {
-  affineToNiftiSrows,
-  calculateWorldBounds,
-  createAffineFromNgffImage,
-  createAffineFromOMEZarr,
-  getPixelDimensions,
-  updateAffineForRegion,
-} from "./utils/affine.js";
-
-// Type utilities
-export {
-  getBytesPerPixel,
-  getNiftiDataType,
-  getTypedArrayConstructor,
-  NiftiDataType,
-  parseZarritaDtype,
-} from "./types.js";
-
-// Worker pool lifecycle (re-exported from ngff-zarr)
-export { terminateWorkerPool } from "@fideus-labs/ngff-zarr/browser";
-
+} from "./utils/coordinates.js"
 // Viewport bounds utilities
 export {
   boundsApproxEqual,
   computeViewportBounds2D,
   computeViewportBounds3D,
   intersectBounds,
-} from "./ViewportBounds.js";
-
-// Event system (browser-native EventTarget API)
-export { OMEZarrNVImageEvent } from "./events.js";
-export type {
-  OMEZarrNVImageEventListener,
-  OMEZarrNVImageEventListenerOptions,
-  OMEZarrNVImageEventMap,
-  PopulateTrigger,
-} from "./events.js";
+} from "./ViewportBounds.js"

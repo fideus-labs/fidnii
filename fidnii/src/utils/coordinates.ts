@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: Copyright (c) Fideus Labs LLC
 // SPDX-License-Identifier: MIT
 
-import { mat4, vec4 } from "gl-matrix";
-import type { NgffImage } from "@fideus-labs/ngff-zarr";
+import type { NgffImage } from "@fideus-labs/ngff-zarr"
+import { mat4, vec4 } from "gl-matrix"
 
 /**
  * Convert a world coordinate to pixel indices.
@@ -15,26 +15,26 @@ export function worldToPixel(
   worldCoord: [number, number, number],
   ngffImage: NgffImage,
 ): [number, number, number] {
-  const scale = ngffImage.scale;
-  const translation = ngffImage.translation;
+  const scale = ngffImage.scale
+  const translation = ngffImage.translation
 
   // world = scale * pixel + translation
   // pixel = (world - translation) / scale
 
-  const sx = scale.x ?? scale.X ?? 1;
-  const sy = scale.y ?? scale.Y ?? 1;
-  const sz = scale.z ?? scale.Z ?? 1;
+  const sx = scale.x ?? scale.X ?? 1
+  const sy = scale.y ?? scale.Y ?? 1
+  const sz = scale.z ?? scale.Z ?? 1
 
-  const tx = translation.x ?? translation.X ?? 0;
-  const ty = translation.y ?? translation.Y ?? 0;
-  const tz = translation.z ?? translation.Z ?? 0;
+  const tx = translation.x ?? translation.X ?? 0
+  const ty = translation.y ?? translation.Y ?? 0
+  const tz = translation.z ?? translation.Z ?? 0
 
-  const px = (worldCoord[0] - tx) / sx;
-  const py = (worldCoord[1] - ty) / sy;
-  const pz = (worldCoord[2] - tz) / sz;
+  const px = (worldCoord[0] - tx) / sx
+  const py = (worldCoord[1] - ty) / sy
+  const pz = (worldCoord[2] - tz) / sz
 
   // Return in [z, y, x] order to match OME-Zarr array indexing
-  return [pz, py, px];
+  return [pz, py, px]
 }
 
 /**
@@ -48,25 +48,25 @@ export function pixelToWorld(
   pixelCoord: [number, number, number],
   ngffImage: NgffImage,
 ): [number, number, number] {
-  const scale = ngffImage.scale;
-  const translation = ngffImage.translation;
+  const scale = ngffImage.scale
+  const translation = ngffImage.translation
 
   // world = scale * pixel + translation
 
-  const sx = scale.x ?? scale.X ?? 1;
-  const sy = scale.y ?? scale.Y ?? 1;
-  const sz = scale.z ?? scale.Z ?? 1;
+  const sx = scale.x ?? scale.X ?? 1
+  const sy = scale.y ?? scale.Y ?? 1
+  const sz = scale.z ?? scale.Z ?? 1
 
-  const tx = translation.x ?? translation.X ?? 0;
-  const ty = translation.y ?? translation.Y ?? 0;
-  const tz = translation.z ?? translation.Z ?? 0;
+  const tx = translation.x ?? translation.X ?? 0
+  const ty = translation.y ?? translation.Y ?? 0
+  const tz = translation.z ?? translation.Z ?? 0
 
   // pixelCoord is [z, y, x]
-  const wx = sx * pixelCoord[2] + tx;
-  const wy = sy * pixelCoord[1] + ty;
-  const wz = sz * pixelCoord[0] + tz;
+  const wx = sx * pixelCoord[2] + tx
+  const wy = sy * pixelCoord[1] + ty
+  const wz = sz * pixelCoord[0] + tz
 
-  return [wx, wy, wz];
+  return [wx, wy, wz]
 }
 
 /**
@@ -81,20 +81,20 @@ export function worldToPixelAffine(
   affine: mat4,
 ): [number, number, number] {
   // Invert the affine to go from world to pixel
-  const inverseAffine = mat4.create();
-  mat4.invert(inverseAffine, affine);
+  const inverseAffine = mat4.create()
+  mat4.invert(inverseAffine, affine)
 
   const worldVec = vec4.fromValues(
     worldCoord[0],
     worldCoord[1],
     worldCoord[2],
     1,
-  );
-  const pixelVec = vec4.create();
-  vec4.transformMat4(pixelVec, worldVec, inverseAffine);
+  )
+  const pixelVec = vec4.create()
+  vec4.transformMat4(pixelVec, worldVec, inverseAffine)
 
   // Return in [z, y, x] order
-  return [pixelVec[2], pixelVec[1], pixelVec[0]];
+  return [pixelVec[2], pixelVec[1], pixelVec[0]]
 }
 
 /**
@@ -114,11 +114,11 @@ export function pixelToWorldAffine(
     pixelCoord[1], // y
     pixelCoord[0], // z
     1,
-  );
-  const worldVec = vec4.create();
-  vec4.transformMat4(worldVec, pixelVec, affine);
+  )
+  const worldVec = vec4.create()
+  vec4.transformMat4(worldVec, pixelVec, affine)
 
-  return [worldVec[0], worldVec[1], worldVec[2]];
+  return [worldVec[0], worldVec[1], worldVec[2]]
 }
 
 /**
@@ -132,24 +132,24 @@ export function normalizedToWorld(
   normalizedCoord: [number, number, number],
   ngffImage: NgffImage,
 ): [number, number, number] {
-  const shape = ngffImage.data.shape;
-  const dims = ngffImage.dims;
+  const shape = ngffImage.data.shape
+  const dims = ngffImage.dims
 
   // Find z, y, x indices in dims
-  const zIdx = dims.indexOf("z");
-  const yIdx = dims.indexOf("y");
-  const xIdx = dims.indexOf("x");
+  const zIdx = dims.indexOf("z")
+  const yIdx = dims.indexOf("y")
+  const xIdx = dims.indexOf("x")
 
-  let dimX: number, dimY: number, dimZ: number;
+  let dimX: number, dimY: number, dimZ: number
   if (zIdx === -1 || yIdx === -1 || xIdx === -1) {
-    const n = shape.length;
-    dimZ = shape[n - 3] || 1;
-    dimY = shape[n - 2] || 1;
-    dimX = shape[n - 1] || 1;
+    const n = shape.length
+    dimZ = shape[n - 3] || 1
+    dimY = shape[n - 2] || 1
+    dimX = shape[n - 1] || 1
   } else {
-    dimZ = shape[zIdx];
-    dimY = shape[yIdx];
-    dimX = shape[xIdx];
+    dimZ = shape[zIdx]
+    dimY = shape[yIdx]
+    dimX = shape[xIdx]
   }
 
   // Convert normalized to pixel
@@ -157,9 +157,9 @@ export function normalizedToWorld(
     normalizedCoord[2] * dimZ, // z
     normalizedCoord[1] * dimY, // y
     normalizedCoord[0] * dimX, // x
-  ];
+  ]
 
-  return pixelToWorld(pixelCoord, ngffImage);
+  return pixelToWorld(pixelCoord, ngffImage)
 }
 
 /**
@@ -173,35 +173,35 @@ export function worldToNormalized(
   worldCoord: [number, number, number],
   ngffImage: NgffImage,
 ): [number, number, number] {
-  const shape = ngffImage.data.shape;
-  const dims = ngffImage.dims;
+  const shape = ngffImage.data.shape
+  const dims = ngffImage.dims
 
   // Find z, y, x indices in dims
-  const zIdx = dims.indexOf("z");
-  const yIdx = dims.indexOf("y");
-  const xIdx = dims.indexOf("x");
+  const zIdx = dims.indexOf("z")
+  const yIdx = dims.indexOf("y")
+  const xIdx = dims.indexOf("x")
 
-  let dimX: number, dimY: number, dimZ: number;
+  let dimX: number, dimY: number, dimZ: number
   if (zIdx === -1 || yIdx === -1 || xIdx === -1) {
-    const n = shape.length;
-    dimZ = shape[n - 3] || 1;
-    dimY = shape[n - 2] || 1;
-    dimX = shape[n - 1] || 1;
+    const n = shape.length
+    dimZ = shape[n - 3] || 1
+    dimY = shape[n - 2] || 1
+    dimX = shape[n - 1] || 1
   } else {
-    dimZ = shape[zIdx];
-    dimY = shape[yIdx];
-    dimX = shape[xIdx];
+    dimZ = shape[zIdx]
+    dimY = shape[yIdx]
+    dimX = shape[xIdx]
   }
 
   // Convert world to pixel
-  const pixelCoord = worldToPixel(worldCoord, ngffImage);
+  const pixelCoord = worldToPixel(worldCoord, ngffImage)
 
   // Convert pixel to normalized
   return [
     pixelCoord[2] / dimX, // x normalized
     pixelCoord[1] / dimY, // y normalized
     pixelCoord[0] / dimZ, // z normalized
-  ];
+  ]
 }
 
 /**
@@ -219,7 +219,7 @@ export function clampPixelCoord(
     Math.max(0, Math.min(pixelCoord[0], shape[0] - 1)),
     Math.max(0, Math.min(pixelCoord[1], shape[1] - 1)),
     Math.max(0, Math.min(pixelCoord[2], shape[2] - 1)),
-  ];
+  ]
 }
 
 /**
@@ -235,7 +235,7 @@ export function roundPixelCoord(
     Math.round(pixelCoord[0]),
     Math.round(pixelCoord[1]),
     Math.round(pixelCoord[2]),
-  ];
+  ]
 }
 
 /**
@@ -251,7 +251,7 @@ export function floorPixelCoord(
     Math.floor(pixelCoord[0]),
     Math.floor(pixelCoord[1]),
     Math.floor(pixelCoord[2]),
-  ];
+  ]
 }
 
 /**
@@ -267,5 +267,5 @@ export function ceilPixelCoord(
     Math.ceil(pixelCoord[0]),
     Math.ceil(pixelCoord[1]),
     Math.ceil(pixelCoord[2]),
-  ];
+  ]
 }

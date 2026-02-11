@@ -3,16 +3,26 @@
   "private": true,
   "scripts": {
     "build": "pnpm -r build",
+    "check": "biome check .",
     "dev": "pnpm -r dev",
+    "format": "biome format --write .",
+    "lint": "biome lint .",
+    "prepare": "lefthook install",
     "test": "pnpm -r test"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.3.14",
+    "@changesets/changelog-github": "^0.5.2",
+    "@changesets/cli": "^2.29.8",
+    "@commitlint/cli": "^20.4.1",
+    "@commitlint/config-conventional": "^20.4.1",
     "@playwright/test": "^1.58.2",
+    "lefthook": "^2.1.0",
     "typescript": "^5.5.3"
   },
   "pnpm": {
     "overrides": {
-      "@fideus-labs/ngff-zarr": "^0.7.2",
+      "@fideus-labs/ngff-zarr": "^0.7.4",
       "zarrita": "^0.6.1",
       "@fideus-labs/fizarrita": "^1.2.0",
       "@fideus-labs/worker-pool": "^1.0.0",

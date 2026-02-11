@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig } from "vite"
 
 export default defineConfig({
   ssr: {
@@ -21,4 +21,4 @@ export default defineConfig({
       "@thewtex/zstddec",
     ],
   },
-});
+})

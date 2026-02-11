@@ -1,8 +1,9 @@
 // SPDX-FileCopyrightText: Copyright (c) Fideus Labs LLC
 // SPDX-License-Identifier: MIT
 
-import type { SLICE_TYPE } from "@niivue/niivue";
-import type { ClipPlanes } from "./types.js";
+import type { SLICE_TYPE } from "@niivue/niivue"
+
+import type { ClipPlanes } from "./types.js"
 
 /**
  * Identifies what triggered a volume population.
@@ -12,7 +13,7 @@ export type PopulateTrigger =
   | "initial" // First load or reload with new settings
   | "clipPlanesChanged" // Clip planes were modified
   | "sliceChanged" // Slice position changed (slab reload)
-  | "viewportChanged"; // Viewport pan/zoom/rotation changed
+  | "viewportChanged" // Viewport pan/zoom/rotation changed
 
 /**
  * Type-safe event map for OMEZarrNVImage events.
@@ -43,15 +44,15 @@ export type PopulateTrigger =
 export interface OMEZarrNVImageEventMap {
   /** Fired when loading starts for a resolution level */
   loadingStart: {
-    levelIndex: number;
-    trigger: PopulateTrigger;
-  };
+    levelIndex: number
+    trigger: PopulateTrigger
+  }
 
   /** Fired when loading completes for a resolution level */
   loadingComplete: {
-    levelIndex: number;
-    trigger: PopulateTrigger;
-  };
+    levelIndex: number
+    trigger: PopulateTrigger
+  }
 
   /**
    * Fired when resolution level changes.
@@ -59,27 +60,27 @@ export interface OMEZarrNVImageEventMap {
    * cause a resolution change.
    */
   resolutionChange: {
-    currentLevel: number;
-    targetLevel: number;
-    previousLevel: number;
-    trigger: PopulateTrigger;
-  };
+    currentLevel: number
+    targetLevel: number
+    previousLevel: number
+    trigger: PopulateTrigger
+  }
 
   /**
    * Fired when clip planes are updated (after debounce).
    * This is emitted after the debounce delay, not on every slider movement.
    */
-  clipPlanesChange: { clipPlanes: ClipPlanes };
+  clipPlanesChange: { clipPlanes: ClipPlanes }
 
   /**
    * Fired when populateVolume() completes and no more requests are queued.
    * This is the final event after all loading is done.
    */
   populateComplete: {
-    currentLevel: number;
-    targetLevel: number;
-    trigger: PopulateTrigger;
-  };
+    currentLevel: number
+    targetLevel: number
+    trigger: PopulateTrigger
+  }
 
   /**
    * Fired when a queued load request is replaced by a newer one.
@@ -87,30 +88,30 @@ export interface OMEZarrNVImageEventMap {
    * the first request is queued.
    */
   loadingSkipped: {
-    reason: "queued-replaced";
-    trigger: PopulateTrigger;
-  };
+    reason: "queued-replaced"
+    trigger: PopulateTrigger
+  }
 
   /**
    * Fired when a slab (2D slice buffer) finishes loading.
    * This event is specific to slab-based loading for 2D slice views.
    */
   slabLoadingComplete: {
-    sliceType: SLICE_TYPE;
-    levelIndex: number;
-    slabStart: number;
-    slabEnd: number;
-    trigger: PopulateTrigger;
-  };
+    sliceType: SLICE_TYPE
+    levelIndex: number
+    slabStart: number
+    slabEnd: number
+    trigger: PopulateTrigger
+  }
 
   /**
    * Fired when a slab starts loading.
    */
   slabLoadingStart: {
-    sliceType: SLICE_TYPE;
-    levelIndex: number;
-    trigger: PopulateTrigger;
-  };
+    sliceType: SLICE_TYPE
+    levelIndex: number
+    trigger: PopulateTrigger
+  }
 }
 
 /**
@@ -121,7 +122,7 @@ export class OMEZarrNVImageEvent<
   K extends keyof OMEZarrNVImageEventMap,
 > extends CustomEvent<OMEZarrNVImageEventMap[K]> {
   constructor(type: K, detail: OMEZarrNVImageEventMap[K]) {
-    super(type, { detail });
+    super(type, { detail })
   }
 }
 
@@ -131,7 +132,7 @@ export class OMEZarrNVImageEvent<
  */
 export type OMEZarrNVImageEventListener<
   K extends keyof OMEZarrNVImageEventMap,
-> = (event: OMEZarrNVImageEvent<K>) => void | Promise<void>;
+> = (event: OMEZarrNVImageEvent<K>) => void | Promise<void>
 
 /**
  * Options for addEventListener/removeEventListener.
@@ -143,4 +144,4 @@ export type OMEZarrNVImageEventListener<
  */
 export type OMEZarrNVImageEventListenerOptions =
   | boolean
-  | AddEventListenerOptions;
+  | AddEventListenerOptions

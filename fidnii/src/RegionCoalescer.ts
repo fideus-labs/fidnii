@@ -1,28 +1,29 @@
 // SPDX-FileCopyrightText: Copyright (c) Fideus Labs LLC
 // SPDX-License-Identifier: MIT
 
-import * as zarr from "zarrita";
-import type { NgffImage } from "@fideus-labs/ngff-zarr";
-import { zarrGet } from "@fideus-labs/ngff-zarr/browser";
+import type { NgffImage } from "@fideus-labs/ngff-zarr"
+import { zarrGet } from "@fideus-labs/ngff-zarr/browser"
+import * as zarr from "zarrita"
+
 import type {
   ChunkCache,
   PixelRegion,
   RegionFetchResult,
   TypedArray,
-} from "./types.js";
+} from "./types.js"
 
 /**
  * Represents a pending request that may have multiple consumers waiting for the result.
  */
 interface PendingRequest {
   /** The promise that resolves when the request completes */
-  promise: Promise<RegionFetchResult>;
+  promise: Promise<RegionFetchResult>
   /** Function to resolve the promise with the result */
-  resolve: (data: RegionFetchResult) => void;
+  resolve: (data: RegionFetchResult) => void
   /** Function to reject the promise with an error */
-  reject: (error: Error) => void;
+  reject: (error: Error) => void
   /** Set of requester IDs waiting for this result */
-  requesters: Set<string>;
+  requesters: Set<string>
 }
 
 /**
@@ -40,10 +41,10 @@ interface PendingRequest {
  * overlapping region requests simultaneously.
  */
 export class RegionCoalescer {
-  private readonly pending: Map<string, PendingRequest> = new Map();
+  private readonly pending: Map<string, PendingRequest> = new Map()
 
   /** Optional decoded-chunk cache forwarded to fizarrita's getWorker. */
-  private readonly _cache: ChunkCache | undefined;
+  private readonly _cache: ChunkCache | undefined
 
   /**
    * @param cache - Optional decoded-chunk cache. When provided, `zarrGet`
@@ -51,7 +52,7 @@ export class RegionCoalescer {
    *   or overlapping reads.
    */
   constructor(cache?: ChunkCache) {
-    this._cache = cache;
+    this._cache = cache
   }
 
   /**
@@ -62,9 +63,9 @@ export class RegionCoalescer {
     levelIndex: number,
     region: PixelRegion,
   ): string {
-    const start = region.start.join(",");
-    const end = region.end.join(",");
-    return `${imagePath}:${levelIndex}:${start}:${end}`;
+    const start = region.start.join(",")
+    const end = region.end.join(",")
+    return `${imagePath}:${levelIndex}:${start}:${end}`
   }
 
   /**
@@ -82,33 +83,33 @@ export class RegionCoalescer {
     region: PixelRegion,
     requesterId: string = "default",
   ): Promise<RegionFetchResult> {
-    const key = this.makeKey(ngffImage.data.path, levelIndex, region);
+    const key = this.makeKey(ngffImage.data.path, levelIndex, region)
 
     // Check if there's already a pending request for this data
-    const existing = this.pending.get(key);
+    const existing = this.pending.get(key)
     if (existing) {
       // Add this requester to the waiters and return the existing promise
-      existing.requesters.add(requesterId);
-      return existing.promise;
+      existing.requesters.add(requesterId)
+      return existing.promise
     }
 
     // Create a new pending request
-    let resolvePromise!: (data: RegionFetchResult) => void;
-    let rejectPromise!: (error: Error) => void;
+    let resolvePromise!: (data: RegionFetchResult) => void
+    let rejectPromise!: (error: Error) => void
 
     const promise = new Promise<RegionFetchResult>((resolve, reject) => {
-      resolvePromise = resolve;
-      rejectPromise = reject;
-    });
+      resolvePromise = resolve
+      rejectPromise = reject
+    })
 
     const pendingRequest: PendingRequest = {
       promise,
       resolve: resolvePromise,
       reject: rejectPromise,
       requesters: new Set([requesterId]),
-    };
+    }
 
-    this.pending.set(key, pendingRequest);
+    this.pending.set(key, pendingRequest)
 
     // Fetch using fizarrita's worker-accelerated zarrGet
     try {
@@ -116,28 +117,28 @@ export class RegionCoalescer {
         zarr.slice(region.start[0], region.end[0]),
         zarr.slice(region.start[1], region.end[1]),
         zarr.slice(region.start[2], region.end[2]),
-      ];
+      ]
       // Pass the chunk cache to fizarrita's getWorker via zarrGet.
       // The `cache` option is available in @fideus-labs/fizarrita >=1.2.0.
       const zarrOpts = this._cache
-        ? { cache: this._cache } as Record<string, unknown>
-        : undefined;
-      const result = await zarrGet(ngffImage.data, selection, zarrOpts);
+        ? ({ cache: this._cache } as Record<string, unknown>)
+        : undefined
+      const result = await zarrGet(ngffImage.data, selection, zarrOpts)
 
       const fetchResult: RegionFetchResult = {
         data: result.data as TypedArray,
         shape: result.shape,
         stride: result.stride,
-      };
+      }
 
-      pendingRequest.resolve(fetchResult);
-      return fetchResult;
+      pendingRequest.resolve(fetchResult)
+      return fetchResult
     } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error));
-      pendingRequest.reject(err);
-      throw err;
+      const err = error instanceof Error ? error : new Error(String(error))
+      pendingRequest.reject(err)
+      throw err
     } finally {
-      this.pending.delete(key);
+      this.pending.delete(key)
     }
   }
 
@@ -159,9 +160,9 @@ export class RegionCoalescer {
   ): Promise<RegionFetchResult[]> {
     return Promise.all(
       regions.map((region) =>
-        this.fetchRegion(ngffImage, levelIndex, region, requesterId)
+        this.fetchRegion(ngffImage, levelIndex, region, requesterId),
       ),
-    );
+    )
   }
 
   /**
@@ -172,8 +173,8 @@ export class RegionCoalescer {
     levelIndex: number,
     region: PixelRegion,
   ): boolean {
-    const key = this.makeKey(ngffImage.data.path, levelIndex, region);
-    return this.pending.has(key);
+    const key = this.makeKey(ngffImage.data.path, levelIndex, region)
+    return this.pending.has(key)
   }
 
   /**
@@ -185,8 +186,8 @@ export class RegionCoalescer {
     levelIndex: number,
     region: PixelRegion,
   ): Set<string> | undefined {
-    const key = this.makeKey(ngffImage.data.path, levelIndex, region);
-    return this.pending.get(key)?.requesters;
+    const key = this.makeKey(ngffImage.data.path, levelIndex, region)
+    return this.pending.get(key)?.requesters
   }
 
   /**
@@ -195,16 +196,16 @@ export class RegionCoalescer {
   async onIdle(): Promise<void> {
     // Wait for all in-flight requests to settle
     const promises = Array.from(this.pending.values()).map((p) =>
-      p.promise.catch(() => {})
-    );
-    await Promise.all(promises);
+      p.promise.catch(() => {}),
+    )
+    await Promise.all(promises)
   }
 
   /**
    * Get the number of pending requests (unique region requests).
    */
   get pendingCount(): number {
-    return this.pending.size;
+    return this.pending.size
   }
 
   /**
@@ -212,6 +213,6 @@ export class RegionCoalescer {
    * Note: Does not resolve or reject pending promises.
    */
   clear(): void {
-    this.pending.clear();
+    this.pending.clear()
   }
 }

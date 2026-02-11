@@ -12,8 +12,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lint:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm exec biome ci .
+
   build:
     name: Build & Type-check (${{ matrix.os }})
+    needs: lint
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

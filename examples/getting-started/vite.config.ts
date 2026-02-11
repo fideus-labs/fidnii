@@ -1,5 +1,4 @@
-import { defineConfig } from "vite";
-import path from "path";
+import { defineConfig } from "vite"
 
 export default defineConfig({
   server: {
@@ -9,12 +8,9 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    exclude: [
-      "@fideus-labs/ngff-zarr",
-      "@fideus-labs/fizarrita",
-    ],
+    exclude: ["@fideus-labs/ngff-zarr", "@fideus-labs/fizarrita"],
   },
   build: {
     outDir: "dist",
   },
-});
+})
