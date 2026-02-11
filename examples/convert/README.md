@@ -5,7 +5,8 @@ Browser-based converter from various image formats to OME-Zarr 0.5 (OZX).
 ## Features
 
 - **Drag-and-drop** or file picker for input images
-- **Supports many formats**: NIFTI, NRRD, MetaImage, DICOM, MRC, TIFF, VTK, and more
+- **Supports many formats**: NIFTI, NRRD, MetaImage, DICOM, MRC, TIFF, VTK, and
+  more
 - **Live preview** with NiiVue during conversion
 - **Configurable settings**: chunk size, scale levels, colormap, opacity
 - **Multiscales info table**: shows pyramid levels, shapes, and estimated sizes
@@ -46,6 +47,7 @@ Via [@itk-wasm/image-io](https://github.com/InsightSoftwareConsortium/ITK-Wasm):
 ## Output Format
 
 The converter produces OME-Zarr 0.5 files in OZX format (RFC-9):
+
 - Single-file ZIP archive
 - Contains Zarr v3 arrays
 - Includes anatomical orientation metadata (RFC-4)

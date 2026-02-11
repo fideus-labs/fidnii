@@ -1,13 +1,15 @@
 // SPDX-FileCopyrightText: Copyright (c) Fideus Labs LLC
 // SPDX-License-Identifier: MIT
 
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 test.describe("Coordinate System", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
     // Wait for ready (generous timeout for S3 loading)
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
+    await expect(page.locator("#status")).toHaveText("Ready", {
+      timeout: 120000,
+    });
   });
 
   test("volume bounds match OME-Zarr metadata", async ({ page }) => {
@@ -149,7 +151,7 @@ test.describe("Coordinate System", () => {
       Math.abs(worlds[0][0]),
       Math.abs(worlds[0][1]),
       Math.abs(worlds[0][2]),
-      0.001
+      0.001,
     );
     const tolerance = extent * 0.1; // 10% of the world coordinate magnitude
 
@@ -185,9 +187,12 @@ test.describe("Coordinate System", () => {
       ) * 0.01;
       const point = planes[0].point;
       return {
-        pointInBoundsX: point[0] >= bounds.min[0] - epsilon && point[0] <= bounds.max[0] + epsilon,
-        pointInBoundsY: point[1] >= bounds.min[1] - epsilon && point[1] <= bounds.max[1] + epsilon,
-        pointInBoundsZ: point[2] >= bounds.min[2] - epsilon && point[2] <= bounds.max[2] + epsilon,
+        pointInBoundsX: point[0] >= bounds.min[0] - epsilon &&
+          point[0] <= bounds.max[0] + epsilon,
+        pointInBoundsY: point[1] >= bounds.min[1] - epsilon &&
+          point[1] <= bounds.max[1] + epsilon,
+        pointInBoundsZ: point[2] >= bounds.min[2] - epsilon &&
+          point[2] <= bounds.max[2] + epsilon,
       };
     });
 

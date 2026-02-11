@@ -5,18 +5,18 @@
 import { readImage } from "@itk-wasm/image-io";
 // Import from browser subpath for browser-compatible functions
 import {
-  toMultiscales,
-  Multiscales as MultiscalesClass,
+  createMetadataWithVersion,
   type Multiscales,
+  Multiscales as MultiscalesClass,
   type NgffImage,
   NgffImage as NgffImageClass,
-  createMetadataWithVersion,
+  toMultiscales,
 } from "@fideus-labs/ngff-zarr";
 // Import browser-specific toNgffZarrOzx which returns Uint8Array
 // (Node version takes a path and returns void)
 import {
-  toNgffZarrOzx,
   computeOmeroFromNgffImage,
+  toNgffZarrOzx,
 } from "@fideus-labs/ngff-zarr/browser";
 // itkImageToNgffImage is not in browser exports, but the main module has browser condition
 // that should resolve to browser-mod.js - we need to use the main import for this
@@ -135,12 +135,12 @@ export interface ConversionResult {
 export async function convertToOmeZarr(
   file: File,
   options: ConversionOptions,
-  onProgress?: ProgressCallback
+  onProgress?: ProgressCallback,
 ): Promise<ConversionResult> {
   const report = (
     stage: ConversionProgress["stage"],
     percent: number,
-    message: string
+    message: string,
   ) => {
     onProgress?.({ stage, percent, message });
   };
@@ -181,7 +181,11 @@ export async function convertToOmeZarr(
     chunks: options.chunkSize,
   });
 
-  report("downsampling", 70, `Created ${multiscalesV04.images.length} scale levels`);
+  report(
+    "downsampling",
+    70,
+    `Created ${multiscalesV04.images.length} scale levels`,
+  );
 
   // toMultiscales creates version 0.4 by default, but toNgffZarrOzx requires 0.5
   // Create a new Multiscales with version 0.5 metadata and OMERO visualization data
@@ -219,7 +223,9 @@ export async function convertToOmeZarr(
  * Trigger a file download in the browser
  */
 export function downloadFile(data: Uint8Array, filename: string): void {
-  const blob = new Blob([data as unknown as BlobPart], { type: "application/zip" });
+  const blob = new Blob([data as unknown as BlobPart], {
+    type: "application/zip",
+  });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -256,7 +262,8 @@ export function getMultiscalesInfo(multiscales: Multiscales): ScaleInfo[] {
   return multiscales.images.map((image: NgffImage, index: number) => {
     const dataset = multiscales.metadata.datasets[index];
     const shape = image.data.shape;
-    const chunks = image.data.chunks || shape.map((s: number) => Math.min(s, 64));
+    const chunks = image.data.chunks ||
+      shape.map((s: number) => Math.min(s, 64));
 
     // Estimate size: shape product * bytes per element
     const dtype = image.data.dtype;

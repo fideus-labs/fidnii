@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import type { Niivue, NVImage } from "@niivue/niivue";
 import type { OMEZarrNVImage } from "@fideus-labs/fidnii";
 
@@ -54,7 +54,7 @@ test.describe("Getting Started Example", () => {
     await page.waitForFunction(
       () => window.loadingComplete === true,
       null,
-      { timeout: 120000 }
+      { timeout: 120000 },
     );
 
     // No unexpected errors should have occurred
@@ -65,7 +65,7 @@ test.describe("Getting Started Example", () => {
     await page.waitForFunction(
       () => window.loadingComplete === true,
       null,
-      { timeout: 120000 }
+      { timeout: 120000 },
     );
 
     const metadata = await page.evaluate(() => {
@@ -83,7 +83,7 @@ test.describe("Getting Started Example", () => {
     await page.waitForFunction(
       () => window.loadingComplete === true,
       null,
-      { timeout: 120000 }
+      { timeout: 120000 },
     );
 
     const resolution = await page.evaluate(() => {
@@ -103,7 +103,7 @@ test.describe("Getting Started Example", () => {
     await page.waitForFunction(
       () => window.loadingComplete === true,
       null,
-      { timeout: 120000 }
+      { timeout: 120000 },
     );
 
     const bounds = await page.evaluate(() => {
@@ -118,13 +118,11 @@ test.describe("Getting Started Example", () => {
     }
   });
 
-  test("NiiVue has the volume loaded and buffer is populated", async ({
-    page,
-  }) => {
+  test("NiiVue has the volume loaded and buffer is populated", async ({ page }) => {
     await page.waitForFunction(
       () => window.loadingComplete === true,
       null,
-      { timeout: 120000 }
+      { timeout: 120000 },
     );
 
     const volumeInfo = await page.evaluate(() => {
@@ -136,8 +134,8 @@ test.describe("Getting Started Example", () => {
         // Check that the buffer has non-zero values (actual image data)
         hasNonZeroData: img
           ? Array.from(img.slice(0, 1000) as ArrayLike<number>).some(
-              (v: number) => v > 0
-            )
+            (v: number) => v > 0,
+          )
           : false,
       };
     });
@@ -152,7 +150,7 @@ test.describe("Getting Started Example", () => {
     await page.waitForFunction(
       () => window.loadingComplete === true,
       null,
-      { timeout: 120000 }
+      { timeout: 120000 },
     );
 
     const isLoading = await page.evaluate(() => {

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { TypedArray, TypedArrayConstructor, ZarrDtype } from "./types.js";
-import { getTypedArrayConstructor, getBytesPerPixel } from "./types.js";
+import { getBytesPerPixel, getTypedArrayConstructor } from "./types.js";
 
 /**
  * Manages a dynamically-sized pixel buffer for volume data.
@@ -57,18 +57,20 @@ export class BufferManager {
 
     if (requiredPixels > this.maxPixels) {
       console.warn(
-        `[fidnii] BufferManager: Requested dimensions [${dimensions.join(", ")}] = ${requiredPixels} pixels exceeds maxPixels (${this.maxPixels}). ` +
-        `Proceeding anyway (likely at lowest resolution).`
+        `[fidnii] BufferManager: Requested dimensions [${
+          dimensions.join(", ")
+        }] = ${requiredPixels} pixels exceeds maxPixels (${this.maxPixels}). ` +
+          `Proceeding anyway (likely at lowest resolution).`,
       );
     }
 
-    const currentCapacityPixels =
-      this.buffer.byteLength / this.bytesPerPixel;
-    const utilizationRatio =
-      currentCapacityPixels > 0 ? requiredPixels / currentCapacityPixels : 0;
+    const currentCapacityPixels = this.buffer.byteLength / this.bytesPerPixel;
+    const utilizationRatio = currentCapacityPixels > 0
+      ? requiredPixels / currentCapacityPixels
+      : 0;
 
-    const needsReallocation =
-      requiredPixels > currentCapacityPixels || utilizationRatio < 0.25;
+    const needsReallocation = requiredPixels > currentCapacityPixels ||
+      utilizationRatio < 0.25;
 
     if (needsReallocation) {
       // Allocate new buffer
@@ -93,8 +95,7 @@ export class BufferManager {
    * The view is sized to match currentDimensions, not the full buffer capacity.
    */
   getTypedArray(): TypedArray {
-    const pixelCount =
-      this.currentDimensions[0] *
+    const pixelCount = this.currentDimensions[0] *
       this.currentDimensions[1] *
       this.currentDimensions[2];
     return new this.TypedArrayCtor(this.buffer, 0, pixelCount);
@@ -155,7 +156,7 @@ export class BufferManager {
       const view = new Uint8Array(
         this.buffer,
         0,
-        pixelCount * this.bytesPerPixel
+        pixelCount * this.bytesPerPixel,
       );
       view.fill(0);
     }
@@ -169,8 +170,7 @@ export class BufferManager {
    */
   canAccommodate(dimensions: [number, number, number]): boolean {
     const requiredPixels = dimensions[0] * dimensions[1] * dimensions[2];
-    const currentCapacityPixels =
-      this.buffer.byteLength / this.bytesPerPixel;
+    const currentCapacityPixels = this.buffer.byteLength / this.bytesPerPixel;
     return requiredPixels <= currentCapacityPixels;
   }
 }

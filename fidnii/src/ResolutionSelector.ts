@@ -2,7 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import type { Multiscales, NgffImage } from "@fideus-labs/ngff-zarr";
-import type { ClipPlanes, PixelRegion, ResolutionSelection, VolumeBounds } from "./types.js";
+import type {
+  ClipPlanes,
+  PixelRegion,
+  ResolutionSelection,
+  VolumeBounds,
+} from "./types.js";
 import { clipPlanesToPixelRegion } from "./ClipPlanes.js";
 
 /**
@@ -31,14 +36,19 @@ export function selectResolution(
   maxPixels: number,
   clipPlanes: ClipPlanes,
   volumeBounds: VolumeBounds,
-  viewportBounds?: VolumeBounds
+  viewportBounds?: VolumeBounds,
 ): ResolutionSelection {
   const images = multiscales.images;
 
   // Try each resolution from highest to lowest
   for (let i = 0; i < images.length; i++) {
     const image = images[i];
-    const region = clipPlanesToPixelRegion(clipPlanes, volumeBounds, image, viewportBounds);
+    const region = clipPlanesToPixelRegion(
+      clipPlanes,
+      volumeBounds,
+      image,
+      viewportBounds,
+    );
     const alignedRegion = alignRegionToChunks(region, image);
 
     const dimensions: [number, number, number] = [
@@ -60,7 +70,12 @@ export function selectResolution(
 
   // Fall back to lowest resolution
   const lowestImage = images[images.length - 1];
-  const region = clipPlanesToPixelRegion(clipPlanes, volumeBounds, lowestImage, viewportBounds);
+  const region = clipPlanesToPixelRegion(
+    clipPlanes,
+    volumeBounds,
+    lowestImage,
+    viewportBounds,
+  );
   const alignedRegion = alignRegionToChunks(region, lowestImage);
 
   const dimensions: [number, number, number] = [
@@ -134,7 +149,7 @@ export function getVolumeShape(ngffImage: NgffImage): [number, number, number] {
  */
 export function alignRegionToChunks(
   region: PixelRegion,
-  ngffImage: NgffImage
+  ngffImage: NgffImage,
 ): PixelRegion {
   const chunkShape = getChunkShape(ngffImage);
   const volumeShape = getVolumeShape(ngffImage);
@@ -150,15 +165,15 @@ export function alignRegionToChunks(
   const alignedEnd: [number, number, number] = [
     Math.min(
       Math.ceil(region.end[0] / chunkShape[0]) * chunkShape[0],
-      volumeShape[0]
+      volumeShape[0],
     ),
     Math.min(
       Math.ceil(region.end[1] / chunkShape[1]) * chunkShape[1],
-      volumeShape[1]
+      volumeShape[1],
     ),
     Math.min(
       Math.ceil(region.end[2] / chunkShape[2]) * chunkShape[2],
-      volumeShape[2]
+      volumeShape[2],
     ),
   ];
 
@@ -189,7 +204,7 @@ export function getMiddleResolutionIndex(multiscales: Multiscales): number {
 export function calculateUpsampleFactor(
   multiscales: Multiscales,
   fromLevel: number,
-  toLevel: number
+  toLevel: number,
 ): [number, number, number] {
   const fromImage = multiscales.images[fromLevel];
   const toImage = multiscales.images[toLevel];
@@ -209,7 +224,7 @@ export function calculateUpsampleFactor(
  */
 export function getFullVolumeDimensions(
   multiscales: Multiscales,
-  levelIndex: number
+  levelIndex: number,
 ): [number, number, number] {
   return getVolumeShape(multiscales.images[levelIndex]);
 }
@@ -240,14 +255,19 @@ export function select2DResolution(
   clipPlanes: ClipPlanes,
   volumeBounds: VolumeBounds,
   orthogonalAxis: OrthogonalAxis,
-  viewportBounds?: VolumeBounds
+  viewportBounds?: VolumeBounds,
 ): ResolutionSelection {
   const images = multiscales.images;
 
   // Try each resolution from highest to lowest
   for (let i = 0; i < images.length; i++) {
     const image = images[i];
-    const region = clipPlanesToPixelRegion(clipPlanes, volumeBounds, image, viewportBounds);
+    const region = clipPlanesToPixelRegion(
+      clipPlanes,
+      volumeBounds,
+      image,
+      viewportBounds,
+    );
     const alignedRegion = alignRegionToChunks(region, image);
 
     const dimensions: [number, number, number] = [
@@ -261,8 +281,11 @@ export function select2DResolution(
     // chunk shape rather than the full volume extent in that axis.
     const chunkShape = getChunkShape(image);
     const slabDepth = chunkShape[orthogonalAxis];
-    const inPlaneAxes = ([0, 1, 2] as const).filter(a => a !== orthogonalAxis);
-    const slabVoxelCount = dimensions[inPlaneAxes[0]] * dimensions[inPlaneAxes[1]] * slabDepth;
+    const inPlaneAxes = ([0, 1, 2] as const).filter((a) =>
+      a !== orthogonalAxis
+    );
+    const slabVoxelCount = dimensions[inPlaneAxes[0]] *
+      dimensions[inPlaneAxes[1]] * slabDepth;
 
     if (slabVoxelCount <= maxPixels) {
       return {
@@ -275,7 +298,12 @@ export function select2DResolution(
 
   // Fall back to lowest resolution
   const lowestImage = images[images.length - 1];
-  const region = clipPlanesToPixelRegion(clipPlanes, volumeBounds, lowestImage, viewportBounds);
+  const region = clipPlanesToPixelRegion(
+    clipPlanes,
+    volumeBounds,
+    lowestImage,
+    viewportBounds,
+  );
   const alignedRegion = alignRegionToChunks(region, lowestImage);
 
   const dimensions: [number, number, number] = [
@@ -286,11 +314,12 @@ export function select2DResolution(
 
   const chunkShape = getChunkShape(lowestImage);
   const slabDepth = chunkShape[orthogonalAxis];
-  const inPlaneAxes = ([0, 1, 2] as const).filter(a => a !== orthogonalAxis);
+  const inPlaneAxes = ([0, 1, 2] as const).filter((a) => a !== orthogonalAxis);
 
   return {
     levelIndex: images.length - 1,
     dimensions,
-    pixelCount: dimensions[inPlaneAxes[0]] * dimensions[inPlaneAxes[1]] * slabDepth,
+    pixelCount: dimensions[inPlaneAxes[0]] * dimensions[inPlaneAxes[1]] *
+      slabDepth,
   };
 }

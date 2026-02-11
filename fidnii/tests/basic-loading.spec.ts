@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) Fideus Labs LLC
 // SPDX-License-Identifier: MIT
 
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 test.describe("Basic Loading", () => {
   test.beforeEach(async ({ page }) => {
@@ -30,7 +30,9 @@ test.describe("Basic Loading", () => {
 
   test("resolution info is populated after load", async ({ page }) => {
     // Wait for ready
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
+    await expect(page.locator("#status")).toHaveText("Ready", {
+      timeout: 120000,
+    });
 
     // Check resolution info is populated
     const numLevels = page.locator("#num-levels");
@@ -42,7 +44,9 @@ test.describe("Basic Loading", () => {
 
   test("volume bounds are displayed", async ({ page }) => {
     // Wait for ready
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
+    await expect(page.locator("#status")).toHaveText("Ready", {
+      timeout: 120000,
+    });
 
     // Check bounds are populated
     const boundsX = page.locator("#bounds-x");
@@ -56,18 +60,23 @@ test.describe("Basic Loading", () => {
 
   test("OMEZarrNVImage is exposed on window", async ({ page }) => {
     // Wait for ready
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
+    await expect(page.locator("#status")).toHaveText("Ready", {
+      timeout: 120000,
+    });
 
     // Check that image is exposed on window
     const hasImage = await page.evaluate(() => {
-      return (window as any).image !== null && (window as any).image !== undefined;
+      return (window as any).image !== null &&
+        (window as any).image !== undefined;
     });
     expect(hasImage).toBe(true);
   });
 
   test("NiiVue is exposed on window", async ({ page }) => {
     // Wait for ready
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
+    await expect(page.locator("#status")).toHaveText("Ready", {
+      timeout: 120000,
+    });
 
     // Check that nv is exposed on window
     const hasNv = await page.evaluate(() => {
@@ -78,7 +87,9 @@ test.describe("Basic Loading", () => {
 
   test("image has correct multiscales metadata", async ({ page }) => {
     // Wait for ready
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
+    await expect(page.locator("#status")).toHaveText("Ready", {
+      timeout: 120000,
+    });
 
     // Check multiscales info
     const metadata = await page.evaluate(() => {

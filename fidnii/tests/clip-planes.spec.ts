@@ -1,13 +1,15 @@
 // SPDX-FileCopyrightText: Copyright (c) Fideus Labs LLC
 // SPDX-License-Identifier: MIT
 
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 test.describe("Clip Planes", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
     // Wait for ready (generous timeout for S3 loading)
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
+    await expect(page.locator("#status")).toHaveText("Ready", {
+      timeout: 120000,
+    });
   });
 
   test("default clip planes is empty array (full volume visible)", async ({ page }) => {
@@ -81,12 +83,30 @@ test.describe("Clip Planes", () => {
       const rangeY = bounds.max[1] - bounds.min[1];
       const rangeZ = bounds.max[2] - bounds.min[2];
       image.setClipPlanes([
-        { point: [bounds.min[0] + rangeX * 0.25, center[1], center[2]], normal: [1, 0, 0] },
-        { point: [bounds.max[0] - rangeX * 0.25, center[1], center[2]], normal: [-1, 0, 0] },
-        { point: [center[0], bounds.min[1] + rangeY * 0.25, center[2]], normal: [0, 1, 0] },
-        { point: [center[0], bounds.max[1] - rangeY * 0.25, center[2]], normal: [0, -1, 0] },
-        { point: [center[0], center[1], bounds.min[2] + rangeZ * 0.25], normal: [0, 0, 1] },
-        { point: [center[0], center[1], bounds.max[2] - rangeZ * 0.25], normal: [0, 0, -1] },
+        {
+          point: [bounds.min[0] + rangeX * 0.25, center[1], center[2]],
+          normal: [1, 0, 0],
+        },
+        {
+          point: [bounds.max[0] - rangeX * 0.25, center[1], center[2]],
+          normal: [-1, 0, 0],
+        },
+        {
+          point: [center[0], bounds.min[1] + rangeY * 0.25, center[2]],
+          normal: [0, 1, 0],
+        },
+        {
+          point: [center[0], bounds.max[1] - rangeY * 0.25, center[2]],
+          normal: [0, -1, 0],
+        },
+        {
+          point: [center[0], center[1], bounds.min[2] + rangeZ * 0.25],
+          normal: [0, 0, 1],
+        },
+        {
+          point: [center[0], center[1], bounds.max[2] - rangeZ * 0.25],
+          normal: [0, 0, -1],
+        },
       ]);
 
       await image.waitForIdle();
@@ -297,7 +317,9 @@ test.describe("Clip Planes", () => {
       const normal = planes[0].normal;
 
       // Calculate length
-      const length = Math.sqrt(normal[0] ** 2 + normal[1] ** 2 + normal[2] ** 2);
+      const length = Math.sqrt(
+        normal[0] ** 2 + normal[1] ** 2 + normal[2] ** 2,
+      );
 
       return { normal, length };
     });
@@ -330,12 +352,30 @@ test.describe("Clip Planes", () => {
       ];
 
       image.setClipPlanes([
-        { point: [center[0] - range[0] * 0.05, center[1], center[2]], normal: [1, 0, 0] },
-        { point: [center[0] + range[0] * 0.05, center[1], center[2]], normal: [-1, 0, 0] },
-        { point: [center[0], center[1] - range[1] * 0.05, center[2]], normal: [0, 1, 0] },
-        { point: [center[0], center[1] + range[1] * 0.05, center[2]], normal: [0, -1, 0] },
-        { point: [center[0], center[1], center[2] - range[2] * 0.05], normal: [0, 0, 1] },
-        { point: [center[0], center[1], center[2] + range[2] * 0.05], normal: [0, 0, -1] },
+        {
+          point: [center[0] - range[0] * 0.05, center[1], center[2]],
+          normal: [1, 0, 0],
+        },
+        {
+          point: [center[0] + range[0] * 0.05, center[1], center[2]],
+          normal: [-1, 0, 0],
+        },
+        {
+          point: [center[0], center[1] - range[1] * 0.05, center[2]],
+          normal: [0, 1, 0],
+        },
+        {
+          point: [center[0], center[1] + range[1] * 0.05, center[2]],
+          normal: [0, -1, 0],
+        },
+        {
+          point: [center[0], center[1], center[2] - range[2] * 0.05],
+          normal: [0, 0, 1],
+        },
+        {
+          point: [center[0], center[1], center[2] + range[2] * 0.05],
+          normal: [0, 0, -1],
+        },
       ]);
 
       await image.waitForIdle();
@@ -414,7 +454,7 @@ test.describe("Clip Planes", () => {
 
   test("UI shows clip plane count", async ({ page }) => {
     const countEl = page.locator("#clip-plane-count");
-    
+
     // Initially 0
     await expect(countEl).toHaveText("0");
 
@@ -423,13 +463,13 @@ test.describe("Clip Planes", () => {
       const image = (window as any).image;
       const bounds = image.getVolumeBounds();
       const xminSlider = document.getElementById("xmin") as HTMLInputElement;
-      
+
       // Move slider 25% into the volume
       const xminTarget = bounds.min[0] + (bounds.max[0] - bounds.min[0]) * 0.25;
       xminSlider.value = String(xminTarget);
       xminSlider.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    
+
     // Should now have 1 clip plane
     await expect(countEl).toHaveText("1");
 

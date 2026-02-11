@@ -1,13 +1,15 @@
 // SPDX-FileCopyrightText: Copyright (c) Fideus Labs LLC
 // SPDX-License-Identifier: MIT
 
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 test.describe("Slice Mode", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
     // Wait for the 3D render to complete loading
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
+    await expect(page.locator("#status")).toHaveText("Ready", {
+      timeout: 120000,
+    });
   });
 
   test("second canvas exists", async ({ page }) => {
@@ -236,7 +238,9 @@ test.describe("Slice Mode", () => {
 
       // SLICE_TYPE.AXIAL = 0
       const slabState = image.getSlabBufferState(0);
-      const hasSlabVolume = nv2.volumes.some((v: any) => v === slabState?.nvImage);
+      const hasSlabVolume = nv2.volumes.some((v: any) =>
+        v === slabState?.nvImage
+      );
 
       return {
         slabExists: slabState !== undefined,
@@ -295,8 +299,12 @@ test.describe("Slice Mode", () => {
   test("slab info display updates in UI", async ({ page }) => {
     // Wait for the slab info to be updated from its default "-"
     // (progressive loading may take a while for all levels)
-    await expect(page.locator("#slab-level")).not.toHaveText("-", { timeout: 120000 });
-    await expect(page.locator("#slab-range")).not.toHaveText("-", { timeout: 5000 });
+    await expect(page.locator("#slab-level")).not.toHaveText("-", {
+      timeout: 120000,
+    });
+    await expect(page.locator("#slab-range")).not.toHaveText("-", {
+      timeout: 5000,
+    });
   });
 
   test("gl2-label updates when slice type changes", async ({ page }) => {

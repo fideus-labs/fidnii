@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) Fideus Labs LLC
 // SPDX-License-Identifier: MIT
 
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 test.describe("Progressive Loading", () => {
   test.beforeEach(async ({ page }) => {
@@ -10,7 +10,9 @@ test.describe("Progressive Loading", () => {
 
   test("progressive loading starts from lowest resolution", async ({ page }) => {
     // Wait for loading to complete (generous timeout for S3 loading)
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
+    await expect(page.locator("#status")).toHaveText("Ready", {
+      timeout: 120000,
+    });
 
     // The image should exist and have resolution info
     const result = await page.evaluate(() => {
@@ -33,7 +35,9 @@ test.describe("Progressive Loading", () => {
 
   test("current level reaches target level after loading", async ({ page }) => {
     // Wait for ready (generous timeout for S3 loading)
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
+    await expect(page.locator("#status")).toHaveText("Ready", {
+      timeout: 120000,
+    });
 
     // Check current level equals or is less than target
     const levels = await page.evaluate(() => {
@@ -49,7 +53,9 @@ test.describe("Progressive Loading", () => {
 
   test("target level is selected based on pixel budget", async ({ page }) => {
     // Wait for ready (generous timeout for S3 loading)
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
+    await expect(page.locator("#status")).toHaveText("Ready", {
+      timeout: 120000,
+    });
 
     // Default is 4M pixels
     const levels = await page.evaluate(() => {
@@ -68,7 +74,9 @@ test.describe("Progressive Loading", () => {
 
   test("image buffer is populated after loading", async ({ page }) => {
     // Wait for ready (generous timeout for S3 loading)
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
+    await expect(page.locator("#status")).toHaveText("Ready", {
+      timeout: 120000,
+    });
 
     // Check that image data is populated
     const bufferInfo = await page.evaluate(() => {
@@ -112,7 +120,9 @@ test.describe("Progressive Loading", () => {
 
   test("waitForIdle resolves after loading completes", async ({ page }) => {
     // Wait for ready (generous timeout for S3 loading)
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
+    await expect(page.locator("#status")).toHaveText("Ready", {
+      timeout: 120000,
+    });
 
     // waitForIdle should resolve immediately when not loading
     const waitResult = await page.evaluate(async () => {

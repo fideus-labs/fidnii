@@ -223,7 +223,7 @@ export interface AttachedNiivueState {
   previousOnOptsChange?: (
     propertyName: string,
     newValue: unknown,
-    oldValue: unknown
+    oldValue: unknown,
   ) => void;
   /** Previous onMouseUp callback (to chain, for viewport-aware mode) */
   previousOnMouseUp?: (data: unknown) => void;
@@ -262,12 +262,15 @@ export const NiftiDataType = {
   UINT32: 768,
 } as const;
 
-export type NiftiDataTypeCode = (typeof NiftiDataType)[keyof typeof NiftiDataType];
+export type NiftiDataTypeCode =
+  (typeof NiftiDataType)[keyof typeof NiftiDataType];
 
 /**
  * Map zarr dtype to typed array constructor.
  */
-export function getTypedArrayConstructor(dtype: ZarrDtype): TypedArrayConstructor {
+export function getTypedArrayConstructor(
+  dtype: ZarrDtype,
+): TypedArrayConstructor {
   switch (dtype) {
     case "uint8":
       return Uint8Array;

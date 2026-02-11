@@ -39,19 +39,19 @@ export { OMEZarrNVImage } from "./OMEZarrNVImage.js";
 
 // Types
 export type {
+  AttachedNiivueState,
+  ChunkAlignedRegion,
   ClipPlane,
   ClipPlanes,
-  VolumeBounds,
-  PixelRegion,
-  ChunkAlignedRegion,
-  ResolutionSelection,
   OMEZarrNVImageOptions,
+  PixelRegion,
   RegionFetchResult,
-  ZarrDtype,
-  TypedArray,
+  ResolutionSelection,
   SlabBufferState,
-  AttachedNiivueState,
   SlabSliceType,
+  TypedArray,
+  VolumeBounds,
+  ZarrDtype,
 } from "./types.js";
 
 // Re-export SLICE_TYPE from types (which re-exports from niivue)
@@ -59,35 +59,35 @@ export { SLICE_TYPE } from "./types.js";
 
 // Clip planes utilities
 export {
-  createClipPlane,
-  normalizeVector,
-  createDefaultClipPlanes,
-  getVolumeBoundsFromMultiscales,
-  normalToAzimuthElevation,
+  alignToChunks,
   azimuthElevationToNormal,
   calculateNiivueDepth,
-  clipPlaneToNiivue,
-  clipPlanesToNiivue,
-  pointToPlaneDistance,
-  isInsideClipPlanes,
   clipPlanesToBoundingBox,
+  clipPlanesToNiivue,
   clipPlanesToPixelRegion,
-  alignToChunks,
+  clipPlaneToNiivue,
   createAxisAlignedClipPlane,
-  validateClipPlanes,
+  createClipPlane,
+  createDefaultClipPlanes,
+  getVolumeBoundsFromMultiscales,
+  isInsideClipPlanes,
   MAX_CLIP_PLANES,
+  normalizeVector,
+  normalToAzimuthElevation,
+  pointToPlaneDistance,
+  validateClipPlanes,
 } from "./ClipPlanes.js";
 
 // Resolution selector utilities
 export {
-  selectResolution,
-  select2DResolution,
-  getChunkShape,
-  getVolumeShape,
   alignRegionToChunks,
-  getMiddleResolutionIndex,
   calculateUpsampleFactor,
+  getChunkShape,
   getFullVolumeDimensions,
+  getMiddleResolutionIndex,
+  getVolumeShape,
+  select2DResolution,
+  selectResolution,
 } from "./ResolutionSelector.js";
 
 export type { OrthogonalAxis } from "./ResolutionSelector.js";
@@ -100,35 +100,35 @@ export { RegionCoalescer } from "./RegionCoalescer.js";
 
 // Coordinate utilities
 export {
-  worldToPixel,
-  pixelToWorld,
-  worldToPixelAffine,
-  pixelToWorldAffine,
-  normalizedToWorld,
-  worldToNormalized,
-  clampPixelCoord,
-  roundPixelCoord,
-  floorPixelCoord,
   ceilPixelCoord,
+  clampPixelCoord,
+  floorPixelCoord,
+  normalizedToWorld,
+  pixelToWorld,
+  pixelToWorldAffine,
+  roundPixelCoord,
+  worldToNormalized,
+  worldToPixel,
+  worldToPixelAffine,
 } from "./utils/coordinates.js";
 
 // Affine utilities
 export {
-  createAffineFromOMEZarr,
-  createAffineFromNgffImage,
   affineToNiftiSrows,
+  calculateWorldBounds,
+  createAffineFromNgffImage,
+  createAffineFromOMEZarr,
   getPixelDimensions,
   updateAffineForRegion,
-  calculateWorldBounds,
 } from "./utils/affine.js";
 
 // Type utilities
 export {
-  getTypedArrayConstructor,
   getBytesPerPixel,
   getNiftiDataType,
-  parseZarritaDtype,
+  getTypedArrayConstructor,
   NiftiDataType,
+  parseZarritaDtype,
 } from "./types.js";
 
 // Worker pool lifecycle (re-exported from ngff-zarr)
@@ -136,17 +136,17 @@ export { terminateWorkerPool } from "@fideus-labs/ngff-zarr/browser";
 
 // Viewport bounds utilities
 export {
-  computeViewportBounds3D,
-  computeViewportBounds2D,
-  intersectBounds,
   boundsApproxEqual,
+  computeViewportBounds2D,
+  computeViewportBounds3D,
+  intersectBounds,
 } from "./ViewportBounds.js";
 
 // Event system (browser-native EventTarget API)
 export { OMEZarrNVImageEvent } from "./events.js";
 export type {
-  OMEZarrNVImageEventMap,
   OMEZarrNVImageEventListener,
   OMEZarrNVImageEventListenerOptions,
+  OMEZarrNVImageEventMap,
   PopulateTrigger,
 } from "./events.js";

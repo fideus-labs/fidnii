@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) Fideus Labs LLC
 // SPDX-License-Identifier: MIT
 
-import { Niivue, SLICE_TYPE, DRAG_MODE } from "@niivue/niivue";
+import { DRAG_MODE, Niivue, SLICE_TYPE } from "@niivue/niivue";
 import { fromNgffZarr } from "@fideus-labs/ngff-zarr/browser";
 import { OMEZarrNVImage } from "@fideus-labs/fidnii";
 
@@ -13,7 +13,8 @@ declare global {
   }
 }
 
-const DATA_URL = "https://ome-zarr-scivis.s3.us-east-1.amazonaws.com/v0.5/96x2/beechnut.ome.zarr";
+const DATA_URL =
+  "https://ome-zarr-scivis.s3.us-east-1.amazonaws.com/v0.5/96x2/beechnut.ome.zarr";
 
 // DOM elements — info panel
 const statusEl = document.getElementById("status")!;
@@ -26,16 +27,24 @@ const boundsZEl = document.getElementById("bounds-z")!;
 const clipPlaneCountEl = document.getElementById("clip-plane-count")!;
 
 // DOM elements — controls
-const maxpixelsSlider = document.getElementById("maxpixels") as HTMLInputElement;
+const maxpixelsSlider = document.getElementById(
+  "maxpixels",
+) as HTMLInputElement;
 const maxpixelsValueEl = document.getElementById("maxpixels-value")!;
 const reloadBtn = document.getElementById("reload")!;
 const resetClipPlanesBtn = document.getElementById("reset-clip-planes")!;
-const sliceTypeSelect = document.getElementById("slice-type") as HTMLSelectElement;
+const sliceTypeSelect = document.getElementById(
+  "slice-type",
+) as HTMLSelectElement;
 const slabLevelEl = document.getElementById("slab-level")!;
 const slabRangeEl = document.getElementById("slab-range")!;
 const gl2LabelEl = document.getElementById("gl2-label")!;
-const viewportAwareCheckbox = document.getElementById("viewport-aware") as HTMLInputElement;
-const scrollZoomCheckbox = document.getElementById("scroll-zoom") as HTMLInputElement;
+const viewportAwareCheckbox = document.getElementById(
+  "viewport-aware",
+) as HTMLInputElement;
+const scrollZoomCheckbox = document.getElementById(
+  "scroll-zoom",
+) as HTMLInputElement;
 
 // Clip plane sliders (6 axis-aligned)
 const sliders = {
@@ -58,8 +67,12 @@ function formatBounds(min: number, max: number): string {
 }
 
 /** Configure all 6 slider ranges from the volume bounds and reset to extremes. */
-function configureSlidersFromBounds(bounds: { min: number[]; max: number[] }): void {
-  const axes: Array<{ min: string; max: string; axis: number; isMax: boolean }> = [
+function configureSlidersFromBounds(
+  bounds: { min: number[]; max: number[] },
+): void {
+  const axes: Array<
+    { min: string; max: string; axis: number; isMax: boolean }
+  > = [
     { min: "xmin", max: "xmax", axis: 0, isMax: false },
     { min: "xmin", max: "xmax", axis: 0, isMax: true },
     { min: "ymin", max: "ymax", axis: 1, isMax: false },
@@ -82,11 +95,15 @@ function configureSlidersFromBounds(bounds: { min: number[]; max: number[] }): v
 }
 
 /** Build clip planes array from the current slider positions. */
-function buildClipPlanesFromSliders(bounds: { min: number[]; max: number[] }): Array<{
+function buildClipPlanesFromSliders(
+  bounds: { min: number[]; max: number[] },
+): Array<{
   point: [number, number, number];
   normal: [number, number, number];
 }> {
-  const planes: Array<{ point: [number, number, number]; normal: [number, number, number] }> = [];
+  const planes: Array<
+    { point: [number, number, number]; normal: [number, number, number] }
+  > = [];
 
   const center: [number, number, number] = [
     (bounds.min[0] + bounds.max[0]) / 2,
@@ -177,7 +194,11 @@ function updateInfoPanel(image: OMEZarrNVImage): void {
 // Image loading
 // ---------------------------------------------------------------------------
 
-async function loadImage(nv: Niivue, nv2: Niivue, maxPixels: number): Promise<OMEZarrNVImage> {
+async function loadImage(
+  nv: Niivue,
+  nv2: Niivue,
+  maxPixels: number,
+): Promise<OMEZarrNVImage> {
   statusEl.textContent = "Loading...";
 
   // Remove existing volumes from both NV instances
@@ -217,7 +238,8 @@ async function loadImage(nv: Niivue, nv2: Niivue, maxPixels: number): Promise<OM
   // Listen for slab loading events — update slab info display
   image.addEventListener("slabLoadingComplete", (event) => {
     const detail = event.detail;
-    const sliceTypeName = SLICE_TYPE[detail.sliceType] ?? String(detail.sliceType);
+    const sliceTypeName = SLICE_TYPE[detail.sliceType] ??
+      String(detail.sliceType);
     slabLevelEl.textContent = `${detail.levelIndex} (${sliceTypeName})`;
     slabRangeEl.textContent = `[${detail.slabStart}, ${detail.slabEnd})`;
   });
@@ -289,7 +311,9 @@ viewportAwareCheckbox.addEventListener("change", () => {
 scrollZoomCheckbox.addEventListener("change", () => {
   const nv2 = window.nv2;
   if (!nv2) return;
-  nv2.opts.dragMode = scrollZoomCheckbox.checked ? DRAG_MODE.pan : DRAG_MODE.contrast;
+  nv2.opts.dragMode = scrollZoomCheckbox.checked
+    ? DRAG_MODE.pan
+    : DRAG_MODE.contrast;
 });
 
 // --- Reload button ---

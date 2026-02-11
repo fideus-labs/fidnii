@@ -25,7 +25,7 @@ import type { NgffImage } from "@fideus-labs/ngff-zarr";
  */
 export function createAffineFromOMEZarr(
   scale: Record<string, number>,
-  translation: Record<string, number>
+  translation: Record<string, number>,
 ): mat4 {
   const affine = mat4.create();
 
@@ -135,7 +135,7 @@ export function getPixelDimensions(affine: mat4): [number, number, number] {
 export function updateAffineForRegion(
   originalAffine: mat4,
   regionStart: [number, number, number],
-  scaleFactor: [number, number, number]
+  scaleFactor: [number, number, number],
 ): mat4 {
   const result = mat4.clone(originalAffine);
 
@@ -175,7 +175,7 @@ export function updateAffineForRegion(
  */
 export function calculateWorldBounds(
   affine: mat4,
-  dimensions: [number, number, number]
+  dimensions: [number, number, number],
 ): { min: [number, number, number]; max: [number, number, number] } {
   // Calculate all 8 corners of the volume in world space
   const [dimZ, dimY, dimX] = dimensions;

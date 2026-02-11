@@ -2,9 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import type { Multiscales, NgffImage } from "@fideus-labs/ngff-zarr";
-import type { ClipPlane, ClipPlanes, PixelRegion, ChunkAlignedRegion, VolumeBounds } from "./types.js";
-import { worldToPixel, pixelToWorld } from "./utils/coordinates.js";
-import { getVolumeShape, getChunkShape } from "./ResolutionSelector.js";
+import type {
+  ChunkAlignedRegion,
+  ClipPlane,
+  ClipPlanes,
+  PixelRegion,
+  VolumeBounds,
+} from "./types.js";
+import { pixelToWorld, worldToPixel } from "./utils/coordinates.js";
+import { getChunkShape, getVolumeShape } from "./ResolutionSelector.js";
 
 /** Maximum number of clip planes supported by NiiVue */
 export const MAX_CLIP_PLANES = 6;
@@ -16,7 +22,9 @@ export const MAX_CLIP_PLANES = 6;
  * @returns Normalized vector [x, y, z]
  * @throws Error if vector has zero length
  */
-export function normalizeVector(v: [number, number, number]): [number, number, number] {
+export function normalizeVector(
+  v: [number, number, number],
+): [number, number, number] {
   const length = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
   if (length === 0) {
     throw new Error("Cannot normalize zero-length vector");
@@ -34,7 +42,7 @@ export function normalizeVector(v: [number, number, number]): [number, number, n
  */
 export function createClipPlane(
   point: [number, number, number],
-  normal: [number, number, number]
+  normal: [number, number, number],
 ): ClipPlane {
   return {
     point: [...point],
@@ -58,7 +66,9 @@ export function createDefaultClipPlanes(_multiscales: Multiscales): ClipPlanes {
  * @param multiscales - The OME-Zarr multiscales data
  * @returns Volume bounds in world space
  */
-export function getVolumeBoundsFromMultiscales(multiscales: Multiscales): VolumeBounds {
+export function getVolumeBoundsFromMultiscales(
+  multiscales: Multiscales,
+): VolumeBounds {
   // Use highest resolution for most accurate bounds
   const image = multiscales.images[0];
   const shape = getVolumeShape(image);
@@ -94,7 +104,7 @@ export function getVolumeBoundsFromMultiscales(multiscales: Multiscales): Volume
  * @returns Object with azimuth and elevation in degrees
  */
 export function normalToAzimuthElevation(
-  normal: [number, number, number]
+  normal: [number, number, number],
 ): { azimuth: number; elevation: number } {
   const [x, y, z] = normal;
 
@@ -120,7 +130,7 @@ export function normalToAzimuthElevation(
  */
 export function azimuthElevationToNormal(
   azimuth: number,
-  elevation: number
+  elevation: number,
 ): [number, number, number] {
   const azRad = (azimuth * Math.PI) / 180;
   const elRad = (elevation * Math.PI) / 180;
@@ -147,7 +157,7 @@ export function azimuthElevationToNormal(
  */
 export function calculateNiivueDepth(
   plane: ClipPlane,
-  volumeBounds: VolumeBounds
+  volumeBounds: VolumeBounds,
 ): number {
   const { min, max } = volumeBounds;
 
@@ -167,15 +177,13 @@ export function calculateNiivueDepth(
 
   // Signed distance from center to plane along normal
   const { point, normal } = plane;
-  const signedDistance =
-    normal[0] * (point[0] - center[0]) +
+  const signedDistance = normal[0] * (point[0] - center[0]) +
     normal[1] * (point[1] - center[1]) +
     normal[2] * (point[2] - center[2]);
 
   // Full extent along normal direction (using absolute value of each component)
   // This is the "width" of the bounding box when projected onto the normal direction
-  const extentAlongNormal =
-    Math.abs(normal[0]) * extent[0] +
+  const extentAlongNormal = Math.abs(normal[0]) * extent[0] +
     Math.abs(normal[1]) * extent[1] +
     Math.abs(normal[2]) * extent[2];
 
@@ -211,10 +219,10 @@ export function calculateNiivueDepth(
  */
 export function clipPlaneToNiivue(
   plane: ClipPlane,
-  volumeBounds: VolumeBounds
+  volumeBounds: VolumeBounds,
 ): [number, number, number] {
   const depth = calculateNiivueDepth(plane, volumeBounds);
-  
+
   // Negate the normal for azimuth/elevation calculation.
   // After NiiVue adds 180° to azimuth, the shader will see our original normal.
   const negatedNormal: [number, number, number] = [
@@ -223,7 +231,7 @@ export function clipPlaneToNiivue(
     -plane.normal[2],
   ];
   const { azimuth, elevation } = normalToAzimuthElevation(negatedNormal);
-  
+
   // Also negate the depth to be consistent with the flipped normal.
   // The plane equation dot(n, p-center) + d = 0 changes sign when n is negated.
   const negatedDepth = -depth;
@@ -240,7 +248,7 @@ export function clipPlaneToNiivue(
  */
 export function clipPlanesToNiivue(
   clipPlanes: ClipPlanes,
-  volumeBounds: VolumeBounds
+  volumeBounds: VolumeBounds,
 ): number[][] {
   return clipPlanes.map((plane) => clipPlaneToNiivue(plane, volumeBounds));
 }
@@ -257,7 +265,7 @@ export function clipPlanesToNiivue(
  */
 export function pointToPlaneDistance(
   testPoint: [number, number, number],
-  plane: ClipPlane
+  plane: ClipPlane,
 ): number {
   const { point, normal } = plane;
   return (
@@ -276,7 +284,7 @@ export function pointToPlaneDistance(
  */
 export function isInsideClipPlanes(
   worldCoord: [number, number, number],
-  clipPlanes: ClipPlanes
+  clipPlanes: ClipPlanes,
 ): boolean {
   for (const plane of clipPlanes) {
     if (pointToPlaneDistance(worldCoord, plane) < 0) {
@@ -300,7 +308,7 @@ export function isInsideClipPlanes(
  */
 export function clipPlanesToBoundingBox(
   clipPlanes: ClipPlanes,
-  volumeBounds: VolumeBounds
+  volumeBounds: VolumeBounds,
 ): VolumeBounds {
   // If no clip planes, return full volume
   if (clipPlanes.length === 0) {
@@ -342,14 +350,18 @@ export function clipPlanesToBoundingBox(
         // Normal points -X, clips +X side
         maxX = Math.min(maxX, point[0]);
       }
-    } else if (absNy > 1 - tolerance && absNx < tolerance && absNz < tolerance) {
+    } else if (
+      absNy > 1 - tolerance && absNx < tolerance && absNz < tolerance
+    ) {
       // Y-aligned plane
       if (normal[1] > 0) {
         minY = Math.max(minY, point[1]);
       } else {
         maxY = Math.min(maxY, point[1]);
       }
-    } else if (absNz > 1 - tolerance && absNx < tolerance && absNy < tolerance) {
+    } else if (
+      absNz > 1 - tolerance && absNx < tolerance && absNy < tolerance
+    ) {
       // Z-aligned plane
       if (normal[2] > 0) {
         minZ = Math.max(minZ, point[2]);
@@ -417,7 +429,7 @@ export function clipPlanesToPixelRegion(
   clipPlanes: ClipPlanes,
   volumeBounds: VolumeBounds,
   ngffImage: NgffImage,
-  viewportBounds?: VolumeBounds
+  viewportBounds?: VolumeBounds,
 ): PixelRegion {
   let bounds = clipPlanesToBoundingBox(clipPlanes, volumeBounds);
 
@@ -446,8 +458,16 @@ export function clipPlanesToPixelRegion(
   const shape = getVolumeShape(ngffImage);
 
   // Convert world corners to pixel coordinates
-  const minWorld: [number, number, number] = [bounds.min[0], bounds.min[1], bounds.min[2]];
-  const maxWorld: [number, number, number] = [bounds.max[0], bounds.max[1], bounds.max[2]];
+  const minWorld: [number, number, number] = [
+    bounds.min[0],
+    bounds.min[1],
+    bounds.min[2],
+  ];
+  const maxWorld: [number, number, number] = [
+    bounds.max[0],
+    bounds.max[1],
+    bounds.max[2],
+  ];
 
   const minPixel = worldToPixel(minWorld, ngffImage);
   const maxPixel = worldToPixel(maxWorld, ngffImage);
@@ -480,7 +500,7 @@ export function clipPlanesToPixelRegion(
  */
 export function alignToChunks(
   region: PixelRegion,
-  ngffImage: NgffImage
+  ngffImage: NgffImage,
 ): ChunkAlignedRegion {
   const chunkShape = getChunkShape(ngffImage);
   const volumeShape = getVolumeShape(ngffImage);
@@ -496,21 +516,20 @@ export function alignToChunks(
   const chunkAlignedEnd: [number, number, number] = [
     Math.min(
       Math.ceil(region.end[0] / chunkShape[0]) * chunkShape[0],
-      volumeShape[0]
+      volumeShape[0],
     ),
     Math.min(
       Math.ceil(region.end[1] / chunkShape[1]) * chunkShape[1],
-      volumeShape[1]
+      volumeShape[1],
     ),
     Math.min(
       Math.ceil(region.end[2] / chunkShape[2]) * chunkShape[2],
-      volumeShape[2]
+      volumeShape[2],
     ),
   ];
 
   // Check if alignment changed the region
-  const needsClipping =
-    chunkAlignedStart[0] !== region.start[0] ||
+  const needsClipping = chunkAlignedStart[0] !== region.start[0] ||
     chunkAlignedStart[1] !== region.start[1] ||
     chunkAlignedStart[2] !== region.start[2] ||
     chunkAlignedEnd[0] !== region.end[0] ||
@@ -543,7 +562,7 @@ export function createAxisAlignedClipPlane(
   axis: "x" | "y" | "z",
   position: number,
   direction: "positive" | "negative",
-  volumeBounds: VolumeBounds
+  volumeBounds: VolumeBounds,
 ): ClipPlane {
   const { min, max } = volumeBounds;
   const center: [number, number, number] = [
@@ -585,7 +604,7 @@ export function createAxisAlignedClipPlane(
 export function validateClipPlanes(clipPlanes: ClipPlanes): void {
   if (clipPlanes.length > MAX_CLIP_PLANES) {
     throw new Error(
-      `Too many clip planes: ${clipPlanes.length} exceeds maximum of ${MAX_CLIP_PLANES}`
+      `Too many clip planes: ${clipPlanes.length} exceeds maximum of ${MAX_CLIP_PLANES}`,
     );
   }
 
@@ -612,7 +631,7 @@ export function validateClipPlanes(clipPlanes: ClipPlanes): void {
 
     // Check normal is not zero
     const length = Math.sqrt(
-      plane.normal[0] ** 2 + plane.normal[1] ** 2 + plane.normal[2] ** 2
+      plane.normal[0] ** 2 + plane.normal[1] ** 2 + plane.normal[2] ** 2,
     );
     if (length < 0.0001) {
       throw new Error(`Zero-length normal in clip plane ${i}`);

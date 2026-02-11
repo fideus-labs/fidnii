@@ -13,7 +13,7 @@ import type { NgffImage } from "@fideus-labs/ngff-zarr";
  */
 export function worldToPixel(
   worldCoord: [number, number, number],
-  ngffImage: NgffImage
+  ngffImage: NgffImage,
 ): [number, number, number] {
   const scale = ngffImage.scale;
   const translation = ngffImage.translation;
@@ -46,7 +46,7 @@ export function worldToPixel(
  */
 export function pixelToWorld(
   pixelCoord: [number, number, number],
-  ngffImage: NgffImage
+  ngffImage: NgffImage,
 ): [number, number, number] {
   const scale = ngffImage.scale;
   const translation = ngffImage.translation;
@@ -78,7 +78,7 @@ export function pixelToWorld(
  */
 export function worldToPixelAffine(
   worldCoord: [number, number, number],
-  affine: mat4
+  affine: mat4,
 ): [number, number, number] {
   // Invert the affine to go from world to pixel
   const inverseAffine = mat4.create();
@@ -88,7 +88,7 @@ export function worldToPixelAffine(
     worldCoord[0],
     worldCoord[1],
     worldCoord[2],
-    1
+    1,
   );
   const pixelVec = vec4.create();
   vec4.transformMat4(pixelVec, worldVec, inverseAffine);
@@ -106,14 +106,14 @@ export function worldToPixelAffine(
  */
 export function pixelToWorldAffine(
   pixelCoord: [number, number, number],
-  affine: mat4
+  affine: mat4,
 ): [number, number, number] {
   // pixelCoord is [z, y, x], affine expects [x, y, z]
   const pixelVec = vec4.fromValues(
     pixelCoord[2], // x
     pixelCoord[1], // y
     pixelCoord[0], // z
-    1
+    1,
   );
   const worldVec = vec4.create();
   vec4.transformMat4(worldVec, pixelVec, affine);
@@ -130,7 +130,7 @@ export function pixelToWorldAffine(
  */
 export function normalizedToWorld(
   normalizedCoord: [number, number, number],
-  ngffImage: NgffImage
+  ngffImage: NgffImage,
 ): [number, number, number] {
   const shape = ngffImage.data.shape;
   const dims = ngffImage.dims;
@@ -171,7 +171,7 @@ export function normalizedToWorld(
  */
 export function worldToNormalized(
   worldCoord: [number, number, number],
-  ngffImage: NgffImage
+  ngffImage: NgffImage,
 ): [number, number, number] {
   const shape = ngffImage.data.shape;
   const dims = ngffImage.dims;
@@ -213,7 +213,7 @@ export function worldToNormalized(
  */
 export function clampPixelCoord(
   pixelCoord: [number, number, number],
-  shape: [number, number, number]
+  shape: [number, number, number],
 ): [number, number, number] {
   return [
     Math.max(0, Math.min(pixelCoord[0], shape[0] - 1)),
@@ -229,7 +229,7 @@ export function clampPixelCoord(
  * @returns Rounded pixel indices [z, y, x]
  */
 export function roundPixelCoord(
-  pixelCoord: [number, number, number]
+  pixelCoord: [number, number, number],
 ): [number, number, number] {
   return [
     Math.round(pixelCoord[0]),
@@ -245,7 +245,7 @@ export function roundPixelCoord(
  * @returns Floored pixel indices [z, y, x]
  */
 export function floorPixelCoord(
-  pixelCoord: [number, number, number]
+  pixelCoord: [number, number, number],
 ): [number, number, number] {
   return [
     Math.floor(pixelCoord[0]),
@@ -261,7 +261,7 @@ export function floorPixelCoord(
  * @returns Ceiled pixel indices [z, y, x]
  */
 export function ceilPixelCoord(
-  pixelCoord: [number, number, number]
+  pixelCoord: [number, number, number],
 ): [number, number, number] {
   return [
     Math.ceil(pixelCoord[0]),

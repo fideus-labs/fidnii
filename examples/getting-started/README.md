@@ -1,6 +1,7 @@
 # fidnii Getting Started
 
-A minimal example showing how to load and display an OME-Zarr image using fidnii.
+A minimal example showing how to load and display an OME-Zarr image using
+fidnii.
 
 ## Quick Start
 
@@ -13,7 +14,9 @@ Open http://localhost:5173 in your browser.
 
 ## What This Example Does
 
-Loads an MRI scan from a remote OME-Zarr dataset and renders it in 3D. The image loads progressively - you'll see a low-resolution preview first, then the full resolution.
+Loads an MRI scan from a remote OME-Zarr dataset and renders it in 3D. The image
+loads progressively - you'll see a low-resolution preview first, then the full
+resolution.
 
 **Dataset**: [mri_woman.ome.zarr](https://doi.org/10.5281/zenodo.17495293)
 
@@ -22,17 +25,17 @@ Loads an MRI scan from a remote OME-Zarr dataset and renders it in 3D. The image
 See `main.ts`. Essentially:
 
 ```ts
-  // Initialize NiiVue
-  const nv = new Niivue({ backColor: [0, 0, 0, 1] });
-  await nv.attachToCanvas(canvas);
-  // Add NiiVue configuration as usual
-  nv.setSliceType(nv.sliceTypeRender);
+// Initialize NiiVue
+const nv = new Niivue({ backColor: [0, 0, 0, 1] });
+await nv.attachToCanvas(canvas);
+// Add NiiVue configuration as usual
+nv.setSliceType(nv.sliceTypeRender);
 
-  // Lazily load OME-Zarr data
-  const multiscales = await fromNgffZarr(DATA_URL);
+// Lazily load OME-Zarr data
+const multiscales = await fromNgffZarr(DATA_URL);
 
-  // Create image - automatically added to NiiVue and loads progressively
-  await OMEZarrNVImage.create({ multiscales, niivue: nv });
+// Create image - automatically added to NiiVue and loads progressively
+await OMEZarrNVImage.create({ multiscales, niivue: nv });
 ```
 
 For more details, see the [fidnii README](../../fidnii/README.md).

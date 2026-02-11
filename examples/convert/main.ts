@@ -12,12 +12,12 @@ import "@awesome.me/webawesome/dist/components/select/select.js";
 import { Niivue } from "@niivue/niivue";
 import { OMEZarrNVImage } from "@fideus-labs/fidnii";
 import {
+  type ConversionProgress,
+  type ConversionResult,
   convertToOmeZarr,
   downloadFile,
   formatFileSize,
   getMultiscalesInfo,
-  type ConversionProgress,
-  type ConversionResult,
 } from "./converter.ts";
 
 // DOM Elements
@@ -28,23 +28,25 @@ const fileInfo = document.getElementById("file-info") as HTMLDivElement;
 const convertBtn = document.getElementById("convert-btn") as HTMLElement;
 const downloadBtn = document.getElementById("download-btn") as HTMLElement;
 const progressContainer = document.getElementById(
-  "progress-container"
+  "progress-container",
 ) as HTMLDivElement;
 const progressBar = document.getElementById("progress-bar") as HTMLElement;
 const progressText = document.getElementById("progress-text") as HTMLElement;
 const placeholder = document.getElementById("placeholder") as HTMLDivElement;
 const canvas = document.getElementById("gl") as HTMLCanvasElement;
 const multiscalesCard = document.getElementById(
-  "multiscales-card"
+  "multiscales-card",
 ) as HTMLElement;
 const multiscalesTable = document.getElementById(
-  "multiscales-table"
+  "multiscales-table",
 ) as HTMLTableElement;
 
 // Settings inputs
-const chunkSizeInput = document.getElementById("chunk-size") as HTMLInputElement;
+const chunkSizeInput = document.getElementById(
+  "chunk-size",
+) as HTMLInputElement;
 const scaleLevelsInput = document.getElementById(
-  "scale-levels"
+  "scale-levels",
 ) as HTMLInputElement;
 const colormapSelect = document.getElementById("colormap") as HTMLSelectElement;
 const opacityInput = document.getElementById("opacity") as HTMLInputElement;
@@ -123,9 +125,10 @@ async function showPreview(result: ConversionResult): Promise<void> {
   placeholder.style.display = "none";
 
   // Get settings
-  const colormap = (colormapSelect as unknown as { value: string }).value || "gray";
+  const colormap = (colormapSelect as unknown as { value: string }).value ||
+    "gray";
   const opacity = parseFloat(
-    (opacityInput as unknown as { value: string }).value || "1.0"
+    (opacityInput as unknown as { value: string }).value || "1.0",
   );
 
   // Create NVImage from multiscales
@@ -148,7 +151,9 @@ async function showPreview(result: ConversionResult): Promise<void> {
 // Update multiscales table
 function updateMultiscalesTable(result: ConversionResult): void {
   const info = getMultiscalesInfo(result.multiscales);
-  const tbody = multiscalesTable.querySelector("tbody") as HTMLTableSectionElement;
+  const tbody = multiscalesTable.querySelector(
+    "tbody",
+  ) as HTMLTableSectionElement;
   tbody.innerHTML = "";
 
   for (const scale of info) {
@@ -178,11 +183,11 @@ convertBtn.addEventListener("click", async () => {
     const options = {
       chunkSize: parseInt(
         (chunkSizeInput as unknown as { value: string }).value || "64",
-        10
+        10,
       ),
       scaleLevels: parseInt(
         (scaleLevelsInput as unknown as { value: string }).value || "0",
-        10
+        10,
       ),
     };
 
@@ -219,7 +224,8 @@ downloadBtn.addEventListener("click", () => {
 // Settings change handlers for live preview updates
 colormapSelect.addEventListener("wa-change", async () => {
   if (lastResult && nv && nv.volumes.length > 0) {
-    const colormap = (colormapSelect as unknown as { value: string }).value || "gray";
+    const colormap = (colormapSelect as unknown as { value: string }).value ||
+      "gray";
     nv.volumes[0].colormap = colormap;
     nv.updateGLVolume();
   }
@@ -228,7 +234,7 @@ colormapSelect.addEventListener("wa-change", async () => {
 opacityInput.addEventListener("wa-change", async () => {
   if (lastResult && nv && nv.volumes.length > 0) {
     const opacity = parseFloat(
-      (opacityInput as unknown as { value: string }).value || "1.0"
+      (opacityInput as unknown as { value: string }).value || "1.0",
     );
     nv.volumes[0].opacity = opacity;
     nv.updateGLVolume();

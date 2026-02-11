@@ -41,7 +41,7 @@ export class RegionCoalescer {
   private makeKey(
     imagePath: string,
     levelIndex: number,
-    region: PixelRegion
+    region: PixelRegion,
   ): string {
     const start = region.start.join(",");
     const end = region.end.join(",");
@@ -61,7 +61,7 @@ export class RegionCoalescer {
     ngffImage: NgffImage,
     levelIndex: number,
     region: PixelRegion,
-    requesterId: string = "default"
+    requesterId: string = "default",
   ): Promise<RegionFetchResult> {
     const key = this.makeKey(ngffImage.data.path, levelIndex, region);
 
@@ -131,12 +131,12 @@ export class RegionCoalescer {
     ngffImage: NgffImage,
     levelIndex: number,
     regions: PixelRegion[],
-    requesterId: string = "default"
+    requesterId: string = "default",
   ): Promise<RegionFetchResult[]> {
     return Promise.all(
       regions.map((region) =>
         this.fetchRegion(ngffImage, levelIndex, region, requesterId)
-      )
+      ),
     );
   }
 
@@ -146,7 +146,7 @@ export class RegionCoalescer {
   hasPending(
     ngffImage: NgffImage,
     levelIndex: number,
-    region: PixelRegion
+    region: PixelRegion,
   ): boolean {
     const key = this.makeKey(ngffImage.data.path, levelIndex, region);
     return this.pending.has(key);
@@ -159,7 +159,7 @@ export class RegionCoalescer {
   getPendingRequesters(
     ngffImage: NgffImage,
     levelIndex: number,
-    region: PixelRegion
+    region: PixelRegion,
   ): Set<string> | undefined {
     const key = this.makeKey(ngffImage.data.path, levelIndex, region);
     return this.pending.get(key)?.requesters;

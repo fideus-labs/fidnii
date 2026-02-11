@@ -11,7 +11,7 @@ import type { VolumeBounds } from "./types.js";
  */
 export function intersectBounds(
   a: VolumeBounds,
-  b: VolumeBounds
+  b: VolumeBounds,
 ): VolumeBounds {
   const min: [number, number, number] = [
     Math.max(a.min[0], b.min[0]),
@@ -53,7 +53,7 @@ export function intersectBounds(
  */
 export function computeViewportBounds3D(
   nv: Niivue,
-  volumeBounds: VolumeBounds
+  volumeBounds: VolumeBounds,
 ): VolumeBounds {
   // Get scene extents: [min, max, range]
   const extents = nv.sceneExtentsMinMax(true);
@@ -68,7 +68,7 @@ export function computeViewportBounds3D(
 
   // furthestFromPivot = half-diagonal of bounding box
   const furthest = Math.sqrt(
-    range[0] * range[0] + range[1] * range[1] + range[2] * range[2]
+    range[0] * range[0] + range[1] * range[1] + range[2] * range[2],
   ) * 0.5;
 
   // NiiVue's orthographic scale (matches calculateMvpMatrix)
@@ -120,21 +120,21 @@ export function computeViewportBounds3D(
   //
   // View X axis (1, 0, 0) after un-mirror: (-1, 0, 0)
   const viewXinWorld: [number, number, number] = [
-    -cosAz,        // wx
+    -cosAz, // wx
     sinAz * cosEl, // wy
-    -sinAz * sinEl // wz
+    -sinAz * sinEl, // wz
   ];
   // View Y axis (0, 1, 0) — no mirror effect
   const viewYinWorld: [number, number, number] = [
-    sinAz,         // wx
+    sinAz, // wx
     cosAz * cosEl, // wy
-    -cosAz * sinEl // wz
+    -cosAz * sinEl, // wz
   ];
   // View Z axis (0, 0, 1) — no mirror effect
   const viewZinWorld: [number, number, number] = [
-    0,     // wx
+    0, // wx
     sinEl, // wy
-    cosEl  // wz
+    cosEl, // wz
   ];
 
   // For each world axis, the visible half-extent is:
@@ -142,8 +142,7 @@ export function computeViewportBounds3D(
   //   + furthest * |viewZinWorld[axis]|  (full volume depth along view Z)
   const worldHalfExtent: [number, number, number] = [0, 0, 0];
   for (let axis = 0; axis < 3; axis++) {
-    worldHalfExtent[axis] =
-      halfW * Math.abs(viewXinWorld[axis]) +
+    worldHalfExtent[axis] = halfW * Math.abs(viewXinWorld[axis]) +
       halfH * Math.abs(viewYinWorld[axis]) +
       furthest * Math.abs(viewZinWorld[axis]);
   }
@@ -185,7 +184,7 @@ export function computeViewportBounds2D(
   nv: Niivue,
   sliceType: SLICE_TYPE,
   volumeBounds: VolumeBounds,
-  normalizationScale: number = 1.0
+  normalizationScale: number = 1.0,
 ): VolumeBounds {
   // Compute the base field of view from the FULL volume bounds (in normalized
   // mm space), then swizzle to screen axes for this slice orientation.
@@ -218,16 +217,22 @@ export function computeViewportBounds2D(
   let mnMM0: number, mxMM0: number, mnMM1: number, mxMM1: number;
   switch (sliceType) {
     case SLICE_TYPE.CORONAL:
-      mnMM0 = normMin[0]; mxMM0 = normMax[0]; // screen X = mm X
-      mnMM1 = normMin[2]; mxMM1 = normMax[2]; // screen Y = mm Z
+      mnMM0 = normMin[0];
+      mxMM0 = normMax[0]; // screen X = mm X
+      mnMM1 = normMin[2];
+      mxMM1 = normMax[2]; // screen Y = mm Z
       break;
     case SLICE_TYPE.SAGITTAL:
-      mnMM0 = normMin[1]; mxMM0 = normMax[1]; // screen X = mm Y
-      mnMM1 = normMin[2]; mxMM1 = normMax[2]; // screen Y = mm Z
+      mnMM0 = normMin[1];
+      mxMM0 = normMax[1]; // screen X = mm Y
+      mnMM1 = normMin[2];
+      mxMM1 = normMax[2]; // screen Y = mm Z
       break;
     default: // AXIAL
-      mnMM0 = normMin[0]; mxMM0 = normMax[0]; // screen X = mm X
-      mnMM1 = normMin[1]; mxMM1 = normMax[1]; // screen Y = mm Y
+      mnMM0 = normMin[0];
+      mxMM0 = normMax[0]; // screen X = mm X
+      mnMM1 = normMin[1];
+      mxMM1 = normMax[1]; // screen Y = mm Y
       break;
   }
 
@@ -263,7 +268,7 @@ export function computeViewportBounds2D(
   // Swizzle the pan vector to match the current orientation
   const panSwizzled = nv.swizzleVec3MM(
     [pan[0], pan[1], pan[2]] as unknown as import("gl-matrix").vec3,
-    sliceType
+    sliceType,
   );
   const zoom = pan[3] || 1;
 
@@ -350,7 +355,7 @@ export function computeViewportBounds2D(
 export function boundsApproxEqual(
   a: VolumeBounds,
   b: VolumeBounds,
-  tolerance: number = 0.01
+  tolerance: number = 0.01,
 ): boolean {
   for (let i = 0; i < 3; i++) {
     const rangeA = a.max[i] - a.min[i];

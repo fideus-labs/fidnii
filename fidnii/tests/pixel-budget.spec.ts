@@ -1,13 +1,15 @@
 // SPDX-FileCopyrightText: Copyright (c) Fideus Labs LLC
 // SPDX-License-Identifier: MIT
 
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 test.describe("Pixel Budget", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
     // Wait for ready (generous timeout for S3 loading)
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
+    await expect(page.locator("#status")).toHaveText("Ready", {
+      timeout: 120000,
+    });
   });
 
   test("default maxPixels is 4 million", async ({ page }) => {
@@ -51,7 +53,9 @@ test.describe("Pixel Budget", () => {
     await page.locator("#reload").click();
 
     // Wait for reload to complete (with longer timeout for reload)
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
+    await expect(page.locator("#status")).toHaveText("Ready", {
+      timeout: 120000,
+    });
 
     // Get new level
     const newLevel = await page.evaluate(() => {
@@ -74,7 +78,9 @@ test.describe("Pixel Budget", () => {
       slider.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await page.locator("#reload").click();
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
+    await expect(page.locator("#status")).toHaveText("Ready", {
+      timeout: 120000,
+    });
 
     const lowBudgetLevel = await page.evaluate(() => {
       const image = (window as any).image;
@@ -88,7 +94,9 @@ test.describe("Pixel Budget", () => {
       slider.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await page.locator("#reload").click();
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 180000 });
+    await expect(page.locator("#status")).toHaveText("Ready", {
+      timeout: 180000,
+    });
 
     const highBudgetLevel = await page.evaluate(() => {
       const image = (window as any).image;
@@ -126,7 +134,9 @@ test.describe("Pixel Budget", () => {
     await page.locator("#reload").click();
 
     // Should still complete successfully (longer timeout for reload)
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
+    await expect(page.locator("#status")).toHaveText("Ready", {
+      timeout: 120000,
+    });
 
     // Should have loaded something
     const hasData = await page.evaluate(() => {
@@ -150,7 +160,9 @@ test.describe("Pixel Budget", () => {
     await page.locator("#reload").click();
 
     // Should still complete successfully (longer timeout for large S3 data)
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 180000 });
+    await expect(page.locator("#status")).toHaveText("Ready", {
+      timeout: 180000,
+    });
 
     // With 100M budget, should target level 2 (25.3M pixels fits, level 1 at 202M doesn't)
     const level = await page.evaluate(() => {
@@ -169,7 +181,9 @@ test.describe("Pixel Budget", () => {
       slider.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await page.locator("#reload").click();
-    await expect(page.locator("#status")).toHaveText("Ready", { timeout: 120000 });
+    await expect(page.locator("#status")).toHaveText("Ready", {
+      timeout: 120000,
+    });
 
     const maxPixels = await page.evaluate(() => {
       const image = (window as any).image;
@@ -202,12 +216,30 @@ test.describe("Pixel Budget", () => {
 
       // 6 planes forming a box at 45%-55% of each axis
       image.setClipPlanes([
-        { point: [bounds.min[0] + rangeX * 0.45, centerY, centerZ], normal: [1, 0, 0] },  // X min
-        { point: [bounds.min[0] + rangeX * 0.55, centerY, centerZ], normal: [-1, 0, 0] }, // X max
-        { point: [centerX, bounds.min[1] + rangeY * 0.45, centerZ], normal: [0, 1, 0] },  // Y min
-        { point: [centerX, bounds.min[1] + rangeY * 0.55, centerZ], normal: [0, -1, 0] }, // Y max
-        { point: [centerX, centerY, bounds.min[2] + rangeZ * 0.45], normal: [0, 0, 1] },  // Z min
-        { point: [centerX, centerY, bounds.min[2] + rangeZ * 0.55], normal: [0, 0, -1] }, // Z max
+        {
+          point: [bounds.min[0] + rangeX * 0.45, centerY, centerZ],
+          normal: [1, 0, 0],
+        }, // X min
+        {
+          point: [bounds.min[0] + rangeX * 0.55, centerY, centerZ],
+          normal: [-1, 0, 0],
+        }, // X max
+        {
+          point: [centerX, bounds.min[1] + rangeY * 0.45, centerZ],
+          normal: [0, 1, 0],
+        }, // Y min
+        {
+          point: [centerX, bounds.min[1] + rangeY * 0.55, centerZ],
+          normal: [0, -1, 0],
+        }, // Y max
+        {
+          point: [centerX, centerY, bounds.min[2] + rangeZ * 0.45],
+          normal: [0, 0, 1],
+        }, // Z min
+        {
+          point: [centerX, centerY, bounds.min[2] + rangeZ * 0.55],
+          normal: [0, 0, -1],
+        }, // Z max
       ]);
 
       await image.waitForIdle();
