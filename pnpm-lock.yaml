@@ -79,11 +79,8 @@ importers:
   examples/getting-started:
     dependencies:
       '@fideus-labs/fidnii':
-        specifier: workspace:*
-        version: link:../../fidnii
-      '@fideus-labs/fizarrita':
-        specifier: ^1.2.0
-        version: 1.2.0(zarrita@0.6.1)
+        specifier: ^0.1.0
+        version: 0.1.0(@niivue/niivue@0.67.0)
       '@fideus-labs/ngff-zarr':
         specifier: ^0.7.4
         version: 0.7.4
@@ -520,6 +517,11 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@fideus-labs/fidnii@0.1.0':
+    resolution: {integrity: sha512-k83Em2KKBCJ2xRQUXhQYKuk/Eww5oH9dOsV/jd1E7Jr7uixTIgbLyXr9SJ9k6n9Gj+SP+6ex+eKBdRqRJUr/VQ==}
+    peerDependencies:
+      '@niivue/niivue': '>=0.67.0'
 
   '@fideus-labs/fizarrita@1.2.0':
     resolution: {integrity: sha512-+6qIsIz2HMkfdQVL/FFX52xkXz8+MoM8RfQU+JYDCKFOBlg2Ee3wML6982ni+Ly5CB7c4W0J7pBoKLCjIah/Eg==}
@@ -2546,6 +2548,19 @@ snapshots:
 
   '@esbuild/win32-x64@0.27.3':
     optional: true
+
+  '@fideus-labs/fidnii@0.1.0(@niivue/niivue@0.67.0)':
+    dependencies:
+      '@fideus-labs/ngff-zarr': 0.7.4
+      '@itk-wasm/downsample': 1.8.1
+      '@niivue/niivue': 0.67.0
+      gl-matrix: 3.4.4
+      lru-cache: 11.2.6
+      nifti-reader-js: 0.8.0
+      zarrita: 0.6.1
+      zod: 3.25.76
+    transitivePeerDependencies:
+      - debug
 
   '@fideus-labs/fizarrita@1.2.0(zarrita@0.6.1)':
     dependencies:
