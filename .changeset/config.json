@@ -11,7 +11,6 @@
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
   "ignore": [
-    "@fideus-labs/fidnii-monorepo",
     "@fideus-labs/fidnii-getting-started",
     "@fideus-labs/fidnii-example-convert"
   ]
