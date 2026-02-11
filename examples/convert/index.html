@@ -4,6 +4,25 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Convert to OME-Zarr</title>
+    <link rel="icon" type="image/x-icon" href="/favicon/favicon.ico" />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="32x32"
+      href="/favicon/favicon-32x32.png"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="16x16"
+      href="/favicon/favicon-16x16.png"
+    />
+    <link
+      rel="apple-touch-icon"
+      sizes="180x180"
+      href="/favicon/apple-touch-icon.png"
+    />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
     <link
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/@awesome.me/webawesome@3.1.0/dist/styles/themes/default.css"
@@ -22,6 +41,13 @@
       h1 {
         margin: 0 0 1rem 0;
         font-size: 1.5rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      h1 img {
+        height: 1.75rem;
+        width: auto;
       }
       .container {
         display: grid;
@@ -138,7 +164,10 @@
     </style>
   </head>
   <body>
-    <h1>Convert to OME-Zarr</h1>
+    <h1>
+      <img src="/fidnii-logo.png" alt="Fidnii" />
+      Convert to OME-Zarr
+    </h1>
 
     <div class="container">
       <div class="sidebar">
@@ -199,7 +228,7 @@
             disabled
             style="flex: 1"
           >
-            Convert & Download
+            Re-convert & Download
           </wa-button>
           <wa-button id="download-btn" variant="neutral" class="hidden">
             Download Again

@@ -114,14 +114,17 @@ function initNiivue(): void {
 
 // File handling
 function handleFile(file: File): void {
-  selectedFile = file;
-  fileInfo.textContent = `${file.name} (${formatFileSize(file.size)})`;
-  convertBtn.removeAttribute("disabled");
-  downloadBtn.classList.add("hidden");
-  lastResult = null;
+  selectedFile = file
+  fileInfo.textContent = `${file.name} (${formatFileSize(file.size)})`
+  convertBtn.removeAttribute("disabled")
+  downloadBtn.classList.add("hidden")
+  lastResult = null
 
   // Reset multiscales table
-  multiscalesCard.classList.add("hidden");
+  multiscalesCard.classList.add("hidden")
+
+  // Auto-start conversion immediately
+  void startConversion()
 }
 
 // Drag and drop
@@ -250,13 +253,13 @@ function updateMultiscalesTable(result: ConversionResult): void {
   multiscalesCard.classList.remove("hidden");
 }
 
-// Convert button
-convertBtn.addEventListener("click", async () => {
-  if (!selectedFile) return;
+// Conversion logic (shared by auto-convert and manual re-convert)
+async function startConversion(): Promise<void> {
+  if (!selectedFile) return
 
   // Disable convert button during conversion
-  convertBtn.setAttribute("disabled", "");
-  progressContainer.classList.add("visible");
+  convertBtn.setAttribute("disabled", "")
+  progressContainer.classList.add("visible")
 
   try {
     const options = {
@@ -270,28 +273,33 @@ convertBtn.addEventListener("click", async () => {
       ) as Methods,
     }
 
-    lastResult = await convertToOmeZarr(selectedFile, options, updateProgress);
+    lastResult = await convertToOmeZarr(selectedFile, options, updateProgress)
 
     // Show preview
-    await showPreview(lastResult);
+    await showPreview(lastResult)
 
     // Update table
-    updateMultiscalesTable(lastResult);
+    updateMultiscalesTable(lastResult)
 
     // Auto-download
-    downloadFile(lastResult.ozxData, lastResult.filename);
+    downloadFile(lastResult.ozxData, lastResult.filename)
 
     // Enable download again button
-    downloadBtn.classList.remove("hidden");
+    downloadBtn.classList.remove("hidden")
   } catch (error) {
-    console.error("Conversion failed:", error);
+    console.error("Conversion failed:", error)
     progressText.textContent = `Error: ${
       error instanceof Error ? error.message : String(error)
-    }`;
+    }`
   } finally {
-    convertBtn.removeAttribute("disabled");
+    convertBtn.removeAttribute("disabled")
   }
-});
+}
+
+// Convert button (re-convert with current settings)
+convertBtn.addEventListener("click", () => {
+  void startConversion()
+})
 
 // Download again button
 downloadBtn.addEventListener("click", () => {
