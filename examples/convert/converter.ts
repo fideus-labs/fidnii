@@ -6,12 +6,14 @@ import { readImage } from "@itk-wasm/image-io";
 // Import from browser subpath for browser-compatible functions
 import {
   createMetadataWithVersion,
+  Methods,
   type Multiscales,
   Multiscales as MultiscalesClass,
   type NgffImage,
   NgffImage as NgffImageClass,
   toMultiscales,
 } from "@fideus-labs/ngff-zarr";
+export { Methods } from "@fideus-labs/ngff-zarr";
 // Import browser-specific toNgffZarrOzx which returns Uint8Array
 // (Node version takes a path and returns void)
 import {
@@ -112,7 +114,7 @@ function getStrides(shape: number[]): number[] {
 
 export interface ConversionOptions {
   chunkSize: number;
-  scaleLevels: number; // 0 = auto
+  method: Methods;
 }
 
 export interface ConversionProgress {
@@ -167,17 +169,8 @@ export async function convertToOmeZarr(
   // Stage 3: Generate multiscales (downsampling)
   report("downsampling", 30, "Generating multiscale pyramid...");
 
-  // Calculate scale factors if auto (0)
-  let scaleFactors: number[] | undefined;
-  if (options.scaleLevels > 0) {
-    scaleFactors = [];
-    for (let i = 0; i < options.scaleLevels; i++) {
-      scaleFactors.push(Math.pow(2, i));
-    }
-  }
-
   const multiscalesV04 = await toMultiscales(ngffImage, {
-    scaleFactors,
+    method: options.method,
     chunks: options.chunkSize,
   });
 

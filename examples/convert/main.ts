@@ -2,15 +2,16 @@
  * Convert to OME-Zarr - Main UI module
  */
 
-import "@awesome.me/webawesome/dist/components/button/button.js";
-import "@awesome.me/webawesome/dist/components/card/card.js";
-import "@awesome.me/webawesome/dist/components/input/input.js";
-import "@awesome.me/webawesome/dist/components/option/option.js";
-import "@awesome.me/webawesome/dist/components/progress-bar/progress-bar.js";
-import "@awesome.me/webawesome/dist/components/select/select.js";
+import "@awesome.me/webawesome/dist/components/button/button.js"
+import "@awesome.me/webawesome/dist/components/card/card.js"
+import "@awesome.me/webawesome/dist/components/input/input.js"
+import "@awesome.me/webawesome/dist/components/option/option.js"
+import "@awesome.me/webawesome/dist/components/progress-bar/progress-bar.js"
+import "@awesome.me/webawesome/dist/components/select/select.js"
+import "@awesome.me/webawesome/dist/components/slider/slider.js"
 
-import { Niivue } from "@niivue/niivue";
-import { OMEZarrNVImage } from "@fideus-labs/fidnii";
+import { Niivue, SLICE_TYPE } from "@niivue/niivue"
+import { OMEZarrNVImage } from "@fideus-labs/fidnii"
 import {
   type ConversionProgress,
   type ConversionResult,
@@ -18,7 +19,9 @@ import {
   downloadFile,
   formatFileSize,
   getMultiscalesInfo,
-} from "./converter.ts";
+  Methods,
+} from "./converter.ts"
+import type { Multiscales } from "@fideus-labs/ngff-zarr"
 
 // Color scheme: follow the browser/OS preference
 const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
@@ -54,27 +57,59 @@ const multiscalesTable = document.getElementById(
 // Settings inputs
 const chunkSizeInput = document.getElementById(
   "chunk-size",
-) as HTMLInputElement;
-const scaleLevelsInput = document.getElementById(
-  "scale-levels",
-) as HTMLInputElement;
-const colormapSelect = document.getElementById("colormap") as HTMLSelectElement;
-const opacityInput = document.getElementById("opacity") as HTMLInputElement;
+) as HTMLInputElement
+const methodSelect = document.getElementById("method") as HTMLSelectElement
+const colormapSelect = document.getElementById("colormap") as HTMLSelectElement
+const sliceTypeSelect = document.getElementById(
+  "slice-type",
+) as HTMLSelectElement
+const opacitySlider = document.getElementById("opacity") as HTMLInputElement
+const silhouetteSlider = document.getElementById(
+  "silhouette",
+) as HTMLInputElement
 
 // State
-let selectedFile: File | null = null;
-let lastResult: ConversionResult | null = null;
-let nv: Niivue | null = null;
+let selectedFile: File | null = null
+let lastResult: ConversionResult | null = null
+let nv: Niivue | null = null
+
+// Slice type string-to-enum mapping
+const SLICE_TYPE_MAP: Record<string, SLICE_TYPE> = {
+  axial: SLICE_TYPE.AXIAL,
+  coronal: SLICE_TYPE.CORONAL,
+  sagittal: SLICE_TYPE.SAGITTAL,
+  multiplanar: SLICE_TYPE.MULTIPLANAR,
+  render: SLICE_TYPE.RENDER,
+}
+
+/** Check whether the volume has a "z" spatial axis. */
+function is3DVolume(multiscales: Multiscales): boolean {
+  return multiscales.metadata.axes.some(
+    (a) => a.name === "z" && a.type === "space",
+  )
+}
+
+/** Read both sliders and push gradient settings into NiiVue. */
+async function updateGradientSettings(): Promise<void> {
+  if (!nv) return
+  const opacity = parseFloat(
+    (opacitySlider as unknown as { value: string }).value || "0.5",
+  )
+  const silhouette = parseFloat(
+    (silhouetteSlider as unknown as { value: string }).value || "0",
+  )
+  await nv.setGradientOpacity(opacity, silhouette)
+}
 
 // Initialize NiiVue
 function initNiivue(): void {
-  if (nv) return;
+  if (nv) return
 
   nv = new Niivue({
     show3Dcrosshair: true,
     backColor: [0, 0, 0, 1],
-  });
-  nv.attachToCanvas(canvas);
+  })
+  nv.attachToCanvas(canvas)
 }
 
 // File handling
@@ -127,35 +162,69 @@ function updateProgress(progress: ConversionProgress): void {
   progressText.textContent = progress.message;
 }
 
+/** Enable or disable the 3D-only preview controls. */
+function set3DControlsEnabled(enabled: boolean): void {
+  const controls = [opacitySlider, silhouetteSlider, sliceTypeSelect]
+  for (const el of controls) {
+    if (enabled) {
+      el.removeAttribute("disabled")
+    } else {
+      el.setAttribute("disabled", "")
+    }
+  }
+}
+
 // Preview with NiiVue
 async function showPreview(result: ConversionResult): Promise<void> {
-  initNiivue();
-  if (!nv) return;
+  initNiivue()
+  if (!nv) return
 
-  placeholder.style.display = "none";
+  placeholder.style.display = "none"
 
-  // Get settings
+  const volumeIs3D = is3DVolume(result.multiscales)
+
+  // Get colormap setting
   const colormap = (colormapSelect as unknown as { value: string }).value ||
-    "gray";
-  const opacity = parseFloat(
-    (opacityInput as unknown as { value: string }).value || "1.0",
-  );
+    "gray"
 
   // Create NVImage from multiscales
   const image = await OMEZarrNVImage.create({
     multiscales: result.multiscales,
     niivue: nv,
     autoLoad: false,
-  });
+  })
 
   // Clear existing volumes and add new one
-  nv.volumes = [];
-  nv.addVolume(image);
-  await image.populateVolume();
+  nv.volumes = []
+  nv.addVolume(image)
+  await image.populateVolume()
 
-  // Apply settings AFTER data is loaded to avoid calMinMax() running on placeholder data
-  image.colormap = colormap;
-  image.opacity = opacity;
+  // Apply colormap AFTER data is loaded to avoid calMinMax() on placeholder data
+  image.colormap = colormap
+
+  if (volumeIs3D) {
+    set3DControlsEnabled(true)
+
+    // Default to multiplanar for 3D volumes
+    const sliceTypeStr =
+      (sliceTypeSelect as unknown as { value: string }).value || "multiplanar"
+    const sliceType = SLICE_TYPE_MAP[sliceTypeStr] ?? SLICE_TYPE.MULTIPLANAR
+
+    // Set hero fraction BEFORE setSliceType so it takes effect on first draw
+    nv.opts.heroImageFraction =
+      sliceType === SLICE_TYPE.MULTIPLANAR ? 0.6 : 0
+    nv.setSliceType(sliceType)
+    await updateGradientSettings()
+    nv.updateGLVolume()
+  } else {
+    set3DControlsEnabled(false)
+
+    // 2D images: axial view, no gradient effects
+    nv.opts.heroImageFraction = 0
+    nv.setSliceType(SLICE_TYPE.AXIAL)
+    await nv.setGradientOpacity(0, 0)
+    nv.updateGLVolume()
+  }
 }
 
 // Update multiscales table
@@ -192,14 +261,14 @@ convertBtn.addEventListener("click", async () => {
   try {
     const options = {
       chunkSize: parseInt(
-        (chunkSizeInput as unknown as { value: string }).value || "64",
+        (chunkSizeInput as unknown as { value: string }).value || "96",
         10,
       ),
-      scaleLevels: parseInt(
-        (scaleLevelsInput as unknown as { value: string }).value || "0",
-        10,
-      ),
-    };
+      method: (
+        (methodSelect as unknown as { value: string }).value ||
+          "itkwasm_gaussian"
+      ) as Methods,
+    }
 
     lastResult = await convertToOmeZarr(selectedFile, options, updateProgress);
 
@@ -241,12 +310,26 @@ colormapSelect.addEventListener("wa-change", async () => {
   }
 });
 
-opacityInput.addEventListener("wa-change", async () => {
+opacitySlider.addEventListener("input", () => {
   if (lastResult && nv && nv.volumes.length > 0) {
-    const opacity = parseFloat(
-      (opacityInput as unknown as { value: string }).value || "1.0",
-    );
-    nv.volumes[0].opacity = opacity;
-    nv.updateGLVolume();
+    updateGradientSettings()
   }
-});
+})
+
+silhouetteSlider.addEventListener("input", () => {
+  if (lastResult && nv && nv.volumes.length > 0) {
+    updateGradientSettings()
+  }
+})
+
+sliceTypeSelect.addEventListener("wa-change", () => {
+  if (lastResult && nv && nv.volumes.length > 0) {
+    const sliceTypeStr =
+      (sliceTypeSelect as unknown as { value: string }).value || "multiplanar"
+    const sliceType = SLICE_TYPE_MAP[sliceTypeStr] ?? SLICE_TYPE.MULTIPLANAR
+    nv.setSliceType(sliceType)
+    nv.opts.heroImageFraction =
+      sliceType === SLICE_TYPE.MULTIPLANAR ? 0.6 : 0
+    nv.updateGLVolume()
+  }
+})

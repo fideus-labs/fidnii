@@ -64,7 +64,8 @@
         gap: 0.75rem;
       }
       .settings-grid wa-input,
-      .settings-grid wa-select {
+      .settings-grid wa-select,
+      .settings-grid wa-slider {
         width: 100%;
       }
       .full-width {
@@ -137,7 +138,7 @@
     </style>
   </head>
   <body>
-    <h1>Convert to OME-Zarr 0.5</h1>
+    <h1>Convert to OME-Zarr</h1>
 
     <div class="container">
       <div class="sidebar">
@@ -166,46 +167,16 @@
               id="chunk-size"
               type="number"
               label="Chunk Size"
-              value="64"
+              value="96"
               min="16"
               max="512"
               step="16"
             ></wa-input>
-            <wa-input
-              id="scale-levels"
-              type="number"
-              label="Scale Levels"
-              value="0"
-              min="0"
-              max="8"
-              help-text="0 = auto"
-            ></wa-input>
-          </div>
-        </wa-card>
-
-        <wa-card>
-          <div slot="header">Preview Settings</div>
-          <div class="settings-grid">
-            <wa-select id="colormap" label="Colormap" value="gray">
-              <wa-option value="gray">Gray</wa-option>
-              <wa-option value="hot">Hot</wa-option>
-              <wa-option value="cool">Cool</wa-option>
-              <wa-option value="viridis">Viridis</wa-option>
-              <wa-option value="plasma">Plasma</wa-option>
-              <wa-option value="inferno">Inferno</wa-option>
-              <wa-option value="red">Red</wa-option>
-              <wa-option value="green">Green</wa-option>
-              <wa-option value="blue">Blue</wa-option>
+            <wa-select id="method" label="Method" value="itkwasm_gaussian">
+              <wa-option value="itkwasm_gaussian">Gaussian</wa-option>
+              <wa-option value="itkwasm_bin_shrink">Bin Shrink</wa-option>
+              <wa-option value="itkwasm_label_image">Label Image</wa-option>
             </wa-select>
-            <wa-input
-              id="opacity"
-              type="number"
-              label="Opacity"
-              value="1.0"
-              min="0"
-              max="1"
-              step="0.1"
-            ></wa-input>
           </div>
         </wa-card>
 
@@ -244,6 +215,54 @@
               Load an image to preview
             </div>
             <canvas id="gl"></canvas>
+          </div>
+        </wa-card>
+
+        <wa-card>
+          <div slot="header">Preview Settings</div>
+          <div class="settings-grid">
+            <wa-select id="colormap" label="Colormap" value="gray">
+              <wa-option value="gray">Gray</wa-option>
+              <wa-option value="hot">Hot</wa-option>
+              <wa-option value="cool">Cool</wa-option>
+              <wa-option value="viridis">Viridis</wa-option>
+              <wa-option value="plasma">Plasma</wa-option>
+              <wa-option value="inferno">Inferno</wa-option>
+              <wa-option value="red">Red</wa-option>
+              <wa-option value="green">Green</wa-option>
+              <wa-option value="blue">Blue</wa-option>
+            </wa-select>
+            <wa-select
+              id="slice-type"
+              label="Slice Type"
+              value="multiplanar"
+            >
+              <wa-option value="axial">Axial</wa-option>
+              <wa-option value="coronal">Coronal</wa-option>
+              <wa-option value="sagittal">Sagittal</wa-option>
+              <wa-option value="multiplanar">Multiplanar</wa-option>
+              <wa-option value="render">Render</wa-option>
+            </wa-select>
+            <wa-slider
+              id="opacity"
+              label="Gradient Opacity"
+              min="0"
+              max="1"
+              step="0.05"
+              value="0.5"
+              with-tooltip
+              class="full-width"
+            ></wa-slider>
+            <wa-slider
+              id="silhouette"
+              label="Silhouette Enhancement"
+              min="0"
+              max="1"
+              step="0.05"
+              value="0"
+              with-tooltip
+              class="full-width"
+            ></wa-slider>
           </div>
         </wa-card>
 
