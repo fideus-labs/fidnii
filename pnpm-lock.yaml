@@ -9,6 +9,7 @@ overrides:
   zarrita: ^0.6.1
   '@fideus-labs/fizarrita': ^1.2.0
   '@fideus-labs/worker-pool': ^1.0.0
+  '@playwright/test': ^1.58.2
   typescript: ^5.9.3
   vite: ^7.3.1
 
@@ -16,6 +17,9 @@ importers:
 
   .:
     devDependencies:
+      '@playwright/test':
+        specifier: ^1.58.2
+        version: 1.58.2
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -70,7 +74,7 @@ importers:
         version: 0.67.0
     devDependencies:
       '@playwright/test':
-        specifier: ^1.58.1
+        specifier: ^1.58.2
         version: 1.58.2
       typescript:
         specifier: ^5.9.3
@@ -113,7 +117,7 @@ importers:
         specifier: ^1.0.0
         version: 1.0.0
       '@playwright/test':
-        specifier: ^1.58.1
+        specifier: ^1.58.2
         version: 1.58.2
       '@types/node':
         specifier: ^20.19.30
