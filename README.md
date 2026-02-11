@@ -15,25 +15,25 @@
   <img src="https://raw.githubusercontent.com/fideus-labs/fidnii/main/docs/assets/beechnut.gif" alt="fidnii demo" width="600" />
 </p>
 
-## Features
+## ✨ Features
 
-- **Progressive loading** -- Quick preview from lowest resolution, then
+- 🚀 **Progressive loading** -- Quick preview from lowest resolution, then
   automatic upgrade to the target level
-- **Automatic resolution selection** -- Picks the optimal pyramid level based on
-  a configurable pixel budget
-- **Viewport-aware resolution** -- Fetches higher resolution only for the
+- 🎯 **Automatic resolution selection** -- Picks the optimal pyramid level
+  based on a configurable pixel budget
+- 🔍 **Viewport-aware resolution** -- Fetches higher resolution only for the
   visible region when zoomed in
-- **Slab-based 2D rendering** -- Independent per-slice-type buffers with their
-  own resolution selection
-- **Clip planes** -- Up to 6 arbitrary clip planes for cropping and
+- 📐 **Slab-based 2D rendering** -- Independent per-slice-type buffers with
+  their own resolution selection
+- ✂️ **Clip planes** -- Up to 6 arbitrary clip planes for cropping and
   visualization
-- **Chunk caching** -- LRU cache for decoded chunks, shared across 3D and 2D
-  loads
-- **Request coalescing** -- Deduplicates and parallelizes chunk fetches
-- **Event system** -- Browser-native `EventTarget` API for loading states and
-  resolution changes
+- 💾 **Chunk caching** -- LRU cache for decoded chunks, shared across 3D and
+  2D loads
+- 🔗 **Request coalescing** -- Deduplicates and parallelizes chunk fetches
+- 📡 **Event system** -- Browser-native `EventTarget` API for loading states
+  and resolution changes
 
-## Installation
+## 📦 Installation
 
 ```bash
 npm install @fideus-labs/fidnii @fideus-labs/ngff-zarr @niivue/niivue
@@ -41,7 +41,7 @@ npm install @fideus-labs/fidnii @fideus-labs/ngff-zarr @niivue/niivue
 
 `@niivue/niivue` is a peer dependency and must be installed alongside fidnii.
 
-## Quick Start
+## ⚡ Quick Start
 
 ```typescript
 import { Niivue } from "@niivue/niivue"
@@ -58,7 +58,7 @@ const multiscales = await fromNgffZarr("/path/to/data.ome.zarr")
 await OMEZarrNVImage.create({ multiscales, niivue: nv })
 ```
 
-## Options
+## ⚙️ Options
 
 `OMEZarrNVImage.create()` accepts a single options object:
 
@@ -74,7 +74,7 @@ await OMEZarrNVImage.create({ multiscales, niivue: nv })
 | `min3DZoom`           | `number`      | `0.3`        | Minimum 3D scroll zoom factor                   |
 | `maxCacheEntries`     | `number`      | `200`        | LRU chunk cache size                            |
 
-## Events
+## 📡 Events
 
 Listen to loading events using the browser-native `EventTarget` API:
 
@@ -101,7 +101,7 @@ image.addEventListener("populateComplete", (e) => {
 | `slabLoadingStart`   | Slab loading starts for a 2D slice type           |
 | `slabLoadingComplete`| Slab loading completes for a 2D slice type        |
 
-## Clip Planes
+## ✂️ Clip Planes
 
 Clip planes define visible sub-regions of the volume. Up to 6 can be active at
 once.
@@ -124,7 +124,7 @@ image.addEventListener("populateComplete", () => {
 }, { once: true })
 ```
 
-## Examples
+## 🧪 Examples
 
 ### [Getting Started](examples/getting-started/)
 
@@ -144,15 +144,15 @@ OME-Zarr 0.5 (OZX) with live preview.
 pnpm --filter @fideus-labs/fidnii-example-convert dev
 ```
 
-## Development
+## 🛠️ Development
 
-### Prerequisites
+### 📋 Prerequisites
 
 - [Node.js](https://nodejs.org/) >= 18
 - [pnpm](https://pnpm.io/) 10.29.2 (`corepack enable` to use the bundled
   version)
 
-### Setup
+### 🔧 Setup
 
 ```bash
 git clone https://github.com/fideus-labs/fidnii.git
@@ -160,7 +160,7 @@ cd fidnii
 pnpm install
 ```
 
-### Monorepo Structure
+### 🏗️ Monorepo Structure
 
 ```
 fidnii/                    # @fideus-labs/fidnii library
@@ -175,7 +175,7 @@ docs/
   assets/                  # Logos, demo GIFs
 ```
 
-### Commands
+### 📝 Commands
 
 | Command                               | Description                       |
 | ------------------------------------- | --------------------------------- |
@@ -190,11 +190,11 @@ The dev server runs on port 5173 with COOP/COEP headers for SharedArrayBuffer
 support. Tests run against Chromium with WebGL via EGL and have a 120-second
 timeout (they load real data from S3).
 
-## Contributing
+## 🤝 Contributing
 
 Contributions are welcome! Here's what you need to know:
 
-### Code Style
+### 🎨 Code Style
 
 Code is formatted with **deno fmt**. The key rules:
 
@@ -204,7 +204,7 @@ Code is formatted with **deno fmt**. The key rules:
 - 80-column line width
 - Trailing commas in multi-line constructs
 
-### Conventions
+### 📏 Conventions
 
 - **Named exports only** -- no default exports
 - **Separate `import type`** from value imports
@@ -212,7 +212,7 @@ Code is formatted with **deno fmt**. The key rules:
 - Every source file starts with SPDX license headers
 - All exported APIs must have JSDoc documentation
 
-### Type Checking
+### ✅ Type Checking
 
 TypeScript strict mode is the quality gate. There is no separate linter.
 
@@ -221,7 +221,7 @@ TypeScript strict mode is the quality gate. There is no separate linter.
 pnpm exec tsc --noEmit
 ```
 
-### Testing
+### 🧪 Testing
 
 All tests are Playwright end-to-end browser tests:
 
@@ -233,11 +233,11 @@ pnpm exec playwright test # Tests in current package
 Useful flags: `--headed` (visible browser), `--debug` (step-through),
 `--workers=1` (serial execution).
 
-### Code of Conduct
+### 💛 Code of Conduct
 
 This project follows the
 [Contributor Covenant](CODE_OF_CONDUCT.md) code of conduct.
 
-## License
+## 📄 License
 
 [MIT](LICENSE.txt) -- Copyright (c) Fideus Labs LLC
