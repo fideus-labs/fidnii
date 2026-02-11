@@ -1,3 +1,9 @@
 context/
 
 node_modules/
+
+# Test data
+*.nii.gz
+
+# Ad-hoc screenshots (root level)
+/*.png
