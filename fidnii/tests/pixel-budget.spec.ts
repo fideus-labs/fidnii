@@ -12,13 +12,13 @@ test.describe("Pixel Budget", () => {
     });
   });
 
-  test("default maxPixels is 4 million", async ({ page }) => {
+  test("default maxPixels is 50 million", async ({ page }) => {
     const maxPixels = await page.evaluate(() => {
       const image = (window as any).image;
       return image.maxPixels;
     });
 
-    expect(maxPixels).toBe(4_000_000);
+    expect(maxPixels).toBe(50_000_000);
   });
 
   test("maxPixels slider changes displayed value", async ({ page }) => {
@@ -26,7 +26,7 @@ test.describe("Pixel Budget", () => {
     const valueEl = page.locator("#maxpixels-value");
 
     // Initial value
-    await expect(valueEl).toHaveText("4");
+    await expect(valueEl).toHaveText("50");
 
     // Change slider
     await slider.fill("25");

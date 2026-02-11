@@ -57,7 +57,7 @@ test.describe("Progressive Loading", () => {
       timeout: 120000,
     });
 
-    // Default is 4M pixels
+    // Default is 50M pixels
     const levels = await page.evaluate(() => {
       const image = (window as any).image;
       return {
@@ -66,10 +66,10 @@ test.describe("Progressive Loading", () => {
       };
     });
 
-    // With 4M pixels and beechnut.ome.zarr dimensions, should be level 3
-    // (level 2 is 386×256×256 = ~25.3M > 4M, level 3 is 193×128×128 = ~3.16M <= 4M)
-    expect(levels.maxPixels).toBe(4_000_000);
-    expect(levels.target).toBe(3);
+    // With 50M pixels and beechnut.ome.zarr dimensions, should be level 2
+    // (level 2 is 386×256×256 = ~25.3M <= 50M, level 1 is 772×512×512 = ~202M > 50M)
+    expect(levels.maxPixels).toBe(50_000_000);
+    expect(levels.target).toBe(2);
   });
 
   test("image buffer is populated after loading", async ({ page }) => {
