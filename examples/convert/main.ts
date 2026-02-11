@@ -20,6 +20,16 @@ import {
   getMultiscalesInfo,
 } from "./converter.ts";
 
+// Color scheme: follow the browser/OS preference
+const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+
+function applyColorScheme(prefersDark: boolean): void {
+  document.documentElement.classList.toggle("wa-dark", prefersDark)
+}
+
+applyColorScheme(darkQuery.matches);
+darkQuery.addEventListener("change", (e) => applyColorScheme(e.matches));
+
 // DOM Elements
 const dropZone = document.getElementById("drop-zone") as HTMLDivElement;
 const browseBtn = document.getElementById("browse-btn") as HTMLElement;
