@@ -942,6 +942,27 @@ export class OMEZarrNVImage extends NVImage {
   }
 
   /**
+   * Load a specific resolution level.
+   *
+   * Overrides the automatic `maxPixels`-based level selection and loads the
+   * requested level directly.  The preview step is skipped because the caller
+   * has explicitly chosen a level.
+   *
+   * @param levelIndex - Zero-based resolution level (0 = highest resolution)
+   * @throws If `levelIndex` is out of range
+   */
+  async loadLevel(levelIndex: number): Promise<void> {
+    const numLevels = this.multiscales.images.length
+    if (levelIndex < 0 || levelIndex >= numLevels) {
+      throw new Error(
+        `levelIndex ${levelIndex} out of range [0, ${numLevels - 1}]`,
+      )
+    }
+    this.targetLevelIndex = levelIndex
+    await this.populateVolume(true, "initial")
+  }
+
+  /**
    * Get the volume bounds in world space.
    */
   getVolumeBounds(): VolumeBounds {

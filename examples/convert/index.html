@@ -134,6 +134,17 @@
       .mono {
         font-family: monospace;
       }
+      #multiscales-table tbody tr {
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+      #multiscales-table tbody tr:hover {
+        background: var(--wa-color-surface-hover);
+      }
+      #multiscales-table tbody tr.active-level {
+        background: var(--wa-color-primary-100);
+        font-weight: 600;
+      }
       .actions {
         display: flex;
         gap: 0.5rem;
