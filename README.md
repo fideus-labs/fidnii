@@ -3,6 +3,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/fideus-labs/fidnii/actions/workflows/ci.yml"><img src="https://github.com/fideus-labs/fidnii/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="https://www.npmjs.com/package/@fideus-labs/fidnii"><img src="https://img.shields.io/npm/v/@fideus-labs/fidnii" alt="npm version" /></a>
   <a href="https://github.com/fideus-labs/fidnii/blob/main/LICENSE.txt"><img src="https://img.shields.io/npm/l/@fideus-labs/fidnii" alt="license" /></a>
 </p>
