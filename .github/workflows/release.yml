@@ -10,6 +10,7 @@ concurrency:
 permissions:
   contents: write
   pull-requests: write
+  id-token: write
 
 jobs:
   release:
@@ -26,6 +27,12 @@ jobs:
           cache: pnpm
           registry-url: https://registry.npmjs.org
 
+      - name: Upgrade npm (required for trusted publishing)
+        run: npm install -g npm@11.10.0
+
+      - name: Show npm version
+        run: npm --version
+
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm build
@@ -38,6 +45,6 @@ jobs:
           publish: pnpm changeset publish
           title: "chore: version packages"
           commit: "chore: version packages"
+          createGithubReleases: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

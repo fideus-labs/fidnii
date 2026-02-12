@@ -52,10 +52,10 @@ importers:
         version: link:../../fidnii
       '@fideus-labs/fiff':
         specifier: ^0.5.2
-        version: 0.5.2(@fideus-labs/ngff-zarr@0.12.0)(@fideus-labs/worker-pool@1.0.0)
+        version: 0.5.2(@fideus-labs/ngff-zarr@0.12.3)(@fideus-labs/worker-pool@1.0.0)
       '@fideus-labs/ngff-zarr':
         specifier: ^0.12.0
-        version: 0.12.0
+        version: 0.12.3
       '@fideus-labs/worker-pool':
         specifier: ^1.0.0
         version: 1.0.0
@@ -89,7 +89,7 @@ importers:
         version: link:../../fidnii
       '@fideus-labs/ngff-zarr':
         specifier: ^0.12.0
-        version: 0.12.0
+        version: 0.12.3
       '@niivue/niivue':
         specifier: ^0.67.0
         version: 0.67.0
@@ -108,10 +108,10 @@ importers:
     dependencies:
       '@fideus-labs/fiff':
         specifier: ^0.5.2
-        version: 0.5.2(@fideus-labs/ngff-zarr@0.12.0)(@fideus-labs/worker-pool@1.0.0)
+        version: 0.5.2(@fideus-labs/ngff-zarr@0.12.3)(@fideus-labs/worker-pool@1.0.0)
       '@fideus-labs/ngff-zarr':
         specifier: ^0.12.0
-        version: 0.12.0
+        version: 0.12.3
       '@itk-wasm/downsample':
         specifier: ^1.8.1
         version: 1.8.1
@@ -136,7 +136,7 @@ importers:
     devDependencies:
       '@fideus-labs/fizarrita':
         specifier: ^1.4.0
-        version: 1.4.0(zarrita@0.6.1)
+        version: 1.4.1(zarrita@0.6.1)
       '@fideus-labs/worker-pool':
         specifier: ^1.0.0
         version: 1.0.0
@@ -535,13 +535,13 @@ packages:
       '@fideus-labs/worker-pool':
         optional: true
 
-  '@fideus-labs/fizarrita@1.4.0':
-    resolution: {integrity: sha512-6E1qVOQsc4hESlzLpuQpAbWnAYDgFZocatxxzr4CJh0ZUbOYRAKwpvQ30s22aEd5k9L1oeKXRJtCoumOIEfe4A==}
+  '@fideus-labs/fizarrita@1.4.1':
+    resolution: {integrity: sha512-71HTW4cTDeUnm2f3MU3352MMlpzUAFHhDmEajaASpUywVDe7RdY8ImjeXwRllKjvfPcukfz/aEmdPs67esSngA==}
     peerDependencies:
       zarrita: ^0.6.1
 
-  '@fideus-labs/ngff-zarr@0.12.0':
-    resolution: {integrity: sha512-XWWVeRRcfODam2RQ6hpbLASHsAi19ll5sySoneiHjH2YKiSBVgBdErYcs+JMhgc3KI5YrQxYFOdLNGwBlJ3/xg==}
+  '@fideus-labs/ngff-zarr@0.12.3':
+    resolution: {integrity: sha512-gtRh6wQ1fwsP3RFSgsl7QpxzsaDTlem8rVjDG/DF7ltb54i9k8KsxLGlEv+vZw1uxBsjqBgZ0rLHzn0n35PyEg==}
 
   '@fideus-labs/worker-pool@1.0.0':
     resolution: {integrity: sha512-Mwx8fFKKpTUcEtR7w45MQJ/RnZFUPBtefEvGTZGlZMAVSfD7W61rpB8ZdgS4V0CXfppwcb90BF7F/aANWvupnA==}
@@ -2624,23 +2624,23 @@ snapshots:
   '@esbuild/win32-x64@0.27.3':
     optional: true
 
-  '@fideus-labs/fiff@0.5.2(@fideus-labs/ngff-zarr@0.12.0)(@fideus-labs/worker-pool@1.0.0)':
+  '@fideus-labs/fiff@0.5.2(@fideus-labs/ngff-zarr@0.12.3)(@fideus-labs/worker-pool@1.0.0)':
     dependencies:
       geotiff: 3.0.3
       pako: 2.1.0
       zarrita: 0.6.1
     optionalDependencies:
-      '@fideus-labs/ngff-zarr': 0.12.0
+      '@fideus-labs/ngff-zarr': 0.12.3
       '@fideus-labs/worker-pool': 1.0.0
 
-  '@fideus-labs/fizarrita@1.4.0(zarrita@0.6.1)':
+  '@fideus-labs/fizarrita@1.4.1(zarrita@0.6.1)':
     dependencies:
       '@fideus-labs/worker-pool': 1.0.0
       zarrita: 0.6.1
 
-  '@fideus-labs/ngff-zarr@0.12.0':
+  '@fideus-labs/ngff-zarr@0.12.3':
     dependencies:
-      '@fideus-labs/fizarrita': 1.4.0(zarrita@0.6.1)
+      '@fideus-labs/fizarrita': 1.4.1(zarrita@0.6.1)
       '@fideus-labs/worker-pool': 1.0.0
       '@itk-wasm/downsample': 1.8.1
       '@zarrita/storage': 0.1.4
