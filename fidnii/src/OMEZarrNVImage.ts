@@ -2,7 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import type { Multiscales, NgffImage, Omero } from "@fideus-labs/ngff-zarr"
-import { computeOmeroFromNgffImage } from "@fideus-labs/ngff-zarr/browser"
+import { Methods } from "@fideus-labs/ngff-zarr"
+import {
+  computeOmeroFromNgffImage,
+  GLASBEY_COLORS,
+} from "@fideus-labs/ngff-zarr/browser"
 import type { Niivue } from "@niivue/niivue"
 import { NVImage, SLICE_TYPE } from "@niivue/niivue"
 import { LRUCache } from "lru-cache"
@@ -43,6 +47,7 @@ import type {
   PixelRegion,
   SlabBufferState,
   SlabSliceType,
+  TypedArray,
   VolumeBounds,
   ZarrDtype,
 } from "./types.js"
@@ -82,6 +87,15 @@ export class OMEZarrNVImage extends NVImage {
 
   /** Maximum number of pixels to use */
   readonly maxPixels: number
+
+  /**
+   * True when `multiscales.method` is `Methods.ITKWASM_LABEL_IMAGE`.
+   *
+   * Label images are rendered with a discrete colormap
+   * (`setColormapLabel()`) instead of a continuous colormap, and
+   * OMERO intensity windowing is skipped.
+   */
+  readonly isLabelImage: boolean
 
   /** Reference to NiiVue instance */
   private readonly niivue: Niivue
@@ -220,6 +234,7 @@ export class OMEZarrNVImage extends NVImage {
 
     this.multiscales = options.multiscales
     this.maxPixels = options.maxPixels ?? DEFAULT_MAX_PIXELS
+    this.isLabelImage = this.multiscales.method === Methods.ITKWASM_LABEL_IMAGE
     this.niivue = options.niivue
     this.clipPlaneDebounceMs = options.clipPlaneDebounceMs ?? 300
 
@@ -345,8 +360,10 @@ export class OMEZarrNVImage extends NVImage {
     // We need at least 1 element to avoid issues
     this.img = this.bufferManager.resize([1, 1, 1]) as NVImage["img"]
 
-    // Set default colormap
-    this._colormap = "gray"
+    // Set default colormap (label images use setColormapLabel() instead)
+    if (!this.isLabelImage) {
+      this._colormap = "gray"
+    }
     this._opacity = 1.0
   }
 
@@ -525,8 +542,13 @@ export class OMEZarrNVImage extends NVImage {
     // Update NVImage header with correct dimensions and transforms
     this.updateHeaderForRegion(ngffImage, alignedRegion, fetchedShape)
 
-    // Compute or apply OMERO metadata for cal_min/cal_max
-    await this.ensureOmeroMetadata(ngffImage, levelIndex)
+    if (this.isLabelImage) {
+      // Label images: apply a discrete colormap instead of OMERO windowing
+      this._applyLabelColormap(this, result.data)
+    } else {
+      // Compute or apply OMERO metadata for cal_min/cal_max
+      await this.ensureOmeroMetadata(ngffImage, levelIndex)
+    }
 
     // Reset global_min so NiiVue's refreshLayers() re-runs calMinMax() on real data.
     // Without this, if calMinMax() was previously called on placeholder/empty data
@@ -541,12 +563,14 @@ export class OMEZarrNVImage extends NVImage {
     // Refresh NiiVue
     this.niivue.updateGLVolume()
 
-    // Widen the display window if actual data exceeds the OMERO range.
-    // At higher resolutions, individual bright/dark voxels that were averaged
-    // out at lower resolutions can exceed the OMERO-specified window, causing
-    // clipping artifacts. This preserves the OMERO lower bound but widens the
-    // ceiling to encompass the full data range when needed.
-    this._widenCalRangeIfNeeded(this)
+    if (!this.isLabelImage) {
+      // Widen the display window if actual data exceeds the OMERO range.
+      // At higher resolutions, individual bright/dark voxels that were averaged
+      // out at lower resolutions can exceed the OMERO-specified window, causing
+      // clipping artifacts. This preserves the OMERO lower bound but widens the
+      // ceiling to encompass the full data range when needed.
+      this._widenCalRangeIfNeeded(this)
+    }
 
     // Emit loadingComplete event
     this._emitEvent("loadingComplete", {
@@ -677,6 +701,54 @@ export class OMEZarrNVImage extends NVImage {
       if (calMin !== undefined) this.hdr.cal_min = calMin
       if (calMax !== undefined) this.hdr.cal_max = calMax
     }
+  }
+
+  /**
+   * Build and apply a discrete NiiVue label colormap to an NVImage.
+   *
+   * Scans the pixel data for unique integer values and assigns each a
+   * distinct color from the Glasbey palette (via `@fideus-labs/ngff-zarr`).
+   * Label 0 is treated as background (fully transparent).
+   *
+   * @param nvImage - The NVImage to apply the label colormap to
+   * @param data - The pixel data to scan for unique labels
+   */
+  private _applyLabelColormap(nvImage: NVImage, data: TypedArray): void {
+    const uniqueLabels = [...new Set(data as Iterable<number>)].sort(
+      (a, b) => a - b,
+    )
+
+    const R: number[] = []
+    const G: number[] = []
+    const B: number[] = []
+    const A: number[] = []
+    const I: number[] = []
+    const labels: string[] = []
+
+    for (let i = 0; i < uniqueLabels.length; i++) {
+      const label = uniqueLabels[i]
+      I.push(label)
+
+      if (label === 0) {
+        // Background: transparent
+        R.push(0)
+        G.push(0)
+        B.push(0)
+        A.push(0)
+        labels.push("background")
+      } else {
+        // Use Glasbey color palette (cycling if >256 labels)
+        const hex = GLASBEY_COLORS[(i - 1) % GLASBEY_COLORS.length] ?? "FFFFFF"
+        R.push(parseInt(hex.slice(0, 2), 16))
+        G.push(parseInt(hex.slice(2, 4), 16))
+        B.push(parseInt(hex.slice(4, 6), 16))
+        A.push(255)
+        labels.push(String(label))
+      }
+    }
+
+    // NiiVue's setColormapLabel expects a ColorMap-shaped object
+    nvImage.setColormapLabel({ R, G, B, A, I, labels })
   }
 
   /**
@@ -1745,7 +1817,9 @@ export class OMEZarrNVImage extends NVImage {
     hdr.sform_code = 1
     nvImage.name = `${this.name ?? "OME-Zarr"} [${SLICE_TYPE[sliceType]}]`
     nvImage.img = bufferManager.resize([1, 1, 1]) as NVImage["img"]
-    nvImage._colormap = "gray"
+    if (!this.isLabelImage) {
+      nvImage._colormap = "gray"
+    }
     nvImage._opacity = 1.0
 
     // Select initial resolution using 2D pixel budget
@@ -2031,8 +2105,11 @@ export class OMEZarrNVImage extends NVImage {
       fetchedShape,
     )
 
-    // Apply OMERO metadata if available
-    if (this._omero) {
+    if (this.isLabelImage) {
+      // Label images: apply discrete colormap to the slab NVImage
+      this._applyLabelColormap(slabState.nvImage, result.data)
+    } else if (this._omero) {
+      // Apply OMERO metadata if available
       this._applyOmeroToSlabHeader(slabState.nvImage)
     }
 
@@ -2065,9 +2142,11 @@ export class OMEZarrNVImage extends NVImage {
         if (attachedNv.volumes.includes(slabState.nvImage)) {
           attachedNv.updateGLVolume()
 
-          // Widen the display window if actual data exceeds the OMERO range.
-          // Must run after updateGLVolume() which computes global_min/global_max.
-          this._widenCalRangeIfNeeded(slabState.nvImage)
+          if (!this.isLabelImage) {
+            // Widen the display window if actual data exceeds the OMERO range.
+            // Must run after updateGLVolume() which computes global_min/global_max.
+            this._widenCalRangeIfNeeded(slabState.nvImage)
+          }
 
           // Position the crosshair at the correct slice within this slab.
           // Without this, NiiVue defaults to the center of the slab which

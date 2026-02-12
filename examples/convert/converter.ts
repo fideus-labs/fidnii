@@ -5,7 +5,7 @@
 // Import from browser subpath for browser-compatible functions
 import {
   createMetadataWithVersion,
-  type Methods,
+  Methods,
   type Multiscales,
   Multiscales as MultiscalesClass,
   type NgffImage,
@@ -114,6 +114,36 @@ function getStrides(shape: number[]): number[] {
   return strides
 }
 
+/**
+ * Maximum number of unique labels for auto-detection of label images.
+ * Images with integer pixel types and fewer unique values than this
+ * threshold are treated as label/segmentation images.
+ */
+const MAX_LABELS_IN_LABEL_IMAGE = 64
+
+/**
+ * Detect whether an ITK-Wasm image is a label/segmentation image.
+ *
+ * A label image has:
+ * 1. An integer pixel type (not float32 or float64)
+ * 2. A small number of unique values (<= MAX_LABELS_IN_LABEL_IMAGE)
+ *
+ * @param image - The ITK-Wasm image to check
+ * @returns true if the image is detected as a label image
+ */
+function isLabelImage(image: Image): boolean {
+  const { componentType } = image.imageType
+  if (componentType === "float32" || componentType === "float64") {
+    return false
+  }
+  // Only integer-based pixels considered for label maps
+  if (!image.data) {
+    return false
+  }
+  const uniqueLabels = new Set(image.data as unknown as Iterable<number>).size
+  return uniqueLabels <= MAX_LABELS_IN_LABEL_IMAGE
+}
+
 export interface ConversionOptions {
   chunkSize: number
   method: Methods
@@ -160,6 +190,14 @@ export async function convertToOmeZarr(
   })
   webWorker?.terminate()
 
+  // Auto-detect label images when the user hasn't changed from the default method.
+  // Label images use mode-based downsampling to preserve discrete label values.
+  let method = options.method
+  if (method === Methods.ITKWASM_GAUSSIAN && isLabelImage(itkImage)) {
+    method = Methods.ITKWASM_LABEL_IMAGE
+    report("reading", 15, "Detected label image, using label downsampling...")
+  }
+
   // Stage 2: Convert to NgffImage
   report("converting", 20, "Converting to NGFF format...")
   const ngffImage = await itkImageToNgffImage(itkImage)
@@ -172,7 +210,7 @@ export async function convertToOmeZarr(
   report("downsampling", 30, "Generating multiscale pyramid...")
 
   const multiscalesV04 = await toMultiscales(ngffImage, {
-    method: options.method,
+    method,
     chunks: options.chunkSize,
   })
 
