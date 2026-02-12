@@ -2,9 +2,17 @@
 // SPDX-License-Identifier: MIT
 
 import { resolve } from "node:path"
-import { defineConfig } from "vite"
+import { createLogger, defineConfig } from "vite"
+
+const logger = createLogger()
+const originalWarnOnce = logger.warnOnce.bind(logger)
+logger.warnOnce = (msg, options) => {
+  if (msg.includes("points to missing source files")) return
+  originalWarnOnce(msg, options)
+}
 
 export default defineConfig({
+  customLogger: logger,
   root: resolve(__dirname, "test-page"),
   publicDir: resolve(__dirname, "public"),
   resolve: {

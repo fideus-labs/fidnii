@@ -1,6 +1,14 @@
-import { defineConfig } from "vite"
+import { createLogger, defineConfig } from "vite"
+
+const logger = createLogger()
+const originalWarnOnce = logger.warnOnce.bind(logger)
+logger.warnOnce = (msg, options) => {
+  if (msg.includes("points to missing source files")) return
+  originalWarnOnce(msg, options)
+}
 
 export default defineConfig({
+  customLogger: logger,
   server: {
     port: 5174,
     strictPort: true,
