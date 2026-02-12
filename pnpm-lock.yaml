@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@fideus-labs/ngff-zarr': ^0.7.4
+  '@fideus-labs/ngff-zarr': ^0.7.5
   zarrita: ^0.6.1
   '@fideus-labs/fizarrita': ^1.2.0
   '@fideus-labs/worker-pool': ^1.0.0
@@ -54,8 +54,8 @@ importers:
         specifier: ^1.2.0
         version: 1.2.0(zarrita@0.6.1)
       '@fideus-labs/ngff-zarr':
-        specifier: ^0.7.4
-        version: 0.7.4
+        specifier: ^0.7.5
+        version: 0.7.5
       '@itk-wasm/image-io':
         specifier: ^1.6.0
         version: 1.6.0
@@ -82,8 +82,8 @@ importers:
         specifier: ^0.1.0
         version: 0.1.0(@niivue/niivue@0.67.0)
       '@fideus-labs/ngff-zarr':
-        specifier: ^0.7.4
-        version: 0.7.4
+        specifier: ^0.7.5
+        version: 0.7.5
       '@niivue/niivue':
         specifier: ^0.67.0
         version: 0.67.0
@@ -101,8 +101,8 @@ importers:
   fidnii:
     dependencies:
       '@fideus-labs/ngff-zarr':
-        specifier: ^0.7.4
-        version: 0.7.4
+        specifier: ^0.7.5
+        version: 0.7.5
       '@itk-wasm/downsample':
         specifier: ^1.8.1
         version: 1.8.1
@@ -528,8 +528,8 @@ packages:
     peerDependencies:
       zarrita: ^0.6.1
 
-  '@fideus-labs/ngff-zarr@0.7.4':
-    resolution: {integrity: sha512-c9hZmP9HnguELyj4u2J9+eKqQO3mfBMRf0Qe8VcUg/lmrnpX8rmkhuIUfTaymhbFCue5RpJ0+CpdlqnudrS+oQ==}
+  '@fideus-labs/ngff-zarr@0.7.5':
+    resolution: {integrity: sha512-xttOheaC93A0PhPeR1DPUja5yIy6biHwbwfD1bq1mCiT1poitmP+fVR83/97paXJeO51Iigvbe4k7JQnSkc+TA==}
 
   '@fideus-labs/worker-pool@1.0.0':
     resolution: {integrity: sha512-Mwx8fFKKpTUcEtR7w45MQJ/RnZFUPBtefEvGTZGlZMAVSfD7W61rpB8ZdgS4V0CXfppwcb90BF7F/aANWvupnA==}
@@ -2551,7 +2551,7 @@ snapshots:
 
   '@fideus-labs/fidnii@0.1.0(@niivue/niivue@0.67.0)':
     dependencies:
-      '@fideus-labs/ngff-zarr': 0.7.4
+      '@fideus-labs/ngff-zarr': 0.7.5
       '@itk-wasm/downsample': 1.8.1
       '@niivue/niivue': 0.67.0
       gl-matrix: 3.4.4
@@ -2567,7 +2567,7 @@ snapshots:
       '@fideus-labs/worker-pool': 1.0.0
       zarrita: 0.6.1
 
-  '@fideus-labs/ngff-zarr@0.7.4':
+  '@fideus-labs/ngff-zarr@0.7.5':
     dependencies:
       '@fideus-labs/fizarrita': 1.2.0(zarrita@0.6.1)
       '@fideus-labs/worker-pool': 1.0.0

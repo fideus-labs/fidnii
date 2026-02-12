@@ -21,7 +21,7 @@ import {
   downloadFile,
   formatFileSize,
   getMultiscalesInfo,
-  type Methods,
+  Methods,
 } from "./converter.ts"
 
 // Color scheme: follow the browser/OS preference
@@ -211,8 +211,13 @@ async function showPreview(result: ConversionResult): Promise<void> {
   // Highlight the level that was loaded
   highlightLevel(image.getCurrentLevelIndex())
 
-  // Apply colormap AFTER data is loaded to avoid calMinMax() on placeholder data
-  image.colormap = colormap
+  // Apply colormap AFTER data is loaded to avoid calMinMax() on placeholder data.
+  // Label images get a discrete colormap automatically from the library,
+  // so skip the continuous colormap for those.
+  const isLabel = result.multiscales.method === Methods.ITKWASM_LABEL_IMAGE
+  if (!isLabel) {
+    image.colormap = colormap
+  }
 
   if (volumeIs3D) {
     set3DControlsEnabled(true)
@@ -298,6 +303,16 @@ async function startConversion(): Promise<void> {
 
     lastResult = await convertToOmeZarr(selectedFile, options, updateProgress)
 
+    // Sync the method dropdown if auto-detection changed it
+    // (e.g. label image detected while default Gaussian was selected)
+    const actualMethod = lastResult.multiscales.method
+    if (
+      actualMethod &&
+      actualMethod !== (methodSelect as unknown as { value: string }).value
+    ) {
+      ;(methodSelect as unknown as { value: string }).value = actualMethod
+    }
+
     // Show preview
     await showPreview(lastResult)
 
@@ -334,6 +349,10 @@ downloadBtn.addEventListener("click", () => {
 // Settings change handlers for live preview updates
 colormapSelect.addEventListener("change", () => {
   if (lastResult && nv && nv.volumes.length > 0) {
+    // Label images use discrete colormaps managed by the library
+    if (lastResult.multiscales.method === Methods.ITKWASM_LABEL_IMAGE) {
+      return
+    }
     const colormap =
       (colormapSelect as unknown as { value: string }).value || "gray"
     nv.volumes[0].colormap = colormap
