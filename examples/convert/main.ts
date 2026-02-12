@@ -40,7 +40,6 @@ const browseBtn = document.getElementById("browse-btn") as HTMLElement
 const fileInput = document.getElementById("file-input") as HTMLInputElement
 const fileInfo = document.getElementById("file-info") as HTMLDivElement
 const convertBtn = document.getElementById("convert-btn") as HTMLElement
-const downloadBtn = document.getElementById("download-btn") as HTMLElement
 const progressContainer = document.getElementById(
   "progress-container",
 ) as HTMLDivElement
@@ -117,7 +116,6 @@ function handleFile(file: File): void {
   selectedFile = file
   fileInfo.textContent = `${file.name} (${formatFileSize(file.size)})`
   convertBtn.removeAttribute("disabled")
-  downloadBtn.classList.add("hidden")
   lastResult = null
 
   // Reset multiscales table
@@ -306,9 +304,6 @@ async function startConversion(): Promise<void> {
 
     // Auto-download
     downloadFile(lastResult.ozxData, lastResult.filename)
-
-    // Enable download again button
-    downloadBtn.classList.remove("hidden")
   } catch (error) {
     console.error("Conversion failed:", error)
     progressText.textContent = `Error: ${
@@ -322,13 +317,6 @@ async function startConversion(): Promise<void> {
 // Convert button (re-convert with current settings)
 convertBtn.addEventListener("click", () => {
   void startConversion()
-})
-
-// Download again button
-downloadBtn.addEventListener("click", () => {
-  if (lastResult) {
-    downloadFile(lastResult.ozxData, lastResult.filename)
-  }
 })
 
 // Settings change handlers for live preview updates
