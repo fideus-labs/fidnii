@@ -79,8 +79,8 @@ importers:
   examples/getting-started:
     dependencies:
       '@fideus-labs/fidnii':
-        specifier: ^0.1.0
-        version: 0.1.0(@niivue/niivue@0.67.0)
+        specifier: ^0.2.0
+        version: 0.2.0(@niivue/niivue@0.67.0)
       '@fideus-labs/ngff-zarr':
         specifier: ^0.7.5
         version: 0.7.5
@@ -518,8 +518,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@fideus-labs/fidnii@0.1.0':
-    resolution: {integrity: sha512-k83Em2KKBCJ2xRQUXhQYKuk/Eww5oH9dOsV/jd1E7Jr7uixTIgbLyXr9SJ9k6n9Gj+SP+6ex+eKBdRqRJUr/VQ==}
+  '@fideus-labs/fidnii@0.2.0':
+    resolution: {integrity: sha512-ge0EWuWaksTzt6fnk7ZKEtqrwp55/w+X2GGb1gS4APbWyi/Tjr9Z7Gz+GoherY2uwDrd3oZ7WelchXTGd2CCtQ==}
     peerDependencies:
       '@niivue/niivue': '>=0.67.0'
 
@@ -2549,7 +2549,7 @@ snapshots:
   '@esbuild/win32-x64@0.27.3':
     optional: true
 
-  '@fideus-labs/fidnii@0.1.0(@niivue/niivue@0.67.0)':
+  '@fideus-labs/fidnii@0.2.0(@niivue/niivue@0.67.0)':
     dependencies:
       '@fideus-labs/ngff-zarr': 0.7.5
       '@itk-wasm/downsample': 1.8.1
