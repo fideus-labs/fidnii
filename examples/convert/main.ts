@@ -71,6 +71,7 @@ const silhouetteSlider = document.getElementById(
 let selectedFile: File | null = null
 let lastResult: ConversionResult | null = null
 let nv: Niivue | null = null
+let currentImage: OMEZarrNVImage | null = null
 
 // Slice type string-to-enum mapping
 const SLICE_TYPE_MAP: Record<string, SLICE_TYPE> = {
@@ -195,11 +196,20 @@ async function showPreview(result: ConversionResult): Promise<void> {
     niivue: nv,
     autoLoad: false,
   })
+  currentImage = image
+
+  // Highlight the active level whenever the resolution changes
+  image.addEventListener("resolutionChange", (event) => {
+    highlightLevel(event.detail.currentLevel)
+  })
 
   // Clear existing volumes and add new one
   nv.volumes = []
   nv.addVolume(image)
   await image.populateVolume()
+
+  // Highlight the level that was loaded
+  highlightLevel(image.getCurrentLevelIndex())
 
   // Apply colormap AFTER data is loaded to avoid calMinMax() on placeholder data
   image.colormap = colormap
@@ -228,6 +238,17 @@ async function showPreview(result: ConversionResult): Promise<void> {
   }
 }
 
+/** Highlight the row for the given resolution level in the multiscales table. */
+function highlightLevel(levelIndex: number): void {
+  const rows = multiscalesTable.querySelectorAll("tbody tr")
+  for (const row of rows) {
+    row.classList.toggle(
+      "active-level",
+      Number((row as HTMLTableRowElement).dataset.level) === levelIndex,
+    )
+  }
+}
+
 // Update multiscales table
 function updateMultiscalesTable(result: ConversionResult): void {
   const info = getMultiscalesInfo(result.multiscales)
@@ -238,6 +259,7 @@ function updateMultiscalesTable(result: ConversionResult): void {
 
   for (const scale of info) {
     const row = document.createElement("tr")
+    row.dataset.level = String(scale.level)
     row.innerHTML = `
       <td>${scale.level}</td>
       <td class="mono">${scale.path}</td>
@@ -245,6 +267,11 @@ function updateMultiscalesTable(result: ConversionResult): void {
       <td class="mono">${scale.chunks}</td>
       <td>${scale.size}</td>
     `
+    row.addEventListener("click", () => {
+      if (currentImage) {
+        void currentImage.loadLevel(scale.level)
+      }
+    })
     tbody.appendChild(row)
   }
 
