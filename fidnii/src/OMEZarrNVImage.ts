@@ -39,6 +39,7 @@ import {
 } from "./ResolutionSelector.js"
 import type {
   AttachedNiivueState,
+  ChannelInfo,
   ChunkAlignedRegion,
   ChunkCache,
   ClipPlane,
@@ -53,7 +54,11 @@ import type {
 } from "./types.js"
 import {
   getBytesPerPixel,
+  getChannelInfo,
   getNiftiDataType,
+  getRGBNiftiDataType,
+  isRGBImage,
+  NiftiDataType,
   parseZarritaDtype,
 } from "./types.js"
 import {
@@ -123,6 +128,13 @@ export class OMEZarrNVImage extends NVImage {
 
   /** Data type of the volume */
   private readonly dtype: ZarrDtype
+
+  /**
+   * Channel dimension info, or `null` for scalar (single-component) images.
+   * When non-null, the image has a `"c"` dimension and is treated as
+   * multi-component (RGB/RGBA) data.
+   */
+  private readonly _channelInfo: ChannelInfo | null
 
   /** Full volume bounds in world space */
   private readonly _volumeBounds: VolumeBounds
@@ -258,6 +270,9 @@ export class OMEZarrNVImage extends NVImage {
     const highResImage = this.multiscales.images[0]
     this.dtype = parseZarritaDtype(highResImage.data.dtype)
 
+    // Detect channel (component) dimension for multi-component images
+    this._channelInfo = getChannelInfo(highResImage)
+
     // Calculate volume bounds from highest resolution for most accurate bounds
     const highResAffine = createAffineFromNgffImage(highResImage)
     const highResShape = getVolumeShape(highResImage)
@@ -276,8 +291,15 @@ export class OMEZarrNVImage extends NVImage {
     this.targetLevelIndex = selection.levelIndex
     this.currentLevelIndex = this.multiscales.images.length - 1
 
-    // Create buffer manager (dynamic sizing, no pre-allocation)
-    this.bufferManager = new BufferManager(this.maxPixels, this.dtype)
+    // Create buffer manager (dynamic sizing, no pre-allocation).
+    // For multi-component images, each spatial voxel has multiple
+    // scalar elements (e.g. 3 for RGB, 4 for RGBA).
+    const componentsPerVoxel = this._channelInfo?.components ?? 1
+    this.bufferManager = new BufferManager(
+      this.maxPixels,
+      this.dtype,
+      componentsPerVoxel,
+    )
 
     // Initialize NVImage properties with placeholder values
     // Actual values will be set when data is first loaded
@@ -336,9 +358,18 @@ export class OMEZarrNVImage extends NVImage {
     // Placeholder dimensions (will be updated when data loads)
     hdr.dims = [3, 1, 1, 1, 1, 1, 1, 1]
 
-    // Set data type
-    hdr.datatypeCode = getNiftiDataType(this.dtype)
-    hdr.numBitsPerVoxel = getBytesPerPixel(this.dtype) * 8
+    // Set data type — use RGB24/RGBA32 for multi-component uint8 images
+    if (
+      this._channelInfo &&
+      isRGBImage(this.multiscales.images[0], this.dtype)
+    ) {
+      const rgbCode = getRGBNiftiDataType(this.dtype, this._channelInfo)
+      hdr.datatypeCode = rgbCode
+      hdr.numBitsPerVoxel = rgbCode === NiftiDataType.RGB24 ? 24 : 32
+    } else {
+      hdr.datatypeCode = getNiftiDataType(this.dtype)
+      hdr.numBitsPerVoxel = getBytesPerPixel(this.dtype) * 8
+    }
 
     // Placeholder pixel dimensions
     hdr.pixDims = [1, 1, 1, 1, 0, 0, 0, 0]
@@ -1798,15 +1829,29 @@ export class OMEZarrNVImage extends NVImage {
    * Create a new slab buffer state for a slice type.
    */
   private _createSlabBuffer(sliceType: SlabSliceType): SlabBufferState {
-    const bufferManager = new BufferManager(this.maxPixels, this.dtype)
+    const componentsPerVoxel = this._channelInfo?.components ?? 1
+    const bufferManager = new BufferManager(
+      this.maxPixels,
+      this.dtype,
+      componentsPerVoxel,
+    )
     const nvImage = new NVImage()
 
     // Initialize with placeholder NIfTI header (same as main image setup)
     const hdr = new NIFTI1()
     nvImage.hdr = hdr
     hdr.dims = [3, 1, 1, 1, 1, 1, 1, 1]
-    hdr.datatypeCode = getNiftiDataType(this.dtype)
-    hdr.numBitsPerVoxel = getBytesPerPixel(this.dtype) * 8
+    if (
+      this._channelInfo &&
+      isRGBImage(this.multiscales.images[0], this.dtype)
+    ) {
+      const rgbCode = getRGBNiftiDataType(this.dtype, this._channelInfo)
+      hdr.datatypeCode = rgbCode
+      hdr.numBitsPerVoxel = rgbCode === NiftiDataType.RGB24 ? 24 : 32
+    } else {
+      hdr.datatypeCode = getNiftiDataType(this.dtype)
+      hdr.numBitsPerVoxel = getBytesPerPixel(this.dtype) * 8
+    }
     hdr.pixDims = [1, 1, 1, 1, 0, 0, 0, 0]
     hdr.affine = [
       [1, 0, 0, 0],

@@ -72,7 +72,7 @@ export { OMEZarrNVImageEvent } from "./events.js"
 // Main class
 export { OMEZarrNVImage } from "./OMEZarrNVImage.js"
 // Region coalescer
-export { RegionCoalescer } from "./RegionCoalescer.js"
+export { buildSelection, RegionCoalescer } from "./RegionCoalescer.js"
 export type { OrthogonalAxis } from "./ResolutionSelector.js"
 // Resolution selector utilities
 export {
@@ -88,6 +88,7 @@ export {
 // Types
 export type {
   AttachedNiivueState,
+  ChannelInfo,
   ChunkAlignedRegion,
   ChunkCache,
   ClipPlane,
@@ -106,8 +107,11 @@ export type {
 // Type utilities
 export {
   getBytesPerPixel,
+  getChannelInfo,
   getNiftiDataType,
+  getRGBNiftiDataType,
   getTypedArrayConstructor,
+  isRGBImage,
   NiftiDataType,
   parseZarritaDtype,
   SLICE_TYPE,

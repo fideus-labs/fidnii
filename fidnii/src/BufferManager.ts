@@ -10,6 +10,13 @@ import { getBytesPerPixel, getTypedArrayConstructor } from "./types.js"
  * The buffer is resized to match the fetched data dimensions exactly.
  * Memory is reused when possible to avoid unnecessary allocations.
  *
+ * For multi-component images (RGB/RGBA), `componentsPerVoxel` controls
+ * how many scalar elements each spatial voxel occupies. The buffer is
+ * sized to hold `spatialPixels * componentsPerVoxel` elements, and the
+ * typed array view spans all of them. Spatial dimensions (`[z, y, x]`)
+ * track only the spatial extent; the component count is a fixed
+ * multiplier on the element count.
+ *
  * Memory reuse strategy:
  * - Reuse buffer if newSize <= currentCapacity
  * - Reallocate if newSize > currentCapacity OR newSize < 25% of currentCapacity
@@ -23,16 +30,29 @@ export class BufferManager {
   private readonly dtype: ZarrDtype
 
   /**
+   * Number of scalar components per spatial voxel.
+   * 1 for scalar images, 3 for RGB, 4 for RGBA.
+   */
+  readonly componentsPerVoxel: number
+
+  /**
    * Create a new BufferManager.
    *
    * @param maxPixels - Maximum number of pixels allowed (budget)
    * @param dtype - Data type for the buffer
+   * @param componentsPerVoxel - Number of components per spatial voxel
+   *   (default: 1 for scalar images; 3 for RGB, 4 for RGBA)
    */
-  constructor(maxPixels: number, dtype: ZarrDtype) {
+  constructor(
+    maxPixels: number,
+    dtype: ZarrDtype,
+    componentsPerVoxel: number = 1,
+  ) {
     this.maxPixels = maxPixels
     this.dtype = dtype
     this.TypedArrayCtor = getTypedArrayConstructor(dtype)
     this.bytesPerPixel = getBytesPerPixel(dtype)
+    this.componentsPerVoxel = componentsPerVoxel
 
     // Initialize with empty buffer - will be allocated on first resize
     this.currentDimensions = [0, 0, 0]
@@ -53,27 +73,30 @@ export class BufferManager {
    * @returns TypedArray view over the (possibly new) buffer
    */
   resize(dimensions: [number, number, number]): TypedArray {
-    const requiredPixels = dimensions[0] * dimensions[1] * dimensions[2]
+    const spatialPixels = dimensions[0] * dimensions[1] * dimensions[2]
 
-    if (requiredPixels > this.maxPixels) {
+    if (spatialPixels > this.maxPixels) {
       console.warn(
         `[fidnii] BufferManager: Requested dimensions [${dimensions.join(
           ", ",
-        )}] = ${requiredPixels} pixels exceeds maxPixels (${this.maxPixels}). ` +
+        )}] = ${spatialPixels} pixels exceeds maxPixels (${this.maxPixels}). ` +
           `Proceeding anyway (likely at lowest resolution).`,
       )
     }
 
-    const currentCapacityPixels = this.buffer.byteLength / this.bytesPerPixel
+    // Total elements = spatial pixels × components per voxel
+    const requiredElements = spatialPixels * this.componentsPerVoxel
+    const currentCapacityElements = this.buffer.byteLength / this.bytesPerPixel
     const utilizationRatio =
-      currentCapacityPixels > 0 ? requiredPixels / currentCapacityPixels : 0
+      currentCapacityElements > 0
+        ? requiredElements / currentCapacityElements
+        : 0
 
     const needsReallocation =
-      requiredPixels > currentCapacityPixels || utilizationRatio < 0.25
+      requiredElements > currentCapacityElements || utilizationRatio < 0.25
 
     if (needsReallocation) {
-      // Allocate new buffer
-      const newByteLength = requiredPixels * this.bytesPerPixel
+      const newByteLength = requiredElements * this.bytesPerPixel
       this.buffer = new ArrayBuffer(newByteLength)
     }
 
@@ -91,14 +114,19 @@ export class BufferManager {
   /**
    * Get a typed array view over the current buffer region.
    *
-   * The view is sized to match currentDimensions, not the full buffer capacity.
+   * The view is sized to match `spatialPixels × componentsPerVoxel`,
+   * not the full buffer capacity.
    */
   getTypedArray(): TypedArray {
-    const pixelCount =
+    const spatialPixels =
       this.currentDimensions[0] *
       this.currentDimensions[1] *
       this.currentDimensions[2]
-    return new this.TypedArrayCtor(this.buffer, 0, pixelCount)
+    return new this.TypedArrayCtor(
+      this.buffer,
+      0,
+      spatialPixels * this.componentsPerVoxel,
+    )
   }
 
   /**
@@ -109,7 +137,8 @@ export class BufferManager {
   }
 
   /**
-   * Get the total number of pixels in the current buffer region.
+   * Get the total number of spatial pixels in the current buffer region.
+   * This does NOT include the component multiplier.
    */
   getPixelCount(): number {
     return (
@@ -120,7 +149,15 @@ export class BufferManager {
   }
 
   /**
-   * Get the buffer capacity in pixels.
+   * Get the total number of scalar elements in the current buffer region.
+   * For multi-component images, this is `spatialPixels × componentsPerVoxel`.
+   */
+  getElementCount(): number {
+    return this.getPixelCount() * this.componentsPerVoxel
+  }
+
+  /**
+   * Get the buffer capacity in scalar elements.
    */
   getCapacity(): number {
     return this.buffer.byteLength / this.bytesPerPixel
@@ -151,12 +188,12 @@ export class BufferManager {
    * Clear the current buffer region to zeros.
    */
   clear(): void {
-    const pixelCount = this.getPixelCount()
-    if (pixelCount > 0) {
+    const elementCount = this.getElementCount()
+    if (elementCount > 0) {
       const view = new Uint8Array(
         this.buffer,
         0,
-        pixelCount * this.bytesPerPixel,
+        elementCount * this.bytesPerPixel,
       )
       view.fill(0)
     }
@@ -169,8 +206,9 @@ export class BufferManager {
    * @returns True if current buffer can fit the dimensions
    */
   canAccommodate(dimensions: [number, number, number]): boolean {
-    const requiredPixels = dimensions[0] * dimensions[1] * dimensions[2]
-    const currentCapacityPixels = this.buffer.byteLength / this.bytesPerPixel
-    return requiredPixels <= currentCapacityPixels
+    const requiredElements =
+      dimensions[0] * dimensions[1] * dimensions[2] * this.componentsPerVoxel
+    const currentCapacityElements = this.buffer.byteLength / this.bytesPerPixel
+    return requiredElements <= currentCapacityElements
   }
 }

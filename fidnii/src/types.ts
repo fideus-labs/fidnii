@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) Fideus Labs LLC
 // SPDX-License-Identifier: MIT
 
-import type { Multiscales } from "@fideus-labs/ngff-zarr"
+import type { Multiscales, NgffImage } from "@fideus-labs/ngff-zarr"
 import type { Niivue, NVImage } from "@niivue/niivue"
 import { SLICE_TYPE } from "@niivue/niivue"
 
@@ -307,13 +307,77 @@ export const NiftiDataType = {
   INT32: 8,
   FLOAT32: 16,
   FLOAT64: 64,
+  RGB24: 128,
   INT8: 256,
   UINT16: 512,
   UINT32: 768,
+  RGBA32: 2304,
 } as const
 
 export type NiftiDataTypeCode =
   (typeof NiftiDataType)[keyof typeof NiftiDataType]
+
+/**
+ * Information about a channel (component) dimension in the image.
+ */
+export interface ChannelInfo {
+  /** Index of the `"c"` dimension in `ngffImage.dims` */
+  channelAxis: number
+  /** Number of components (e.g. 3 for RGB, 4 for RGBA) */
+  components: number
+}
+
+/**
+ * Detect whether an NgffImage has a channel (`"c"`) dimension.
+ *
+ * @param ngffImage - The NgffImage to inspect
+ * @returns Channel information, or `null` if no `"c"` dimension exists
+ */
+export function getChannelInfo(ngffImage: NgffImage): ChannelInfo | null {
+  const channelAxis = ngffImage.dims.indexOf("c")
+  if (channelAxis === -1) return null
+  const components = ngffImage.data.shape[channelAxis]
+  return { channelAxis, components }
+}
+
+/**
+ * Check whether an NgffImage represents an RGB or RGBA image.
+ *
+ * An image is considered RGB/RGBA when it has a `"c"` dimension with
+ * 3 or 4 uint8 components.
+ *
+ * @param ngffImage - The NgffImage to inspect
+ * @param dtype - The parsed zarr dtype
+ * @returns `true` if the image is RGB24 or RGBA32
+ */
+export function isRGBImage(ngffImage: NgffImage, dtype: ZarrDtype): boolean {
+  const info = getChannelInfo(ngffImage)
+  if (!info) return false
+  return dtype === "uint8" && (info.components === 3 || info.components === 4)
+}
+
+/**
+ * Get the NIfTI data type code for a multi-component image.
+ *
+ * @param dtype - The zarr dtype
+ * @param channelInfo - Channel information from `getChannelInfo()`
+ * @returns The NIfTI data type code
+ * @throws If the combination of dtype and component count is unsupported
+ */
+export function getRGBNiftiDataType(
+  dtype: ZarrDtype,
+  channelInfo: ChannelInfo,
+): NiftiDataTypeCode {
+  if (dtype === "uint8") {
+    if (channelInfo.components === 3) return NiftiDataType.RGB24
+    if (channelInfo.components === 4) return NiftiDataType.RGBA32
+  }
+  throw new Error(
+    `Unsupported multi-component image: dtype=${dtype}, ` +
+      `components=${channelInfo.components}. ` +
+      `Only uint8 with 3 (RGB) or 4 (RGBA) components is supported.`,
+  )
+}
 
 /**
  * Map zarr dtype to typed array constructor.

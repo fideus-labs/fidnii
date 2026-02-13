@@ -93,51 +93,67 @@ export function selectResolution(
 }
 
 /**
- * Get the chunk shape for a volume.
+ * Get the chunk shape for a volume as [z, y, x].
+ *
+ * Looks up `"z"`, `"y"`, `"x"` dimensions by name. If `"z"` is absent
+ * (e.g., 2D images with `dims=["y", "x"]` or `["y", "x", "c"]`),
+ * the z chunk size defaults to 1. Non-spatial dimensions like `"c"` and
+ * `"t"` are ignored.
  *
  * @param ngffImage - The NgffImage to get chunk shape from
  * @returns Chunk shape as [z, y, x]
+ * @throws If neither `"y"` nor `"x"` can be found in dims
  */
 export function getChunkShape(ngffImage: NgffImage): [number, number, number] {
   const chunks = ngffImage.data.chunks
   const dims = ngffImage.dims
 
-  // Find z, y, x indices in dims
-  const zIdx = dims.indexOf("z")
   const yIdx = dims.indexOf("y")
   const xIdx = dims.indexOf("x")
 
-  if (zIdx === -1 || yIdx === -1 || xIdx === -1) {
-    // Fallback: assume last 3 dimensions are z, y, x
-    const n = chunks.length
-    return [chunks[n - 3] || 1, chunks[n - 2] || 1, chunks[n - 1] || 1]
+  if (yIdx === -1 || xIdx === -1) {
+    throw new Error(
+      `Cannot determine chunk shape: dims=[${dims.join(",")}] ` +
+        `is missing required "y" and/or "x" axes`,
+    )
   }
 
-  return [chunks[zIdx], chunks[yIdx], chunks[xIdx]]
+  const zIdx = dims.indexOf("z")
+  const cz = zIdx !== -1 ? chunks[zIdx] : 1
+
+  return [cz, chunks[yIdx], chunks[xIdx]]
 }
 
 /**
- * Get the shape of a volume as [z, y, x].
+ * Get the spatial shape of a volume as [z, y, x].
+ *
+ * Looks up `"z"`, `"y"`, `"x"` dimensions by name. If `"z"` is absent
+ * (e.g., 2D images with `dims=["y", "x"]` or `["y", "x", "c"]`),
+ * the z size defaults to 1. Non-spatial dimensions like `"c"` and
+ * `"t"` are ignored.
  *
  * @param ngffImage - The NgffImage
  * @returns Shape as [z, y, x]
+ * @throws If neither `"y"` nor `"x"` can be found in dims
  */
 export function getVolumeShape(ngffImage: NgffImage): [number, number, number] {
   const shape = ngffImage.data.shape
   const dims = ngffImage.dims
 
-  // Find z, y, x indices in dims
-  const zIdx = dims.indexOf("z")
   const yIdx = dims.indexOf("y")
   const xIdx = dims.indexOf("x")
 
-  if (zIdx === -1 || yIdx === -1 || xIdx === -1) {
-    // Fallback: assume last 3 dimensions are z, y, x
-    const n = shape.length
-    return [shape[n - 3] || 1, shape[n - 2] || 1, shape[n - 1] || 1]
+  if (yIdx === -1 || xIdx === -1) {
+    throw new Error(
+      `Cannot determine volume shape: dims=[${dims.join(",")}] ` +
+        `is missing required "y" and/or "x" axes`,
+    )
   }
 
-  return [shape[zIdx], shape[yIdx], shape[xIdx]]
+  const zIdx = dims.indexOf("z")
+  const sz = zIdx !== -1 ? shape[zIdx] : 1
+
+  return [sz, shape[yIdx], shape[xIdx]]
 }
 
 /**

@@ -1,7 +1,19 @@
 // SPDX-FileCopyrightText: Copyright (c) Fideus Labs LLC
 // SPDX-License-Identifier: MIT
 
-import { OMEZarrNVImage } from "@fideus-labs/fidnii"
+import {
+  BufferManager,
+  buildSelection,
+  getChannelInfo,
+  getChunkShape,
+  getRGBNiftiDataType,
+  getVolumeShape,
+  isRGBImage,
+  NiftiDataType,
+  normalizedToWorld,
+  OMEZarrNVImage,
+  worldToNormalized,
+} from "@fideus-labs/fidnii"
 import { fromNgffZarr } from "@fideus-labs/ngff-zarr/browser"
 import { DRAG_MODE, Niivue, SLICE_TYPE } from "@niivue/niivue"
 
@@ -10,7 +22,33 @@ declare global {
     image: OMEZarrNVImage
     nv: Niivue
     nv2: Niivue
+    fidnii: {
+      getChannelInfo: typeof getChannelInfo
+      isRGBImage: typeof isRGBImage
+      getRGBNiftiDataType: typeof getRGBNiftiDataType
+      getVolumeShape: typeof getVolumeShape
+      getChunkShape: typeof getChunkShape
+      buildSelection: typeof buildSelection
+      normalizedToWorld: typeof normalizedToWorld
+      worldToNormalized: typeof worldToNormalized
+      BufferManager: typeof BufferManager
+      NiftiDataType: typeof NiftiDataType
+    }
   }
+}
+
+// Expose utility functions for unit testing
+window.fidnii = {
+  getChannelInfo,
+  isRGBImage,
+  getRGBNiftiDataType,
+  getVolumeShape,
+  getChunkShape,
+  buildSelection,
+  normalizedToWorld,
+  worldToNormalized,
+  BufferManager,
+  NiftiDataType,
 }
 
 const DATA_URL =
