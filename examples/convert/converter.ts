@@ -2,117 +2,22 @@
  * Image to OME-Zarr conversion pipeline
  */
 
-// Import from browser subpath for browser-compatible functions
 import {
   createMetadataWithVersion,
   Methods,
   type Multiscales,
   Multiscales as MultiscalesClass,
   type NgffImage,
-  NgffImage as NgffImageClass,
   toMultiscales,
 } from "@fideus-labs/ngff-zarr"
-import { readImage } from "@itk-wasm/image-io"
-
-export { Methods } from "@fideus-labs/ngff-zarr"
-
-// Import browser-specific toNgffZarrOzx which returns Uint8Array
-// (Node version takes a path and returns void)
 import {
   computeOmeroFromNgffImage,
+  itkImageToNgffImage,
   toNgffZarrOzx,
-  zarrSet,
 } from "@fideus-labs/ngff-zarr/browser"
-// itkImageToNgffImage is not in browser exports, but the main module has browser condition
-// that should resolve to browser-mod.js - we need to use the main import for this
-import type { Image } from "itk-wasm"
-import * as zarr from "zarrita"
+import { readImage } from "@itk-wasm/image-io"
 
-// Inline itkImageToNgffImage since it's not exported from browser module
-// This is a simplified version based on ngff-zarr's implementation
-async function itkImageToNgffImage(itkImage: Image): Promise<NgffImageClass> {
-  const shape = [...itkImage.size].reverse()
-  const spacing = itkImage.spacing
-  const origin = itkImage.origin
-  const ndim = shape.length
-  const imageType = itkImage.imageType
-  const isVector = imageType.components > 1
-
-  // Determine dimension names
-  let dims: string[]
-  if (ndim === 3 && isVector) {
-    dims = ["y", "x", "c"]
-  } else if (ndim < 4) {
-    dims = ["z", "y", "x"].slice(-ndim)
-  } else if (ndim < 5) {
-    dims = isVector ? ["z", "y", "x", "c"] : ["t", "z", "y", "x"]
-  } else if (ndim < 6) {
-    dims = ["t", "z", "y", "x", "c"]
-  } else {
-    throw new Error(`Unsupported number of dimensions: ${ndim}`)
-  }
-
-  // Identify spatial dimensions
-  const allSpatialDims = new Set(["x", "y", "z"])
-  const spatialDims = dims.filter((dim) => allSpatialDims.has(dim))
-
-  // Create scale from spacing (reversed to match array order)
-  const scale: Record<string, number> = {}
-  const reversedSpacing = spacing.slice().reverse()
-  spatialDims.forEach((dim, idx) => {
-    scale[dim] = reversedSpacing[idx]
-  })
-
-  // Create translation from origin (reversed to match array order)
-  const translation: Record<string, number> = {}
-  const reversedOrigin = origin.slice().reverse()
-  spatialDims.forEach((dim, idx) => {
-    translation[dim] = reversedOrigin[idx]
-  })
-
-  // Create Zarr array from ITK-Wasm data
-  const store = new Map<string, Uint8Array>()
-  const root = zarr.root(store)
-  const chunkShape = shape.map((s: number) => Math.min(s, 256))
-
-  const zarrArray = await zarr.create(root.resolve("image"), {
-    shape: shape,
-    chunk_shape: chunkShape,
-    data_type: imageType.componentType as zarr.DataType,
-    fill_value: 0,
-  })
-
-  // Write the ITK-Wasm data to the zarr array
-  const selection = new Array(ndim).fill(null)
-  const strides = getStrides(shape)
-  const dataChunk = {
-    data: itkImage.data as zarr.TypedArray<typeof imageType.componentType>,
-    shape: shape,
-    stride: strides,
-  }
-  await zarrSet(zarrArray, selection, dataChunk)
-
-  return new NgffImageClass({
-    data: zarrArray,
-    dims,
-    scale,
-    translation,
-    name: "image",
-    axesUnits: undefined,
-    axesOrientations: undefined,
-    computedCallbacks: undefined,
-  })
-}
-
-// Calculate C-order strides for a shape
-function getStrides(shape: number[]): number[] {
-  const strides = new Array(shape.length)
-  strides[shape.length - 1] = 1
-  for (let i = shape.length - 2; i >= 0; i--) {
-    strides[i] = strides[i + 1] * shape[i + 1]
-  }
-  return strides
-}
+export type { Methods } from "@fideus-labs/ngff-zarr"
 
 /**
  * Maximum number of unique labels for auto-detection of label images.

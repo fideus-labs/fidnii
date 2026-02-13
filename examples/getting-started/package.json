@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@fideus-labs/fidnii": "^0.2.0",
-    "@fideus-labs/ngff-zarr": "^0.7.4",
+    "@fideus-labs/ngff-zarr": "^0.8.0",
     "@niivue/niivue": "^0.67.0"
   },
   "devDependencies": {
