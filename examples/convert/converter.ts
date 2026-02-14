@@ -109,8 +109,8 @@ export async function convertToOmeZarr(
   const ngffImage = await itkImageToNgffImage(itkImage)
 
   // Stage 2b: Compute OMERO visualization metadata from highest resolution image.
-  // A shared chunk cache lets computeOmeroFromNgffImage populate decoded chunks
-  // that subsequent reads (e.g. toMultiscales) can reuse without re-decoding.
+  // A shared chunk cache lets computeOmeroFromNgffImage cache decoded chunks,
+  // which can speed up OMERO computation by reusing chunks across channels.
   report("converting", 25, "Computing OMERO visualization metadata...")
   const chunkCache = new Map()
   const omero = await computeOmeroFromNgffImage(ngffImage, {

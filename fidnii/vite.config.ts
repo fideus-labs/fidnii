@@ -13,6 +13,9 @@ logger.warnOnce = (msg, options) => {
 
 export default defineConfig({
   customLogger: logger,
+  worker: {
+    format: "es",
+  },
   root: resolve(__dirname, "test-page"),
   publicDir: resolve(__dirname, "public"),
   resolve: {
