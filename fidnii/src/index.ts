@@ -37,7 +37,10 @@
 // Re-export Methods enum so consumers can check isLabelImage or compare method values
 export { Methods } from "@fideus-labs/ngff-zarr"
 // Worker pool lifecycle (re-exported from ngff-zarr)
-export { terminateWorkerPool } from "@fideus-labs/ngff-zarr/browser"
+export {
+  terminateOmeroWorkerPool,
+  terminateWorkerPool,
+} from "@fideus-labs/ngff-zarr/browser"
 
 // Buffer manager
 export { BufferManager } from "./BufferManager.js"
