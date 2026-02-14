@@ -136,6 +136,17 @@ export class OMEZarrNVImage extends NVImage {
    */
   private readonly _channelInfo: ChannelInfo | null
 
+  /**
+   * Whether the image is 2D (no `"z"` dimension).
+   */
+  private readonly _is2D: boolean
+
+  /**
+   * Whether to negate the y-scale in the NIfTI affine for 2D images
+   * so that NiiVue renders them right-side up.
+   */
+  private readonly _flipY2D: boolean
+
   /** Full volume bounds in world space */
   private readonly _volumeBounds: VolumeBounds
 
@@ -273,6 +284,10 @@ export class OMEZarrNVImage extends NVImage {
     // Detect channel (component) dimension for multi-component images
     this._channelInfo = getChannelInfo(highResImage)
 
+    // Detect 2D images (no z axis) and store y-flip preference
+    this._is2D = highResImage.dims.indexOf("z") === -1
+    this._flipY2D = options.flipY2D ?? true
+
     // Calculate volume bounds from highest resolution for most accurate bounds
     const highResAffine = createAffineFromNgffImage(highResImage)
     const highResShape = getVolumeShape(highResImage)
@@ -374,10 +389,10 @@ export class OMEZarrNVImage extends NVImage {
     // Placeholder pixel dimensions
     hdr.pixDims = [1, 1, 1, 1, 0, 0, 0, 0]
 
-    // Placeholder affine (identity)
+    // Placeholder affine (identity, with y-flip for 2D images)
     hdr.affine = [
       [1, 0, 0, 0],
-      [0, 1, 0, 0],
+      [0, this._flipY2D && this._is2D ? -1 : 1, 0, 0],
       [0, 0, 1, 0],
       [0, 0, 0, 1],
     ]
@@ -661,12 +676,8 @@ export class OMEZarrNVImage extends NVImage {
     affine[13] += regionStart[1] * sy // y offset
     affine[14] += regionStart[0] * sz // z offset
 
-    // Update affine in header
-    const srows = affineToNiftiSrows(affine)
-    this.hdr.affine = [srows.srow_x, srows.srow_y, srows.srow_z, [0, 0, 0, 1]]
-
-    // Update current buffer bounds
-    // Buffer starts at region.chunkAlignedStart and has extent fetchedShape
+    // Update current buffer bounds from the un-flipped affine
+    // (bounds stay in OME-Zarr world space for clip plane math)
     this._currentBufferBounds = {
       min: [
         affine[12], // x offset (world coord of buffer origin)
@@ -679,6 +690,17 @@ export class OMEZarrNVImage extends NVImage {
         affine[14] + fetchedShape[0] * sz,
       ],
     }
+
+    // For 2D images, negate y-scale so NiiVue's calculateRAS() flips
+    // the rows to account for top-to-bottom pixel storage order.
+    if (this._flipY2D && this._is2D) {
+      affine[5] = -sy
+      affine[13] += (fetchedShape[1] - 1) * sy
+    }
+
+    // Update affine in header
+    const srows = affineToNiftiSrows(affine)
+    this.hdr.affine = [srows.srow_x, srows.srow_y, srows.srow_z, [0, 0, 0, 1]]
 
     // Recalculate RAS orientation
     this.calculateRAS()
@@ -2257,6 +2279,12 @@ export class OMEZarrNVImage extends NVImage {
     affine[12] += fetchStart[2] * sx // x offset
     affine[13] += fetchStart[1] * sy // y offset
     affine[14] += fetchStart[0] * sz // z offset
+
+    // For 2D images, negate y-scale before normalization
+    if (this._flipY2D && this._is2D) {
+      affine[5] = -sy
+      affine[13] += (fetchedShape[1] - 1) * sy
+    }
 
     // Apply normalization to the entire affine (scale columns + translation)
     for (let i = 0; i < 15; i++) {

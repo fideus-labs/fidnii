@@ -154,6 +154,17 @@ export interface OMEZarrNVImageOptions {
    * @see {@link ChunkCache}
    */
   cache?: ChunkCache
+  /**
+   * Flip the y-axis in the NIfTI affine for 2D images (default: true).
+   *
+   * 2D images (e.g., PNGs converted to OME-Zarr) store pixel data with
+   * y=0 at the top (increasing downward). NiiVue expects a negative
+   * y-scale in the affine to render these right-side up. Set to `false`
+   * if your 2D data already has bottom-to-top y ordering.
+   *
+   * This option has no effect on 3D volumes (images with a `"z"` axis).
+   */
+  flipY2D?: boolean
 }
 
 /**

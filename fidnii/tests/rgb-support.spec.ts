@@ -707,3 +707,35 @@ test.describe("RGB Support — worldToNormalized with 2D images", () => {
     expect(result.roundtrip[2]).toBeCloseTo(result.original[2], 5)
   })
 })
+
+test.describe("RGB Support — 2D y-flip does not affect 3D volumes", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto("/")
+    // Wait for the 3D beechnut to finish loading
+    await expect(page.locator("#status")).toHaveText("Ready", {
+      timeout: 120000,
+    })
+  })
+
+  test("3D image affine has positive y-scale", async ({ page }) => {
+    const affineY = await page.evaluate(() => {
+      const image = (window as any).image
+      // hdr.affine is [[srow_x], [srow_y], [srow_z], [0,0,0,1]]
+      // srow_y[1] is the y diagonal (y-scale in affine)
+      return image.hdr.affine[1][1]
+    })
+
+    // 3D beechnut should have positive y-scale (no flip)
+    expect(affineY).toBeGreaterThan(0)
+  })
+
+  test("3D image affine has positive x-scale", async ({ page }) => {
+    const affineX = await page.evaluate(() => {
+      const image = (window as any).image
+      return image.hdr.affine[0][0]
+    })
+
+    // 3D beechnut should have positive x-scale
+    expect(affineX).toBeGreaterThan(0)
+  })
+})
