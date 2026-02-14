@@ -204,6 +204,13 @@ async function handleUrl(url: string): Promise<void> {
     progressText.textContent = `Error: ${message}`
   } finally {
     urlLoadBtn.removeAttribute("disabled")
+    // Re-enable the convert button if a file is currently selected.
+    // If no file has been selected yet, keep it disabled.
+    if (selectedFile) {
+      convertBtn.removeAttribute("disabled")
+    } else {
+      convertBtn.setAttribute("disabled", "")
+    }
   }
 }
 
