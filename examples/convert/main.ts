@@ -10,7 +10,7 @@ import "@awesome.me/webawesome/dist/components/progress-bar/progress-bar.js"
 import "@awesome.me/webawesome/dist/components/select/select.js"
 import "@awesome.me/webawesome/dist/components/slider/slider.js"
 
-import { OMEZarrNVImage } from "@fideus-labs/fidnii"
+import { getChannelInfo, OMEZarrNVImage } from "@fideus-labs/fidnii"
 import type { Multiscales } from "@fideus-labs/ngff-zarr"
 import { Niivue, SLICE_TYPE } from "@niivue/niivue"
 
@@ -102,6 +102,14 @@ function is3DVolume(multiscales: Multiscales): boolean {
   return multiscales.metadata.axes.some(
     (a) => a.name === "z" && a.type === "space",
   )
+}
+
+/** Check whether the image is RGB or RGBA (has a "c" dimension with 3 or 4 components). */
+function isRGBOrRGBA(multiscales: Multiscales): boolean {
+  const firstImage = multiscales.images[0]
+  if (!firstImage) return false
+  const info = getChannelInfo(firstImage)
+  return info !== null && (info.components === 3 || info.components === 4)
 }
 
 /** Read both sliders and push gradient settings into NiiVue. */
@@ -206,6 +214,14 @@ async function showPreview(result: ConversionResult): Promise<void> {
   placeholder.style.display = "none"
 
   const volumeIs3D = is3DVolume(result.multiscales)
+  const imageIsRGB = isRGBOrRGBA(result.multiscales)
+
+  // Disable colormap for RGB/RGBA images (NiiVue renders them directly)
+  if (imageIsRGB) {
+    colormapSelect.setAttribute("disabled", "")
+  } else {
+    colormapSelect.removeAttribute("disabled")
+  }
 
   // Get colormap setting
   const colormap =
@@ -234,9 +250,9 @@ async function showPreview(result: ConversionResult): Promise<void> {
 
   // Apply colormap AFTER data is loaded to avoid calMinMax() on placeholder data.
   // Label images get a discrete colormap automatically from the library,
-  // so skip the continuous colormap for those.
+  // and RGB/RGBA images render their native colors directly — skip both.
   const isLabel = result.multiscales.method === Methods.ITKWASM_LABEL_IMAGE
-  if (!isLabel) {
+  if (!isLabel && !imageIsRGB) {
     image.colormap = colormap
   }
 

@@ -16,8 +16,9 @@ import {
   toNgffZarrOzx,
 } from "@fideus-labs/ngff-zarr/browser"
 import { readImage } from "@itk-wasm/image-io"
+import type { Image } from "itk-wasm"
 
-export type { Methods } from "@fideus-labs/ngff-zarr"
+export { Methods } from "@fideus-labs/ngff-zarr"
 
 /**
  * Maximum number of unique labels for auto-detection of label images.
