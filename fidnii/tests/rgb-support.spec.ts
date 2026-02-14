@@ -102,7 +102,7 @@ test.describe("RGB Support — isRGBImage", () => {
         scale: { y: 1, x: 1, c: 1 },
         translation: { y: 0, x: 0, c: 0 },
       }
-      return window.fidnii.isRGBImage(img as any, "uint8")
+      return window.fidnii.isRGBImage(img as any)
     })
 
     expect(result).toBe(true)
@@ -116,13 +116,13 @@ test.describe("RGB Support — isRGBImage", () => {
         scale: { y: 1, x: 1, c: 1 },
         translation: { y: 0, x: 0, c: 0 },
       }
-      return window.fidnii.isRGBImage(img as any, "uint8")
+      return window.fidnii.isRGBImage(img as any)
     })
 
     expect(result).toBe(true)
   })
 
-  test("returns false for float32 with channel dim", async ({ page }) => {
+  test("returns true for float32 RGB image (any dtype)", async ({ page }) => {
     const result = await page.evaluate(() => {
       const img = {
         dims: ["y", "x", "c"],
@@ -130,13 +130,27 @@ test.describe("RGB Support — isRGBImage", () => {
         scale: { y: 1, x: 1, c: 1 },
         translation: { y: 0, x: 0, c: 0 },
       }
-      return window.fidnii.isRGBImage(img as any, "float32")
+      return window.fidnii.isRGBImage(img as any)
     })
 
-    expect(result).toBe(false)
+    expect(result).toBe(true)
   })
 
-  test("returns false for uint8 with 2 components", async ({ page }) => {
+  test("returns true for uint16 RGBA image (any dtype)", async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const img = {
+        dims: ["y", "x", "c"],
+        data: { shape: [480, 640, 4], chunks: [480, 640, 4] },
+        scale: { y: 1, x: 1, c: 1 },
+        translation: { y: 0, x: 0, c: 0 },
+      }
+      return window.fidnii.isRGBImage(img as any)
+    })
+
+    expect(result).toBe(true)
+  })
+
+  test("returns false for 2 components", async ({ page }) => {
     const result = await page.evaluate(() => {
       const img = {
         dims: ["y", "x", "c"],
@@ -144,7 +158,7 @@ test.describe("RGB Support — isRGBImage", () => {
         scale: { y: 1, x: 1, c: 1 },
         translation: { y: 0, x: 0, c: 0 },
       }
-      return window.fidnii.isRGBImage(img as any, "uint8")
+      return window.fidnii.isRGBImage(img as any)
     })
 
     expect(result).toBe(false)
@@ -158,7 +172,7 @@ test.describe("RGB Support — isRGBImage", () => {
         scale: { z: 1, y: 1, x: 1 },
         translation: { z: 0, y: 0, x: 0 },
       }
-      return window.fidnii.isRGBImage(img as any, "uint8")
+      return window.fidnii.isRGBImage(img as any)
     })
 
     expect(result).toBe(false)
@@ -170,10 +184,10 @@ test.describe("RGB Support — getRGBNiftiDataType", () => {
     await page.goto("/")
   })
 
-  test("returns RGB24 for 3-component uint8", async ({ page }) => {
+  test("returns RGB24 for 3 components", async ({ page }) => {
     const result = await page.evaluate(() => {
       const { getRGBNiftiDataType, NiftiDataType } = window.fidnii
-      const code = getRGBNiftiDataType("uint8", {
+      const code = getRGBNiftiDataType({
         channelAxis: 2,
         components: 3,
       })
@@ -184,10 +198,10 @@ test.describe("RGB Support — getRGBNiftiDataType", () => {
     expect(result.code).toBe(128)
   })
 
-  test("returns RGBA32 for 4-component uint8", async ({ page }) => {
+  test("returns RGBA32 for 4 components", async ({ page }) => {
     const result = await page.evaluate(() => {
       const { getRGBNiftiDataType, NiftiDataType } = window.fidnii
-      const code = getRGBNiftiDataType("uint8", {
+      const code = getRGBNiftiDataType({
         channelAxis: 2,
         components: 4,
       })
@@ -198,27 +212,26 @@ test.describe("RGB Support — getRGBNiftiDataType", () => {
     expect(result.code).toBe(2304)
   })
 
-  test("throws for float32 multi-component", async ({ page }) => {
-    const error = await page.evaluate(() => {
-      try {
-        window.fidnii.getRGBNiftiDataType("float32", {
-          channelAxis: 2,
-          components: 3,
-        })
-        return null
-      } catch (e: any) {
-        return e.message
-      }
+  test("returns RGB24 for 3 components regardless of dtype", async ({
+    page,
+  }) => {
+    const result = await page.evaluate(() => {
+      const { getRGBNiftiDataType, NiftiDataType } = window.fidnii
+      // Even for float32 source, NIfTI code is always RGB24
+      const code = getRGBNiftiDataType({
+        channelAxis: 2,
+        components: 3,
+      })
+      return { code, expected: NiftiDataType.RGB24 }
     })
 
-    expect(error).toContain("Unsupported multi-component image")
-    expect(error).toContain("float32")
+    expect(result.code).toBe(result.expected)
   })
 
-  test("throws for uint8 with 5 components", async ({ page }) => {
+  test("throws for 5 components", async ({ page }) => {
     const error = await page.evaluate(() => {
       try {
-        window.fidnii.getRGBNiftiDataType("uint8", {
+        window.fidnii.getRGBNiftiDataType({
           channelAxis: 2,
           components: 5,
         })
@@ -229,6 +242,300 @@ test.describe("RGB Support — getRGBNiftiDataType", () => {
     })
 
     expect(error).toContain("Unsupported multi-component image")
+  })
+})
+
+test.describe("RGB Support — needsRGBNormalization", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto("/")
+  })
+
+  test("returns false for uint8 RGB (no normalization needed)", async ({
+    page,
+  }) => {
+    const result = await page.evaluate(() => {
+      const img = {
+        dims: ["y", "x", "c"],
+        data: { shape: [480, 640, 3], chunks: [480, 640, 3] },
+        scale: { y: 1, x: 1, c: 1 },
+        translation: { y: 0, x: 0, c: 0 },
+      }
+      return window.fidnii.needsRGBNormalization(img as any, "uint8")
+    })
+
+    expect(result).toBe(false)
+  })
+
+  test("returns true for uint16 RGB", async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const img = {
+        dims: ["y", "x", "c"],
+        data: { shape: [480, 640, 3], chunks: [480, 640, 3] },
+        scale: { y: 1, x: 1, c: 1 },
+        translation: { y: 0, x: 0, c: 0 },
+      }
+      return window.fidnii.needsRGBNormalization(img as any, "uint16")
+    })
+
+    expect(result).toBe(true)
+  })
+
+  test("returns true for float32 RGBA", async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const img = {
+        dims: ["y", "x", "c"],
+        data: { shape: [480, 640, 4], chunks: [480, 640, 4] },
+        scale: { y: 1, x: 1, c: 1 },
+        translation: { y: 0, x: 0, c: 0 },
+      }
+      return window.fidnii.needsRGBNormalization(img as any, "float32")
+    })
+
+    expect(result).toBe(true)
+  })
+
+  test("returns false for scalar image (no channel dim)", async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const img = {
+        dims: ["z", "y", "x"],
+        data: { shape: [96, 96, 96], chunks: [48, 48, 48] },
+        scale: { z: 1, y: 1, x: 1 },
+        translation: { z: 0, y: 0, x: 0 },
+      }
+      return window.fidnii.needsRGBNormalization(img as any, "float32")
+    })
+
+    expect(result).toBe(false)
+  })
+
+  test("returns false for 2-component (not RGB/RGBA)", async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const img = {
+        dims: ["y", "x", "c"],
+        data: { shape: [480, 640, 2], chunks: [480, 640, 2] },
+        scale: { y: 1, x: 1, c: 1 },
+        translation: { y: 0, x: 0, c: 0 },
+      }
+      return window.fidnii.needsRGBNormalization(img as any, "uint16")
+    })
+
+    expect(result).toBe(false)
+  })
+})
+
+test.describe("RGB Support — normalizeToUint8", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto("/")
+  })
+
+  test("normalizes uint16 RGB to uint8 using channel windows", async ({
+    page,
+  }) => {
+    const result = await page.evaluate(() => {
+      const src = new Uint16Array([0, 32768, 65535, 65535, 0, 32768])
+      const windows = [
+        { start: 0, end: 65535 },
+        { start: 0, end: 65535 },
+        { start: 0, end: 65535 },
+      ]
+      const out = window.fidnii.normalizeToUint8(src, 3, windows)
+      return Array.from(out)
+    })
+
+    // [0, 32768, 65535] → [0, ~128, 255]
+    expect(result[0]).toBe(0)
+    expect(result[1]).toBeGreaterThanOrEqual(127)
+    expect(result[1]).toBeLessThanOrEqual(128)
+    expect(result[2]).toBe(255)
+    // [65535, 0, 32768] → [255, 0, ~128]
+    expect(result[3]).toBe(255)
+    expect(result[4]).toBe(0)
+    expect(result[5]).toBeGreaterThanOrEqual(127)
+    expect(result[5]).toBeLessThanOrEqual(128)
+  })
+
+  test("normalizes float32 RGBA with custom windows", async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const src = new Float32Array([
+        0.0, 0.5, 1.0, 0.75, 100.0, 200.0, 300.0, 150.0,
+      ])
+      const windows = [
+        { start: 0, end: 1 },
+        { start: 0, end: 1 },
+        { start: 0, end: 1 },
+        { start: 0, end: 1 },
+      ]
+      const out = window.fidnii.normalizeToUint8(src, 4, windows)
+      return Array.from(out)
+    })
+
+    // First voxel: [0.0, 0.5, 1.0, 0.75] → [0, ~128, 255, ~191]
+    expect(result[0]).toBe(0)
+    expect(result[1]).toBeGreaterThanOrEqual(127)
+    expect(result[1]).toBeLessThanOrEqual(128)
+    expect(result[2]).toBe(255)
+    expect(result[3]).toBeGreaterThanOrEqual(190)
+    expect(result[3]).toBeLessThanOrEqual(192)
+    // Second voxel: values > 1.0, should clamp to 255
+    expect(result[4]).toBe(255)
+    expect(result[5]).toBe(255)
+    expect(result[6]).toBe(255)
+    expect(result[7]).toBe(255)
+  })
+
+  test("clamps negative values to 0", async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const src = new Float32Array([-1.0, -0.5, 0.0])
+      const windows = [
+        { start: 0, end: 1 },
+        { start: 0, end: 1 },
+        { start: 0, end: 1 },
+      ]
+      const out = window.fidnii.normalizeToUint8(src, 3, windows)
+      return Array.from(out)
+    })
+
+    expect(result[0]).toBe(0)
+    expect(result[1]).toBe(0)
+    expect(result[2]).toBe(0)
+  })
+
+  test("handles degenerate window (start == end)", async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const src = new Float32Array([5.0, 5.0, 5.0])
+      const windows = [
+        { start: 5, end: 5 },
+        { start: 5, end: 5 },
+        { start: 5, end: 5 },
+      ]
+      const out = window.fidnii.normalizeToUint8(src, 3, windows)
+      return Array.from(out)
+    })
+
+    // All zeros when window is degenerate
+    expect(result).toEqual([0, 0, 0])
+  })
+
+  test("handles int16 (signed) with negative window", async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const src = new Int16Array([-1000, 0, 1000])
+      const windows = [
+        { start: -1000, end: 1000 },
+        { start: -1000, end: 1000 },
+        { start: -1000, end: 1000 },
+      ]
+      const out = window.fidnii.normalizeToUint8(src, 3, windows)
+      return Array.from(out)
+    })
+
+    // [-1000, 0, 1000] with window [-1000, 1000] → [0, ~128, 255]
+    expect(result[0]).toBe(0)
+    expect(result[1]).toBeGreaterThanOrEqual(127)
+    expect(result[1]).toBeLessThanOrEqual(128)
+    expect(result[2]).toBe(255)
+  })
+})
+
+test.describe("RGB Support — computeChannelMinMax", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto("/")
+  })
+
+  test("computes per-channel min/max for RGB data", async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const data = new Uint16Array([10, 100, 1000, 20, 200, 500, 5, 50, 2000])
+      return window.fidnii.computeChannelMinMax(data, 3)
+    })
+
+    expect(result).toEqual([
+      { start: 5, end: 20 },
+      { start: 50, end: 200 },
+      { start: 500, end: 2000 },
+    ])
+  })
+
+  test("handles single-voxel data", async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const data = new Float32Array([0.5, 0.75, 1.0])
+      return window.fidnii.computeChannelMinMax(data, 3)
+    })
+
+    expect(result[0].start).toBeCloseTo(0.5)
+    expect(result[0].end).toBeCloseTo(0.5)
+    expect(result[1].start).toBeCloseTo(0.75)
+    expect(result[1].end).toBeCloseTo(0.75)
+    expect(result[2].start).toBeCloseTo(1.0)
+    expect(result[2].end).toBeCloseTo(1.0)
+  })
+})
+
+test.describe("RGB Support — BufferManager with normalized RGB", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto("/")
+  })
+
+  test("non-uint8 RGB uses uint8 output buffer", async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const bm = new window.fidnii.BufferManager(1_000_000, "uint16", 3)
+      const arr = bm.resize([1, 10, 10])
+      return {
+        isNormalizedRGB: bm.isNormalizedRGB,
+        componentsPerVoxel: bm.componentsPerVoxel,
+        bytesPerPixel: bm.getBytesPerPixel(),
+        typedArrayLength: arr.length,
+        elementCount: bm.getElementCount(),
+        isUint8: arr.constructor.name === "Uint8Array",
+      }
+    })
+
+    expect(result.isNormalizedRGB).toBe(true)
+    expect(result.componentsPerVoxel).toBe(3)
+    expect(result.bytesPerPixel).toBe(1) // uint8, not uint16
+    expect(result.typedArrayLength).toBe(300) // 100 * 3
+    expect(result.elementCount).toBe(300)
+    expect(result.isUint8).toBe(true)
+  })
+
+  test("non-uint8 RGBA uses uint8 output buffer", async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const bm = new window.fidnii.BufferManager(1_000_000, "float32", 4)
+      const arr = bm.resize([1, 10, 10])
+      return {
+        isNormalizedRGB: bm.isNormalizedRGB,
+        bytesPerPixel: bm.getBytesPerPixel(),
+        isUint8: arr.constructor.name === "Uint8Array",
+      }
+    })
+
+    expect(result.isNormalizedRGB).toBe(true)
+    expect(result.bytesPerPixel).toBe(1)
+    expect(result.isUint8).toBe(true)
+  })
+
+  test("uint8 RGB does NOT use normalized path", async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const bm = new window.fidnii.BufferManager(1_000_000, "uint8", 3)
+      return {
+        isNormalizedRGB: bm.isNormalizedRGB,
+        bytesPerPixel: bm.getBytesPerPixel(),
+      }
+    })
+
+    expect(result.isNormalizedRGB).toBe(false)
+    expect(result.bytesPerPixel).toBe(1) // still 1 since uint8
+  })
+
+  test("scalar uint16 does NOT use normalized path", async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const bm = new window.fidnii.BufferManager(1_000_000, "uint16")
+      return {
+        isNormalizedRGB: bm.isNormalizedRGB,
+        bytesPerPixel: bm.getBytesPerPixel(),
+      }
+    })
+
+    expect(result.isNormalizedRGB).toBe(false)
+    expect(result.bytesPerPixel).toBe(2) // uint16
   })
 })
 
