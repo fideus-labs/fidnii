@@ -70,6 +70,100 @@ export interface ConversionResult {
 }
 
 /**
+ * Extract a usable filename from a URL.
+ *
+ * Tries the last non-empty path segment first, then falls back to the
+ * hostname. The filename is needed because `readImage` uses the file
+ * extension for format detection (e.g. `.nii.gz`, `.nrrd`, `.dcm`).
+ *
+ * @param url - The URL to extract a filename from
+ * @returns A filename string suitable for format detection
+ */
+function filenameFromUrl(url: string): string {
+  try {
+    const parsed = new URL(url)
+    const segments = parsed.pathname.split("/").filter(Boolean)
+    if (segments.length > 0) {
+      return decodeURIComponent(segments[segments.length - 1])
+    }
+    return parsed.hostname
+  } catch {
+    // Last resort: use the raw string's last slash-separated segment
+    const parts = url.split("/").filter(Boolean)
+    return parts[parts.length - 1] || "image"
+  }
+}
+
+/**
+ * Fetch an image from a remote URL and return it as a `File`.
+ *
+ * The response body is streamed so that download progress can be
+ * reported when the server provides a `Content-Length` header.
+ *
+ * @param url - The URL to fetch the image from
+ * @param onProgress - Optional callback for download progress updates
+ * @returns A `File` wrapping the fetched bytes with a name derived from
+ *   the URL (used by `readImage` for format detection)
+ * @throws If the fetch fails or the server returns a non-OK status
+ */
+export async function fetchImageFile(
+  url: string,
+  onProgress?: ProgressCallback,
+): Promise<File> {
+  const report = (percent: number, message: string) => {
+    onProgress?.({ stage: "reading", percent, message })
+  }
+
+  report(0, "Fetching image from URL...")
+
+  const response = await fetch(url, { mode: "cors" })
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch URL (${response.status} ${response.statusText})`,
+    )
+  }
+
+  const contentLength = response.headers.get("Content-Length")
+  const totalBytes = contentLength ? parseInt(contentLength, 10) : 0
+  const filename = filenameFromUrl(url)
+
+  // Stream the body so we can report download progress
+  if (totalBytes > 0 && response.body) {
+    const reader = response.body.getReader()
+    const chunks: Uint8Array[] = []
+    let receivedBytes = 0
+
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      chunks.push(value)
+      receivedBytes += value.byteLength
+      const pct = Math.min(Math.round((receivedBytes / totalBytes) * 10), 10)
+      report(
+        pct,
+        `Downloading... ${formatFileSize(receivedBytes)} / ${formatFileSize(totalBytes)}`,
+      )
+    }
+
+    // Concatenate chunks into a single buffer
+    const buffer = new Uint8Array(receivedBytes)
+    let offset = 0
+    for (const chunk of chunks) {
+      buffer.set(chunk, offset)
+      offset += chunk.byteLength
+    }
+
+    report(10, `Downloaded ${formatFileSize(receivedBytes)}`)
+    return new File([buffer], filename)
+  }
+
+  // Fallback: no Content-Length or no body streaming — read all at once
+  const arrayBuffer = await response.arrayBuffer()
+  report(10, `Downloaded ${formatFileSize(arrayBuffer.byteLength)}`)
+  return new File([arrayBuffer], filename)
+}
+
+/**
  * Convert an image file to OME-Zarr 0.5 format
  */
 export async function convertToOmeZarr(

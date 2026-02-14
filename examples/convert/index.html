@@ -85,6 +85,31 @@
         margin: 0 0 0.5rem 0;
         color: var(--wa-color-text-quiet);
       }
+      .input-divider {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin: 1rem 0;
+        color: var(--wa-color-text-quiet);
+        font-size: 0.8125rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      .input-divider::before,
+      .input-divider::after {
+        content: "";
+        flex: 1;
+        height: 1px;
+        background: var(--wa-color-surface-border);
+      }
+      .url-input-row {
+        display: flex;
+        gap: 0.5rem;
+        align-items: flex-end;
+      }
+      .url-input-row wa-input {
+        flex: 1;
+      }
       .settings-grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -198,6 +223,23 @@
             </wa-button>
             <input type="file" id="file-input" hidden />
             <div id="file-info"></div>
+          </div>
+          <div class="input-divider">or</div>
+          <div class="url-input-row">
+            <wa-input
+              id="url-input"
+              type="url"
+              label="Image URL"
+              placeholder="https://example.com/image.nii.gz"
+              with-clear
+            ></wa-input>
+            <wa-button
+              id="url-load-btn"
+              variant="neutral"
+              size="small"
+            >
+              Load
+            </wa-button>
           </div>
         </wa-card>
 
