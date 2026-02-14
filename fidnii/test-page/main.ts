@@ -4,13 +4,16 @@
 import {
   BufferManager,
   buildSelection,
+  computeChannelMinMax,
   getChannelInfo,
   getChunkShape,
   getRGBNiftiDataType,
   getVolumeShape,
   isRGBImage,
   NiftiDataType,
+  needsRGBNormalization,
   normalizedToWorld,
+  normalizeToUint8,
   OMEZarrNVImage,
   worldToNormalized,
 } from "@fideus-labs/fidnii"
@@ -25,7 +28,10 @@ declare global {
     fidnii: {
       getChannelInfo: typeof getChannelInfo
       isRGBImage: typeof isRGBImage
+      needsRGBNormalization: typeof needsRGBNormalization
       getRGBNiftiDataType: typeof getRGBNiftiDataType
+      normalizeToUint8: typeof normalizeToUint8
+      computeChannelMinMax: typeof computeChannelMinMax
       getVolumeShape: typeof getVolumeShape
       getChunkShape: typeof getChunkShape
       buildSelection: typeof buildSelection
@@ -41,7 +47,10 @@ declare global {
 window.fidnii = {
   getChannelInfo,
   isRGBImage,
+  needsRGBNormalization,
   getRGBNiftiDataType,
+  normalizeToUint8,
+  computeChannelMinMax,
   getVolumeShape,
   getChunkShape,
   buildSelection,

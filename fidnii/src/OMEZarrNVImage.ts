@@ -29,6 +29,8 @@ import {
   type OMEZarrNVImageEventMap,
   type PopulateTrigger,
 } from "./events.js"
+import type { ChannelWindow } from "./normalize.js"
+import { computeChannelMinMax, normalizeToUint8 } from "./normalize.js"
 import { RegionCoalescer } from "./RegionCoalescer.js"
 import type { OrthogonalAxis } from "./ResolutionSelector.js"
 import {
@@ -59,6 +61,7 @@ import {
   getRGBNiftiDataType,
   isRGBImage,
   NiftiDataType,
+  needsRGBNormalization,
   parseZarritaDtype,
 } from "./types.js"
 import {
@@ -284,16 +287,14 @@ export class OMEZarrNVImage extends NVImage {
     // Detect channel (component) dimension for multi-component images
     this._channelInfo = getChannelInfo(highResImage)
 
-    // Validate multi-component images: only RGB/RGBA are supported
-    if (this._channelInfo) {
-      if (!isRGBImage(highResImage, this.dtype)) {
-        throw new Error(
-          `Unsupported multi-component image: found ${this._channelInfo.components} ` +
-            `components with dtype '${this.dtype}'. Only RGB (3×uint8) and ` +
-            `RGBA (4×uint8) images are supported. For other multi-component ` +
-            `images, select a single component before loading.`,
-        )
-      }
+    // Validate multi-component images: only RGB (3) / RGBA (4) are supported
+    if (this._channelInfo && !isRGBImage(highResImage)) {
+      throw new Error(
+        `Unsupported multi-component image: found ${this._channelInfo.components} ` +
+          `components with dtype '${this.dtype}'. Only RGB (3 components) ` +
+          `and RGBA (4 components) images are supported. For other ` +
+          `multi-component images, select a single component before loading.`,
+      )
     }
 
     // Detect 2D images (no z axis) and store y-flip preference
@@ -385,12 +386,10 @@ export class OMEZarrNVImage extends NVImage {
     // Placeholder dimensions (will be updated when data loads)
     hdr.dims = [3, 1, 1, 1, 1, 1, 1, 1]
 
-    // Set data type — use RGB24/RGBA32 for multi-component uint8 images
-    if (
-      this._channelInfo &&
-      isRGBImage(this.multiscales.images[0], this.dtype)
-    ) {
-      const rgbCode = getRGBNiftiDataType(this.dtype, this._channelInfo)
+    // Set data type — use RGB24/RGBA32 for multi-component images
+    // (any dtype; non-uint8 data is normalized to uint8 at load time)
+    if (this._channelInfo && isRGBImage(this.multiscales.images[0])) {
+      const rgbCode = getRGBNiftiDataType(this._channelInfo)
       hdr.datatypeCode = rgbCode
       hdr.numBitsPerVoxel = rgbCode === NiftiDataType.RGB24 ? 24 : 32
     } else {
@@ -591,8 +590,29 @@ export class OMEZarrNVImage extends NVImage {
     // Resize buffer to match fetched data exactly (no upsampling!)
     const targetData = this.bufferManager.resize(fetchedShape)
 
-    // Direct copy of fetched data
-    targetData.set(result.data)
+    // For non-uint8 RGB/RGBA, we need OMERO metadata *before* copying
+    // so we can normalize the raw data to uint8 using channel windows.
+    const normalize = needsRGBNormalization(ngffImage, this.dtype)
+    if (normalize && !this.isLabelImage) {
+      await this.ensureOmeroMetadata(ngffImage, levelIndex)
+    }
+
+    if (normalize && this._channelInfo) {
+      // Non-uint8 RGB/RGBA: normalize raw data to uint8 using OMERO windows
+      const windows = this._getChannelWindows(
+        result.data,
+        this._channelInfo.components,
+      )
+      const normalized = normalizeToUint8(
+        result.data,
+        this._channelInfo.components,
+        windows,
+      )
+      targetData.set(normalized)
+    } else {
+      // uint8 RGB or scalar: direct copy
+      targetData.set(result.data)
+    }
 
     // Update this.img to point to the (possibly new) buffer
     this.img = this.bufferManager.getTypedArray() as NVImage["img"]
@@ -603,8 +623,9 @@ export class OMEZarrNVImage extends NVImage {
     if (this.isLabelImage) {
       // Label images: apply a discrete colormap instead of OMERO windowing
       this._applyLabelColormap(this, result.data)
-    } else {
-      // Compute or apply OMERO metadata for cal_min/cal_max
+    } else if (!normalize) {
+      // Scalar / uint8 RGB: compute or apply OMERO for cal_min/cal_max.
+      // (Normalized RGB already consumed the OMERO window above.)
       await this.ensureOmeroMetadata(ngffImage, levelIndex)
     }
 
@@ -859,6 +880,42 @@ export class OMEZarrNVImage extends NVImage {
         this.applyOmeroToHeader()
       }
     }
+  }
+
+  /**
+   * Get per-channel normalization windows for non-uint8 RGB/RGBA.
+   *
+   * Uses OMERO `window.start`/`window.end` (or `window.min`/`window.max`)
+   * when available. Falls back to computing min/max from the raw data.
+   *
+   * @param data - Raw multi-component data from the zarr fetch
+   * @param components - Number of components per voxel (3 or 4)
+   * @returns Per-channel windows for normalization to uint8
+   */
+  private _getChannelWindows(
+    data: TypedArray,
+    components: number,
+  ): ChannelWindow[] {
+    if (this._omero?.channels?.length) {
+      const windows: ChannelWindow[] = []
+      for (let c = 0; c < components; c++) {
+        const channel =
+          this._omero.channels[Math.min(c, this._omero.channels.length - 1)]
+        const win = channel?.window
+        if (win) {
+          windows.push({
+            start: win.start ?? win.min ?? 0,
+            end: win.end ?? win.max ?? 1,
+          })
+        } else {
+          windows.push({ start: 0, end: 1 })
+        }
+      }
+      return windows
+    }
+
+    // No OMERO metadata: fall back to per-channel min/max from data
+    return computeChannelMinMax(data, components)
   }
 
   /**
@@ -1875,11 +1932,8 @@ export class OMEZarrNVImage extends NVImage {
     const hdr = new NIFTI1()
     nvImage.hdr = hdr
     hdr.dims = [3, 1, 1, 1, 1, 1, 1, 1]
-    if (
-      this._channelInfo &&
-      isRGBImage(this.multiscales.images[0], this.dtype)
-    ) {
-      const rgbCode = getRGBNiftiDataType(this.dtype, this._channelInfo)
+    if (this._channelInfo && isRGBImage(this.multiscales.images[0])) {
+      const rgbCode = getRGBNiftiDataType(this._channelInfo)
       hdr.datatypeCode = rgbCode
       hdr.numBitsPerVoxel = rgbCode === NiftiDataType.RGB24 ? 24 : 32
     } else {
@@ -2167,7 +2221,25 @@ export class OMEZarrNVImage extends NVImage {
 
     // Resize buffer and copy data
     const targetData = slabState.bufferManager.resize(fetchedShape)
-    targetData.set(result.data)
+    const normalize = needsRGBNormalization(ngffImage, this.dtype)
+
+    if (normalize && this._channelInfo) {
+      // Non-uint8 RGB/RGBA: normalize raw data to uint8 using OMERO windows
+      const windows = this._getChannelWindows(
+        result.data,
+        this._channelInfo.components,
+      )
+      const normalized = normalizeToUint8(
+        result.data,
+        this._channelInfo.components,
+        windows,
+      )
+      targetData.set(normalized)
+    } else {
+      // uint8 RGB or scalar: direct copy
+      targetData.set(result.data)
+    }
+
     slabState.nvImage.img =
       slabState.bufferManager.getTypedArray() as NVImage["img"]
 
@@ -2187,8 +2259,9 @@ export class OMEZarrNVImage extends NVImage {
     if (this.isLabelImage) {
       // Label images: apply discrete colormap to the slab NVImage
       this._applyLabelColormap(slabState.nvImage, result.data)
-    } else if (this._omero) {
-      // Apply OMERO metadata if available
+    } else if (this._omero && !normalize) {
+      // Apply OMERO metadata for scalar / uint8 RGB.
+      // Normalized RGB already consumed the OMERO window during normalization.
       this._applyOmeroToSlabHeader(slabState.nvImage)
     }
 

@@ -69,6 +69,9 @@ export type {
 } from "./events.js"
 // Event system (browser-native EventTarget API)
 export { OMEZarrNVImageEvent } from "./events.js"
+// RGB normalization utilities
+export type { ChannelWindow } from "./normalize.js"
+export { computeChannelMinMax, normalizeToUint8 } from "./normalize.js"
 // Main class
 export { OMEZarrNVImage } from "./OMEZarrNVImage.js"
 // Region coalescer
@@ -113,6 +116,7 @@ export {
   getTypedArrayConstructor,
   isRGBImage,
   NiftiDataType,
+  needsRGBNormalization,
   parseZarritaDtype,
   SLICE_TYPE,
 } from "./types.js"

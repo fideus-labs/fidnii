@@ -355,38 +355,57 @@ export function getChannelInfo(ngffImage: NgffImage): ChannelInfo | null {
  * Check whether an NgffImage represents an RGB or RGBA image.
  *
  * An image is considered RGB/RGBA when it has a `"c"` dimension with
- * 3 or 4 uint8 components.
+ * 3 or 4 components. Any dtype is supported — non-uint8 data is
+ * normalized to uint8 at load time (see {@link needsRGBNormalization}).
+ *
+ * @param ngffImage - The NgffImage to inspect
+ * @returns `true` if the image is RGB (3 components) or RGBA (4 components)
+ */
+export function isRGBImage(ngffImage: NgffImage): boolean {
+  const info = getChannelInfo(ngffImage)
+  if (!info) return false
+  return info.components === 3 || info.components === 4
+}
+
+/**
+ * Check whether a multi-component RGB/RGBA image needs normalization
+ * to uint8 before NiiVue can render it.
+ *
+ * NiiVue only supports `DT_RGB24` (3×uint8) and `DT_RGBA32` (4×uint8)
+ * color rendering. Non-uint8 multi-component images must be normalized
+ * to uint8 using OMERO window metadata (or computed min/max).
  *
  * @param ngffImage - The NgffImage to inspect
  * @param dtype - The parsed zarr dtype
- * @returns `true` if the image is RGB24 or RGBA32
+ * @returns `true` if the image is RGB/RGBA with a non-uint8 dtype
  */
-export function isRGBImage(ngffImage: NgffImage, dtype: ZarrDtype): boolean {
-  const info = getChannelInfo(ngffImage)
-  if (!info) return false
-  return dtype === "uint8" && (info.components === 3 || info.components === 4)
+export function needsRGBNormalization(
+  ngffImage: NgffImage,
+  dtype: ZarrDtype,
+): boolean {
+  return isRGBImage(ngffImage) && dtype !== "uint8"
 }
 
 /**
  * Get the NIfTI data type code for a multi-component image.
  *
- * @param dtype - The zarr dtype
+ * Returns `RGB24` for 3 components and `RGBA32` for 4 components,
+ * regardless of the source dtype. Non-uint8 data is normalized to
+ * uint8 at load time before being stored in the NVImage buffer.
+ *
  * @param channelInfo - Channel information from `getChannelInfo()`
- * @returns The NIfTI data type code
- * @throws If the combination of dtype and component count is unsupported
+ * @returns The NIfTI data type code (`RGB24` or `RGBA32`)
+ * @throws If the component count is not 3 or 4
  */
 export function getRGBNiftiDataType(
-  dtype: ZarrDtype,
   channelInfo: ChannelInfo,
 ): NiftiDataTypeCode {
-  if (dtype === "uint8") {
-    if (channelInfo.components === 3) return NiftiDataType.RGB24
-    if (channelInfo.components === 4) return NiftiDataType.RGBA32
-  }
+  if (channelInfo.components === 3) return NiftiDataType.RGB24
+  if (channelInfo.components === 4) return NiftiDataType.RGBA32
   throw new Error(
-    `Unsupported multi-component image: dtype=${dtype}, ` +
+    `Unsupported multi-component image: ` +
       `components=${channelInfo.components}. ` +
-      `Only uint8 with 3 (RGB) or 4 (RGBA) components is supported.`,
+      `Only 3 (RGB) or 4 (RGBA) components are supported.`,
   )
 }
 

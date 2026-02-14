@@ -17,6 +17,11 @@ import { getBytesPerPixel, getTypedArrayConstructor } from "./types.js"
  * track only the spatial extent; the component count is a fixed
  * multiplier on the element count.
  *
+ * When the source dtype is not uint8 and `componentsPerVoxel > 1`
+ * (non-uint8 RGB/RGBA), the buffer stores **uint8** data because NiiVue
+ * only supports `DT_RGB24` / `DT_RGBA32` (uint8-per-channel). The raw
+ * data is normalized to uint8 externally before being written here.
+ *
  * Memory reuse strategy:
  * - Reuse buffer if newSize <= currentCapacity
  * - Reallocate if newSize > currentCapacity OR newSize < 25% of currentCapacity
@@ -36,6 +41,14 @@ export class BufferManager {
   readonly componentsPerVoxel: number
 
   /**
+   * Whether this buffer stores normalized uint8 data for a non-uint8
+   * RGB/RGBA source. When `true`, {@link getTypedArray} returns a
+   * `Uint8Array` and `bytesPerPixel` is 1, regardless of the source
+   * dtype.
+   */
+  readonly isNormalizedRGB: boolean
+
+  /**
    * Create a new BufferManager.
    *
    * @param maxPixels - Maximum number of pixels allowed (budget)
@@ -50,9 +63,19 @@ export class BufferManager {
   ) {
     this.maxPixels = maxPixels
     this.dtype = dtype
-    this.TypedArrayCtor = getTypedArrayConstructor(dtype)
-    this.bytesPerPixel = getBytesPerPixel(dtype)
     this.componentsPerVoxel = componentsPerVoxel
+
+    // Non-uint8 RGB/RGBA: the output buffer stores normalized uint8 data
+    // because NiiVue only supports uint8-per-channel color rendering.
+    this.isNormalizedRGB = componentsPerVoxel > 1 && dtype !== "uint8"
+
+    if (this.isNormalizedRGB) {
+      this.TypedArrayCtor = Uint8Array
+      this.bytesPerPixel = 1
+    } else {
+      this.TypedArrayCtor = getTypedArrayConstructor(dtype)
+      this.bytesPerPixel = getBytesPerPixel(dtype)
+    }
 
     // Initialize with empty buffer - will be allocated on first resize
     this.currentDimensions = [0, 0, 0]
