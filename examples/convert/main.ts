@@ -19,6 +19,7 @@ import {
   type ConversionResult,
   convertToOmeZarr,
   downloadFile,
+  fetchImageFile,
   formatFileSize,
   getMultiscalesInfo,
   Methods,
@@ -53,6 +54,10 @@ const multiscalesCard = document.getElementById(
 const multiscalesTable = document.getElementById(
   "multiscales-table",
 ) as HTMLTableElement
+
+// URL input elements
+const urlInput = document.getElementById("url-input") as HTMLInputElement
+const urlLoadBtn = document.getElementById("url-load-btn") as HTMLElement
 
 // Settings inputs
 const chunkSizeInput = document.getElementById("chunk-size") as HTMLInputElement
@@ -137,11 +142,20 @@ function initNiivue(): void {
 }
 
 // File handling
-function handleFile(file: File): void {
+function handleFile(file: File, { fromUrl = false } = {}): void {
   selectedFile = file
   fileInfo.textContent = `${file.name} (${formatFileSize(file.size)})`
   convertBtn.removeAttribute("disabled")
   lastResult = null
+
+  // Clear any stale ?url= param when loading a local file
+  if (!fromUrl) {
+    const currentUrl = new URL(window.location.href)
+    if (currentUrl.searchParams.has("url")) {
+      currentUrl.searchParams.delete("url")
+      history.replaceState(null, "", currentUrl)
+    }
+  }
 
   // Reset multiscales table
   multiscalesCard.classList.add("hidden")
@@ -157,6 +171,60 @@ function handleFile(file: File): void {
   // Auto-start conversion immediately
   void startConversion()
 }
+
+/**
+ * Fetch an image from a remote URL and feed it into the conversion
+ * pipeline. The URL is fetched with progress reporting, then the
+ * resulting `File` is passed to `handleFile` which triggers
+ * auto-conversion.
+ *
+ * @param url - The remote URL to fetch
+ */
+async function handleUrl(url: string): Promise<void> {
+  const trimmed = url.trim()
+  if (!trimmed) return
+
+  // Disable the load button and show progress while fetching
+  urlLoadBtn.setAttribute("disabled", "")
+  convertBtn.setAttribute("disabled", "")
+  progressContainer.classList.add("visible")
+
+  try {
+    const file = await fetchImageFile(trimmed, updateProgress)
+
+    // Update the browser URL so the current state is shareable
+    const newUrl = new URL(window.location.href)
+    newUrl.searchParams.set("url", trimmed)
+    history.replaceState(null, "", newUrl)
+
+    handleFile(file, { fromUrl: true })
+  } catch (error) {
+    console.error("Failed to fetch URL:", error)
+    const message = error instanceof Error ? error.message : String(error)
+    progressText.textContent = `Error: ${message}`
+  } finally {
+    urlLoadBtn.removeAttribute("disabled")
+    // Re-enable the convert button if a file is currently selected.
+    // If no file has been selected yet, keep it disabled.
+    if (selectedFile) {
+      convertBtn.removeAttribute("disabled")
+    } else {
+      convertBtn.setAttribute("disabled", "")
+    }
+  }
+}
+
+// URL input: load button click
+urlLoadBtn.addEventListener("click", () => {
+  void handleUrl((urlInput as unknown as { value: string }).value)
+})
+
+// URL input: Enter key triggers load
+urlInput.addEventListener("keydown", (e: Event) => {
+  if ((e as KeyboardEvent).key === "Enter") {
+    void handleUrl((urlInput as unknown as { value: string }).value)
+  }
+})
 
 // Drag and drop
 dropZone.addEventListener("dragover", (e) => {
@@ -411,3 +479,10 @@ sliceTypeSelect.addEventListener("change", () => {
     nv.updateGLVolume()
   }
 })
+
+// Auto-load from ?url= query parameter
+const urlParam = new URLSearchParams(window.location.search).get("url")
+if (urlParam) {
+  ;(urlInput as unknown as { value: string }).value = urlParam
+  void handleUrl(urlParam)
+}
