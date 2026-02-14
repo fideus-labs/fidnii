@@ -21,7 +21,6 @@ export default defineConfig({
   optimizeDeps: {
     exclude: [
       "@awesome.me/webawesome",
-      "@fideus-labs/fizarrita",
       "@fideus-labs/ngff-zarr",
       "itk-wasm",
       "@itk-wasm/compress-stringify",

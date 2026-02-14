@@ -27,6 +27,46 @@ interface PendingRequest {
 }
 
 /**
+ * Map from [z, y, x] PixelRegion indices to the zarr dim name.
+ * Index 0 → "z", index 1 → "y", index 2 → "x".
+ */
+const SPATIAL_DIM_MAP: Record<string, 0 | 1 | 2> = {
+  z: 0,
+  y: 1,
+  x: 2,
+}
+
+/**
+ * Build a zarr selection array that respects the actual dimension order
+ * of the zarr array.
+ *
+ * The `PixelRegion` is always in `[z, y, x]` order. This function maps
+ * each zarr dimension to the correct slice:
+ * - `"z"`, `"y"`, `"x"` → sliced by the corresponding PixelRegion axis
+ * - `"c"` (channel) → `null` (select all components)
+ * - `"t"` (time) → `0` (first timepoint)
+ *
+ * @param dims - Dimension names from NgffImage (e.g. `["y", "x", "c"]`)
+ * @param region - The pixel region in `[z, y, x]` order
+ * @returns Selection array matching the zarr dim order
+ */
+export function buildSelection(
+  dims: string[],
+  region: PixelRegion,
+): (zarr.Slice | number | null)[] {
+  return dims.map((dim) => {
+    const spatialIdx = SPATIAL_DIM_MAP[dim]
+    if (spatialIdx !== undefined) {
+      return zarr.slice(region.start[spatialIdx], region.end[spatialIdx])
+    }
+    if (dim === "c") return null // select all channels
+    if (dim === "t") return 0 // first timepoint
+    // Unknown dimension — select all to avoid data loss
+    return null
+  })
+}
+
+/**
  * RegionCoalescer handles fetching sub-regions from OME-Zarr images with:
  *
  * 1. Request deduplication - Multiple async triggers (zoom, crop changes, etc.)
@@ -113,11 +153,11 @@ export class RegionCoalescer {
 
     // Fetch using fizarrita's worker-accelerated zarrGet
     try {
-      const selection = [
-        zarr.slice(region.start[0], region.end[0]),
-        zarr.slice(region.start[1], region.end[1]),
-        zarr.slice(region.start[2], region.end[2]),
-      ]
+      // Build a dim-aware selection that maps the [z, y, x] PixelRegion
+      // to the actual zarr dimension order. Non-spatial dims are handled:
+      //   "c" (channel) → null (fetch all components)
+      //   "t" (time)    → 0 (first timepoint, reduces dimension)
+      const selection = buildSelection(ngffImage.dims, region)
       // Pass the chunk cache to fizarrita's getWorker via zarrGet.
       // The `cache` option is available in @fideus-labs/fizarrita >=1.2.0.
       const zarrOpts = this._cache

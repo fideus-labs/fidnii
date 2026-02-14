@@ -135,22 +135,23 @@ export function normalizedToWorld(
   const shape = ngffImage.data.shape
   const dims = ngffImage.dims
 
-  // Find z, y, x indices in dims
-  const zIdx = dims.indexOf("z")
   const yIdx = dims.indexOf("y")
   const xIdx = dims.indexOf("x")
 
-  let dimX: number, dimY: number, dimZ: number
-  if (zIdx === -1 || yIdx === -1 || xIdx === -1) {
-    const n = shape.length
-    dimZ = shape[n - 3] || 1
-    dimY = shape[n - 2] || 1
-    dimX = shape[n - 1] || 1
-  } else {
-    dimZ = shape[zIdx]
-    dimY = shape[yIdx]
-    dimX = shape[xIdx]
+  if (yIdx === -1 || xIdx === -1) {
+    const missingAxes = [xIdx === -1 ? "x" : null, yIdx === -1 ? "y" : null]
+      .filter((axis): axis is string => axis !== null)
+      .join(", ")
+    throw new Error(
+      `NgffImage is missing required spatial dimension(s): ${missingAxes}`,
+    )
   }
+
+  // Look up spatial dimensions by name; default z to 1 for 2D images
+  const zIdx = dims.indexOf("z")
+  const dimZ = zIdx !== -1 ? shape[zIdx] : 1
+  const dimY = shape[yIdx]
+  const dimX = shape[xIdx]
 
   // Convert normalized to pixel
   const pixelCoord: [number, number, number] = [
@@ -176,22 +177,23 @@ export function worldToNormalized(
   const shape = ngffImage.data.shape
   const dims = ngffImage.dims
 
-  // Find z, y, x indices in dims
-  const zIdx = dims.indexOf("z")
   const yIdx = dims.indexOf("y")
   const xIdx = dims.indexOf("x")
 
-  let dimX: number, dimY: number, dimZ: number
-  if (zIdx === -1 || yIdx === -1 || xIdx === -1) {
-    const n = shape.length
-    dimZ = shape[n - 3] || 1
-    dimY = shape[n - 2] || 1
-    dimX = shape[n - 1] || 1
-  } else {
-    dimZ = shape[zIdx]
-    dimY = shape[yIdx]
-    dimX = shape[xIdx]
+  if (yIdx === -1 || xIdx === -1) {
+    const missingAxes = [xIdx === -1 ? "x" : null, yIdx === -1 ? "y" : null]
+      .filter((axis): axis is string => axis !== null)
+      .join(", ")
+    throw new Error(
+      `NgffImage is missing required spatial dimension(s): ${missingAxes}`,
+    )
   }
+
+  // Look up spatial dimensions by name; default z to 1 for 2D images
+  const zIdx = dims.indexOf("z")
+  const dimZ = zIdx !== -1 ? shape[zIdx] : 1
+  const dimY = shape[yIdx]
+  const dimX = shape[xIdx]
 
   // Convert world to pixel
   const pixelCoord = worldToPixel(worldCoord, ngffImage)

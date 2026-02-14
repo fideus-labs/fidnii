@@ -39,6 +39,7 @@ import {
 } from "./ResolutionSelector.js"
 import type {
   AttachedNiivueState,
+  ChannelInfo,
   ChunkAlignedRegion,
   ChunkCache,
   ClipPlane,
@@ -53,7 +54,11 @@ import type {
 } from "./types.js"
 import {
   getBytesPerPixel,
+  getChannelInfo,
   getNiftiDataType,
+  getRGBNiftiDataType,
+  isRGBImage,
+  NiftiDataType,
   parseZarritaDtype,
 } from "./types.js"
 import {
@@ -123,6 +128,24 @@ export class OMEZarrNVImage extends NVImage {
 
   /** Data type of the volume */
   private readonly dtype: ZarrDtype
+
+  /**
+   * Channel dimension info, or `null` for scalar (single-component) images.
+   * When non-null, the image has a `"c"` dimension and is treated as
+   * multi-component (RGB/RGBA) data.
+   */
+  private readonly _channelInfo: ChannelInfo | null
+
+  /**
+   * Whether the image is 2D (no `"z"` dimension).
+   */
+  private readonly _is2D: boolean
+
+  /**
+   * Whether to negate the y-scale in the NIfTI affine for 2D images
+   * so that NiiVue renders them right-side up.
+   */
+  private readonly _flipY2D: boolean
 
   /** Full volume bounds in world space */
   private readonly _volumeBounds: VolumeBounds
@@ -258,6 +281,25 @@ export class OMEZarrNVImage extends NVImage {
     const highResImage = this.multiscales.images[0]
     this.dtype = parseZarritaDtype(highResImage.data.dtype)
 
+    // Detect channel (component) dimension for multi-component images
+    this._channelInfo = getChannelInfo(highResImage)
+
+    // Validate multi-component images: only RGB/RGBA are supported
+    if (this._channelInfo) {
+      if (!isRGBImage(highResImage, this.dtype)) {
+        throw new Error(
+          `Unsupported multi-component image: found ${this._channelInfo.components} ` +
+            `components with dtype '${this.dtype}'. Only RGB (3×uint8) and ` +
+            `RGBA (4×uint8) images are supported. For other multi-component ` +
+            `images, select a single component before loading.`,
+        )
+      }
+    }
+
+    // Detect 2D images (no z axis) and store y-flip preference
+    this._is2D = highResImage.dims.indexOf("z") === -1
+    this._flipY2D = options.flipY2D ?? true
+
     // Calculate volume bounds from highest resolution for most accurate bounds
     const highResAffine = createAffineFromNgffImage(highResImage)
     const highResShape = getVolumeShape(highResImage)
@@ -276,8 +318,15 @@ export class OMEZarrNVImage extends NVImage {
     this.targetLevelIndex = selection.levelIndex
     this.currentLevelIndex = this.multiscales.images.length - 1
 
-    // Create buffer manager (dynamic sizing, no pre-allocation)
-    this.bufferManager = new BufferManager(this.maxPixels, this.dtype)
+    // Create buffer manager (dynamic sizing, no pre-allocation).
+    // For multi-component images, each spatial voxel has multiple
+    // scalar elements (e.g. 3 for RGB, 4 for RGBA).
+    const componentsPerVoxel = this._channelInfo?.components ?? 1
+    this.bufferManager = new BufferManager(
+      this.maxPixels,
+      this.dtype,
+      componentsPerVoxel,
+    )
 
     // Initialize NVImage properties with placeholder values
     // Actual values will be set when data is first loaded
@@ -336,17 +385,26 @@ export class OMEZarrNVImage extends NVImage {
     // Placeholder dimensions (will be updated when data loads)
     hdr.dims = [3, 1, 1, 1, 1, 1, 1, 1]
 
-    // Set data type
-    hdr.datatypeCode = getNiftiDataType(this.dtype)
-    hdr.numBitsPerVoxel = getBytesPerPixel(this.dtype) * 8
+    // Set data type — use RGB24/RGBA32 for multi-component uint8 images
+    if (
+      this._channelInfo &&
+      isRGBImage(this.multiscales.images[0], this.dtype)
+    ) {
+      const rgbCode = getRGBNiftiDataType(this.dtype, this._channelInfo)
+      hdr.datatypeCode = rgbCode
+      hdr.numBitsPerVoxel = rgbCode === NiftiDataType.RGB24 ? 24 : 32
+    } else {
+      hdr.datatypeCode = getNiftiDataType(this.dtype)
+      hdr.numBitsPerVoxel = getBytesPerPixel(this.dtype) * 8
+    }
 
     // Placeholder pixel dimensions
     hdr.pixDims = [1, 1, 1, 1, 0, 0, 0, 0]
 
-    // Placeholder affine (identity)
+    // Placeholder affine (identity, with y-flip for 2D images)
     hdr.affine = [
       [1, 0, 0, 0],
-      [0, 1, 0, 0],
+      [0, this._flipY2D && this._is2D ? -1 : 1, 0, 0],
       [0, 0, 1, 0],
       [0, 0, 0, 1],
     ]
@@ -630,12 +688,8 @@ export class OMEZarrNVImage extends NVImage {
     affine[13] += regionStart[1] * sy // y offset
     affine[14] += regionStart[0] * sz // z offset
 
-    // Update affine in header
-    const srows = affineToNiftiSrows(affine)
-    this.hdr.affine = [srows.srow_x, srows.srow_y, srows.srow_z, [0, 0, 0, 1]]
-
-    // Update current buffer bounds
-    // Buffer starts at region.chunkAlignedStart and has extent fetchedShape
+    // Update current buffer bounds from the un-flipped affine
+    // (bounds stay in OME-Zarr world space for clip plane math)
     this._currentBufferBounds = {
       min: [
         affine[12], // x offset (world coord of buffer origin)
@@ -648,6 +702,17 @@ export class OMEZarrNVImage extends NVImage {
         affine[14] + fetchedShape[0] * sz,
       ],
     }
+
+    // For 2D images, negate y-scale so NiiVue's calculateRAS() flips
+    // the rows to account for top-to-bottom pixel storage order.
+    if (this._flipY2D && this._is2D) {
+      affine[5] = -sy
+      affine[13] += (fetchedShape[1] - 1) * sy
+    }
+
+    // Update affine in header
+    const srows = affineToNiftiSrows(affine)
+    this.hdr.affine = [srows.srow_x, srows.srow_y, srows.srow_z, [0, 0, 0, 1]]
 
     // Recalculate RAS orientation
     this.calculateRAS()
@@ -1798,15 +1863,29 @@ export class OMEZarrNVImage extends NVImage {
    * Create a new slab buffer state for a slice type.
    */
   private _createSlabBuffer(sliceType: SlabSliceType): SlabBufferState {
-    const bufferManager = new BufferManager(this.maxPixels, this.dtype)
+    const componentsPerVoxel = this._channelInfo?.components ?? 1
+    const bufferManager = new BufferManager(
+      this.maxPixels,
+      this.dtype,
+      componentsPerVoxel,
+    )
     const nvImage = new NVImage()
 
     // Initialize with placeholder NIfTI header (same as main image setup)
     const hdr = new NIFTI1()
     nvImage.hdr = hdr
     hdr.dims = [3, 1, 1, 1, 1, 1, 1, 1]
-    hdr.datatypeCode = getNiftiDataType(this.dtype)
-    hdr.numBitsPerVoxel = getBytesPerPixel(this.dtype) * 8
+    if (
+      this._channelInfo &&
+      isRGBImage(this.multiscales.images[0], this.dtype)
+    ) {
+      const rgbCode = getRGBNiftiDataType(this.dtype, this._channelInfo)
+      hdr.datatypeCode = rgbCode
+      hdr.numBitsPerVoxel = rgbCode === NiftiDataType.RGB24 ? 24 : 32
+    } else {
+      hdr.datatypeCode = getNiftiDataType(this.dtype)
+      hdr.numBitsPerVoxel = getBytesPerPixel(this.dtype) * 8
+    }
     hdr.pixDims = [1, 1, 1, 1, 0, 0, 0, 0]
     hdr.affine = [
       [1, 0, 0, 0],
@@ -2212,6 +2291,12 @@ export class OMEZarrNVImage extends NVImage {
     affine[12] += fetchStart[2] * sx // x offset
     affine[13] += fetchStart[1] * sy // y offset
     affine[14] += fetchStart[0] * sz // z offset
+
+    // For 2D images, negate y-scale before normalization
+    if (this._flipY2D && this._is2D) {
+      affine[5] = -sy
+      affine[13] += (fetchedShape[1] - 1) * sy
+    }
 
     // Apply normalization to the entire affine (scale columns + translation)
     for (let i = 0; i < 15; i++) {

@@ -10,7 +10,7 @@ import "@awesome.me/webawesome/dist/components/progress-bar/progress-bar.js"
 import "@awesome.me/webawesome/dist/components/select/select.js"
 import "@awesome.me/webawesome/dist/components/slider/slider.js"
 
-import { OMEZarrNVImage } from "@fideus-labs/fidnii"
+import { getChannelInfo, OMEZarrNVImage } from "@fideus-labs/fidnii"
 import type { Multiscales } from "@fideus-labs/ngff-zarr"
 import { Niivue, SLICE_TYPE } from "@niivue/niivue"
 
@@ -66,6 +66,22 @@ const silhouetteSlider = document.getElementById(
   "silhouette",
 ) as HTMLInputElement
 
+/** File extensions that are known to produce 2D (single-slice) images. */
+const IMAGE_2D_EXTENSIONS = new Set([
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".bmp",
+  ".gif",
+  ".tif",
+  ".tiff",
+  ".webp",
+  ".svg",
+])
+
+const DEFAULT_CHUNK_SIZE_2D = "256"
+const DEFAULT_CHUNK_SIZE_3D = "96"
+
 // State
 let selectedFile: File | null = null
 let lastResult: ConversionResult | null = null
@@ -88,6 +104,14 @@ function is3DVolume(multiscales: Multiscales): boolean {
   )
 }
 
+/** Check whether the image is RGB or RGBA (has a "c" dimension with 3 or 4 components). */
+function isRGBOrRGBA(multiscales: Multiscales): boolean {
+  const firstImage = multiscales.images[0]
+  if (!firstImage) return false
+  const info = getChannelInfo(firstImage)
+  return info !== null && (info.components === 3 || info.components === 4)
+}
+
 /** Read both sliders and push gradient settings into NiiVue. */
 async function updateGradientSettings(): Promise<void> {
   if (!nv) return
@@ -105,7 +129,8 @@ function initNiivue(): void {
   if (nv) return
 
   nv = new Niivue({
-    show3Dcrosshair: true,
+    show3Dcrosshair: false,
+    crosshairWidth: 0,
     backColor: [0, 0, 0, 1],
   })
   nv.attachToCanvas(canvas)
@@ -120,6 +145,14 @@ function handleFile(file: File): void {
 
   // Reset multiscales table
   multiscalesCard.classList.add("hidden")
+
+  // Use a larger default chunk size for 2D images
+  const dotIndex = file.name.lastIndexOf(".")
+  const ext = dotIndex !== -1 ? file.name.slice(dotIndex).toLowerCase() : ""
+  const chunkDefault = IMAGE_2D_EXTENSIONS.has(ext)
+    ? DEFAULT_CHUNK_SIZE_2D
+    : DEFAULT_CHUNK_SIZE_3D
+  ;(chunkSizeInput as unknown as { value: string }).value = chunkDefault
 
   // Auto-start conversion immediately
   void startConversion()
@@ -183,6 +216,14 @@ async function showPreview(result: ConversionResult): Promise<void> {
   placeholder.style.display = "none"
 
   const volumeIs3D = is3DVolume(result.multiscales)
+  const imageIsRGB = isRGBOrRGBA(result.multiscales)
+
+  // Disable colormap for RGB/RGBA images (NiiVue renders them directly)
+  if (imageIsRGB) {
+    colormapSelect.setAttribute("disabled", "")
+  } else {
+    colormapSelect.removeAttribute("disabled")
+  }
 
   // Get colormap setting
   const colormap =
@@ -211,9 +252,9 @@ async function showPreview(result: ConversionResult): Promise<void> {
 
   // Apply colormap AFTER data is loaded to avoid calMinMax() on placeholder data.
   // Label images get a discrete colormap automatically from the library,
-  // so skip the continuous colormap for those.
+  // and RGB/RGBA images render their native colors directly — skip both.
   const isLabel = result.multiscales.method === Methods.ITKWASM_LABEL_IMAGE
-  if (!isLabel) {
+  if (!isLabel && !imageIsRGB) {
     image.colormap = colormap
   }
 
