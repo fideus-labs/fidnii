@@ -129,7 +129,8 @@ function initNiivue(): void {
   if (nv) return
 
   nv = new Niivue({
-    show3Dcrosshair: true,
+    show3Dcrosshair: false,
+    crosshairWidth: 0,
     backColor: [0, 0, 0, 1],
   })
   nv.attachToCanvas(canvas)
