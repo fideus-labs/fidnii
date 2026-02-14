@@ -66,6 +66,22 @@ const silhouetteSlider = document.getElementById(
   "silhouette",
 ) as HTMLInputElement
 
+/** File extensions that are known to produce 2D (single-slice) images. */
+const IMAGE_2D_EXTENSIONS = new Set([
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".bmp",
+  ".gif",
+  ".tif",
+  ".tiff",
+  ".webp",
+  ".svg",
+])
+
+const DEFAULT_CHUNK_SIZE_2D = "256"
+const DEFAULT_CHUNK_SIZE_3D = "96"
+
 // State
 let selectedFile: File | null = null
 let lastResult: ConversionResult | null = null
@@ -120,6 +136,13 @@ function handleFile(file: File): void {
 
   // Reset multiscales table
   multiscalesCard.classList.add("hidden")
+
+  // Use a larger default chunk size for 2D images
+  const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase()
+  const chunkDefault = IMAGE_2D_EXTENSIONS.has(ext)
+    ? DEFAULT_CHUNK_SIZE_2D
+    : DEFAULT_CHUNK_SIZE_3D
+  ;(chunkSizeInput as unknown as { value: string }).value = chunkDefault
 
   // Auto-start conversion immediately
   void startConversion()
