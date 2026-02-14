@@ -41,7 +41,7 @@ export class BufferManager {
    * @param maxPixels - Maximum number of pixels allowed (budget)
    * @param dtype - Data type for the buffer
    * @param componentsPerVoxel - Number of components per spatial voxel
-   *   (default: 1 for scalar images; 3 for RGB, 4 for RGBA)
+   *   (default: 1; pass 3 for RGB, 4 for RGBA)
    */
   constructor(
     maxPixels: number,

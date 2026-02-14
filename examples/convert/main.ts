@@ -147,7 +147,8 @@ function handleFile(file: File): void {
   multiscalesCard.classList.add("hidden")
 
   // Use a larger default chunk size for 2D images
-  const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase()
+  const dotIndex = file.name.lastIndexOf(".")
+  const ext = dotIndex !== -1 ? file.name.slice(dotIndex).toLowerCase() : ""
   const chunkDefault = IMAGE_2D_EXTENSIONS.has(ext)
     ? DEFAULT_CHUNK_SIZE_2D
     : DEFAULT_CHUNK_SIZE_3D

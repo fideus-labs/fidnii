@@ -284,6 +284,18 @@ export class OMEZarrNVImage extends NVImage {
     // Detect channel (component) dimension for multi-component images
     this._channelInfo = getChannelInfo(highResImage)
 
+    // Validate multi-component images: only RGB/RGBA are supported
+    if (this._channelInfo) {
+      if (!isRGBImage(highResImage, this.dtype)) {
+        throw new Error(
+          `Unsupported multi-component image: found ${this._channelInfo.components} ` +
+            `components with dtype '${this.dtype}'. Only RGB (3×uint8) and ` +
+            `RGBA (4×uint8) images are supported. For other multi-component ` +
+            `images, select a single component before loading.`,
+        )
+      }
+    }
+
     // Detect 2D images (no z axis) and store y-flip preference
     this._is2D = highResImage.dims.indexOf("z") === -1
     this._flipY2D = options.flipY2D ?? true
