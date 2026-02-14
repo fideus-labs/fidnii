@@ -142,11 +142,20 @@ function initNiivue(): void {
 }
 
 // File handling
-function handleFile(file: File): void {
+function handleFile(file: File, { fromUrl = false } = {}): void {
   selectedFile = file
   fileInfo.textContent = `${file.name} (${formatFileSize(file.size)})`
   convertBtn.removeAttribute("disabled")
   lastResult = null
+
+  // Clear any stale ?url= param when loading a local file
+  if (!fromUrl) {
+    const currentUrl = new URL(window.location.href)
+    if (currentUrl.searchParams.has("url")) {
+      currentUrl.searchParams.delete("url")
+      history.replaceState(null, "", currentUrl)
+    }
+  }
 
   // Reset multiscales table
   multiscalesCard.classList.add("hidden")
@@ -182,7 +191,13 @@ async function handleUrl(url: string): Promise<void> {
 
   try {
     const file = await fetchImageFile(trimmed, updateProgress)
-    handleFile(file)
+
+    // Update the browser URL so the current state is shareable
+    const newUrl = new URL(window.location.href)
+    newUrl.searchParams.set("url", trimmed)
+    history.replaceState(null, "", newUrl)
+
+    handleFile(file, { fromUrl: true })
   } catch (error) {
     console.error("Failed to fetch URL:", error)
     const message = error instanceof Error ? error.message : String(error)
