@@ -1,5 +1,17 @@
 # @fideus-labs/fidnii
 
+## 0.4.0
+
+### Minor Changes
+
+- [#25](https://github.com/fideus-labs/fidnii/pull/25) [`1a01abf`](https://github.com/fideus-labs/fidnii/commit/1a01abfe4dfb3552e318c77e9cd9f6955b07bb25) Thanks [@thewtex](https://github.com/thewtex)! - Add TIFF loading support via `fromTiff()` helper and `@fideus-labs/fiff`
+
+### Patch Changes
+
+- [#21](https://github.com/fideus-labs/fidnii/pull/21) [`b6125c7`](https://github.com/fideus-labs/fidnii/commit/b6125c7ecd01a649deac2a6bb3eb9f3051a4a002) Thanks [@thewtex](https://github.com/thewtex)! - Limit test parallelism to 8
+
+- [#22](https://github.com/fideus-labs/fidnii/pull/22) [`b39e268`](https://github.com/fideus-labs/fidnii/commit/b39e268fb23a30974c155d2160808ea9bc40db66) Thanks [@thewtex](https://github.com/thewtex)! - Use a cleaner gif for the README
+
 ## 0.3.0
 
 ### Minor Changes
