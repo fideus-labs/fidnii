@@ -9,6 +9,9 @@ logger.warnOnce = (msg, options) => {
 
 export default defineConfig({
   customLogger: logger,
+  worker: {
+    format: "es",
+  },
   server: {
     port: 5174,
     strictPort: true,

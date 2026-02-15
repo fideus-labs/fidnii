@@ -874,7 +874,15 @@ export class OMEZarrNVImage extends NVImage {
         (isTargetLevel && this._omeroComputedForLevel !== this.targetLevelIndex)
 
       if (needsCompute) {
-        const computedOmero = await computeOmeroFromNgffImage(ngffImage)
+        // Pass the chunk cache so decoded chunks from OMERO statistics
+        // computation are reused by subsequent zarrGet() calls.
+        const omeroOpts = this._chunkCache
+          ? ({ cache: this._chunkCache } as Record<string, unknown>)
+          : undefined
+        const computedOmero = await computeOmeroFromNgffImage(
+          ngffImage,
+          omeroOpts,
+        )
         this._omero = computedOmero
         this._omeroComputedForLevel = levelIndex
         this.applyOmeroToHeader()
