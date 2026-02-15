@@ -1,6 +1,6 @@
 {
   "name": "@fideus-labs/fidnii",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Render OME-Zarr images in NiiVue with progressive multi-resolution loading",
   "type": "module",
   "main": "./dist/index.js",
