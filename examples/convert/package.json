@@ -11,6 +11,7 @@
   "dependencies": {
     "@awesome.me/webawesome": "^3.1.0",
     "@fideus-labs/fidnii": "workspace:*",
+    "@fideus-labs/fiff": "^0.3.2",
     "@fideus-labs/ngff-zarr": "^0.10.0",
     "@itk-wasm/image-io": "^1.6.0",
     "@niivue/niivue": "^0.67.0",
