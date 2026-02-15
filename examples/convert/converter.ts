@@ -1,7 +1,9 @@
 /**
- * Image to OME-Zarr conversion pipeline
+ * Image conversion pipeline with multiple output format support
  */
 
+import type { WriteOptions as FiffWriteOptions } from "@fideus-labs/fiff"
+import { toOmeTiff } from "@fideus-labs/fiff"
 import {
   createMetadataWithVersion,
   Methods,
@@ -12,13 +14,32 @@ import {
 } from "@fideus-labs/ngff-zarr"
 import {
   computeOmeroFromNgffImage,
+  fromNgffZarr,
   itkImageToNgffImage,
   toNgffZarrOzx,
 } from "@fideus-labs/ngff-zarr/browser"
-import { readImage } from "@itk-wasm/image-io"
+import { readImage, writeImage } from "@itk-wasm/image-io"
 import type { Image } from "itk-wasm"
 
 export { Methods } from "@fideus-labs/ngff-zarr"
+
+/**
+ * Lazy-load `ngffImageToItkImage` from ngff-zarr's deep module path.
+ *
+ * This function is in ngff-zarr's main (Node) entry point but omitted
+ * from the `/browser` sub-export. The underlying module is fully
+ * browser-compatible (no Node APIs). We use a dynamic import with the
+ * specifier built at runtime so that neither Vite's import analysis
+ * nor TypeScript's module resolution interfere.
+ */
+async function loadNgffImageToItkImage(): Promise<
+  (img: NgffImage) => Promise<Image>
+> {
+  const specifier =
+    "@fideus-labs/ngff-zarr" + "/esm/io/ngff_image_to_itk_image.js"
+  const mod = await import(/* @vite-ignore */ specifier)
+  return mod.ngffImageToItkImage
+}
 
 /**
  * Maximum number of unique labels for auto-detection of label images.
@@ -50,9 +71,86 @@ function isLabelImage(image: Image): boolean {
   return uniqueLabels <= MAX_LABELS_IN_LABEL_IMAGE
 }
 
+/**
+ * Supported output format identifiers.
+ *
+ * - `ozx`: OME-Zarr (.ome.zarr.ozx) — default
+ * - `ome-tiff`: OME-TIFF (.ome.tif) via fiff
+ * - All others: ITK-Wasm `writeImage` formats, keyed by file extension
+ */
+export type OutputFormat =
+  | "ozx"
+  | "ome-tiff"
+  | "nii"
+  | "nii.gz"
+  | "nrrd"
+  | "mha"
+  | "vtk"
+  | "mrc"
+  | "mnc"
+  | "mgh"
+  | "gipl"
+  | "pic"
+  | "bmp"
+  | "jpg"
+  | "png"
+  | "hdf5"
+  | "aim"
+  | "fdf"
+
+/** Human-readable labels for the output format select. */
+export const OUTPUT_FORMAT_LABELS: Record<OutputFormat, string> = {
+  ozx: "OME-Zarr (.ozx)",
+  "ome-tiff": "OME-TIFF (.ome.tif)",
+  nii: "NIfTI (.nii)",
+  "nii.gz": "NIfTI compressed (.nii.gz)",
+  nrrd: "NRRD (.nrrd)",
+  mha: "MetaImage (.mha)",
+  vtk: "VTK (.vtk)",
+  mrc: "MRC (.mrc)",
+  mnc: "MINC (.mnc)",
+  mgh: "MGH (.mgh)",
+  gipl: "GIPL (.gipl)",
+  pic: "BioRad (.pic)",
+  bmp: "BMP (.bmp)",
+  jpg: "JPEG (.jpg)",
+  png: "PNG (.png)",
+  hdf5: "HDF5 (.hdf5)",
+  aim: "Scanco AIM (.aim)",
+  fdf: "Varian FDF (.fdf)",
+}
+
+/** File extension (including dot) for each output format. */
+const FORMAT_EXTENSION: Record<OutputFormat, string> = {
+  ozx: ".ome.zarr.ozx",
+  "ome-tiff": ".ome.tif",
+  nii: ".nii",
+  "nii.gz": ".nii.gz",
+  nrrd: ".nrrd",
+  mha: ".mha",
+  vtk: ".vtk",
+  mrc: ".mrc",
+  mnc: ".mnc",
+  mgh: ".mgh",
+  gipl: ".gipl",
+  pic: ".pic",
+  bmp: ".bmp",
+  jpg: ".jpg",
+  png: ".png",
+  hdf5: ".hdf5",
+  aim: ".aim",
+  fdf: ".fdf",
+}
+
+/** Ordered list of all output formats for the UI select. */
+export const OUTPUT_FORMATS: OutputFormat[] = Object.keys(
+  OUTPUT_FORMAT_LABELS,
+) as OutputFormat[]
+
 export interface ConversionOptions {
   chunkSize: number
   method: Methods
+  outputFormat: OutputFormat
 }
 
 export interface ConversionProgress {
@@ -65,7 +163,7 @@ export type ProgressCallback = (progress: ConversionProgress) => void
 
 export interface ConversionResult {
   multiscales: Multiscales
-  ozxData: Uint8Array
+  outputData: Uint8Array
   filename: string
 }
 
@@ -92,6 +190,55 @@ function filenameFromUrl(url: string): string {
     const parts = url.split("/").filter(Boolean)
     return parts[parts.length - 1] || "image"
   }
+}
+
+/**
+ * Check whether a URL looks like an OME-Zarr resource.
+ *
+ * @param url - The URL to check
+ * @returns true if the URL path ends with `.ome.zarr` (with optional
+ *   trailing slash)
+ */
+export function isOmeZarrUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    const path = parsed.pathname.replace(/\/+$/, "").toLowerCase()
+    return path.endsWith(".ome.zarr")
+  } catch {
+    return url.replace(/\/+$/, "").toLowerCase().endsWith(".ome.zarr")
+  }
+}
+
+/**
+ * Load an OME-Zarr dataset from a remote URL.
+ *
+ * Uses `fromNgffZarr` to parse the remote store and return a
+ * `Multiscales` object for direct viewing (no conversion needed).
+ *
+ * @param url - The OME-Zarr URL to load
+ * @param onProgress - Optional callback for progress updates
+ * @returns The loaded `Multiscales` from the remote store
+ * @throws If the URL cannot be loaded as OME-Zarr
+ */
+export async function loadOmeZarrUrl(
+  url: string,
+  onProgress?: ProgressCallback,
+): Promise<Multiscales> {
+  onProgress?.({
+    stage: "reading",
+    percent: 0,
+    message: "Loading OME-Zarr metadata...",
+  })
+
+  const multiscales = await fromNgffZarr(url)
+
+  onProgress?.({
+    stage: "done",
+    percent: 100,
+    message: "OME-Zarr loaded",
+  })
+
+  return multiscales
 }
 
 /**
@@ -164,9 +311,97 @@ export async function fetchImageFile(
 }
 
 /**
- * Convert an image file to OME-Zarr 0.5 format
+ * Generate the output filename from the input name and output format.
+ *
+ * @param inputName - The original input filename (or URL-derived name)
+ * @param format - The target output format
+ * @returns A filename with the appropriate extension
  */
-export async function convertToOmeZarr(
+function outputFilename(inputName: string, format: OutputFormat): string {
+  // Strip existing extension(s) — handle compound extensions like .nii.gz
+  const baseName = inputName
+    .replace(/\.ome\.zarr\.ozx$/i, "")
+    .replace(/\.ome\.zarr$/i, "")
+    .replace(/\.ome\.tiff?$/i, "")
+    .replace(/\.nii\.gz$/i, "")
+    .replace(/\.gipl\.gz$/i, "")
+    .replace(/\.mnc\.gz$/i, "")
+    .replace(/\.mgh\.gz$/i, "")
+    .replace(/\.iwi\.cbor\.zst$/i, "")
+    .replace(/\.iwi\.cbor$/i, "")
+    .replace(/\.[^/.]+$/, "")
+  return `${baseName}${FORMAT_EXTENSION[format]}`
+}
+
+/**
+ * Package a `Multiscales` object into the requested output format.
+ *
+ * @param multiscales - The multiscale pyramid to package
+ * @param inputName - The original input filename (used to derive the
+ *   output filename)
+ * @param format - The target output format
+ * @param onProgress - Optional callback for progress updates
+ * @returns The serialized file bytes and output filename
+ */
+async function packageOutput(
+  multiscales: Multiscales,
+  inputName: string,
+  format: OutputFormat,
+  onProgress?: ProgressCallback,
+): Promise<{ outputData: Uint8Array; filename: string }> {
+  const report = (percent: number, message: string) => {
+    onProgress?.({ stage: "packaging", percent, message })
+  }
+
+  const filename = outputFilename(inputName, format)
+
+  if (format === "ozx") {
+    report(80, "Creating OZX file...")
+    const ozxData = await toNgffZarrOzx(multiscales, {
+      enabledRfcs: [4],
+    })
+    return { outputData: ozxData, filename }
+  }
+
+  if (format === "ome-tiff") {
+    report(80, "Creating OME-TIFF file...")
+    const options: FiffWriteOptions = {
+      compression: "deflate",
+    }
+    const buffer = await toOmeTiff(multiscales, options)
+    return { outputData: new Uint8Array(buffer), filename }
+  }
+
+  // ITK-Wasm formats: convert the highest-resolution NgffImage
+  // back to an ITK-Wasm Image, then serialize with writeImage.
+  // ngffImageToItkImage lives in ngff-zarr's main (Node) entry point
+  // but not the /browser sub-export. The module itself is fully
+  // browser-compatible, so we lazy-import it via its deep path to
+  // bypass Vite's static exports-map check.
+  report(80, "Converting to ITK-Wasm Image...")
+  const ngffImageToItkImage = await loadNgffImageToItkImage()
+  const highResImage = multiscales.images[0]
+  const itkImage = await ngffImageToItkImage(highResImage)
+
+  report(90, `Writing ${FORMAT_EXTENSION[format]} file...`)
+  const { serializedImage, webWorker } = await writeImage(itkImage, filename)
+  ;(webWorker as Worker | null)?.terminate()
+
+  return { outputData: serializedImage.data, filename }
+}
+
+/**
+ * Convert an image file to the requested output format.
+ *
+ * The pipeline reads the input image, generates a multiscale pyramid,
+ * then packages the result in the requested format.
+ *
+ * @param file - The input image file
+ * @param options - Conversion options (chunk size, method, output format)
+ * @param onProgress - Optional callback for progress updates
+ * @returns The conversion result with multiscales, output bytes, and filename
+ */
+export async function convertImage(
   file: File,
   options: ConversionOptions,
   onProgress?: ProgressCallback,
@@ -188,7 +423,7 @@ export async function convertToOmeZarr(
     data: new Uint8Array(arrayBuffer),
     path: file.name,
   })
-  webWorker?.terminate()
+  ;(webWorker as Worker | null)?.terminate()
 
   // Auto-detect label images when the user hasn't changed from the default method.
   // Label images use mode-based downsampling to preserve discrete label values.
@@ -238,23 +473,42 @@ export async function convertToOmeZarr(
     chunks: multiscalesV04.chunks,
   })
 
-  // Stage 4: Package as OZX
-  report("packaging", 80, "Creating OZX file...")
-  const ozxData = await toNgffZarrOzx(multiscales, {
-    enabledRfcs: [4], // Enable RFC-4 for anatomical orientation
-  })
-
-  // Generate output filename
-  const baseName = file.name.replace(/\.[^/.]+$/, "")
-  const filename = `${baseName}.ome.zarr.ozx`
+  // Stage 4: Package in the requested output format
+  const { outputData, filename } = await packageOutput(
+    multiscales,
+    file.name,
+    options.outputFormat,
+    onProgress,
+  )
 
   report("done", 100, "Conversion complete!")
 
   return {
     multiscales,
-    ozxData,
+    outputData,
     filename,
   }
+}
+
+/**
+ * Export an already-loaded `Multiscales` to the requested output format.
+ *
+ * Used when the source is an OME-Zarr URL that was loaded directly
+ * (no input file conversion needed).
+ *
+ * @param multiscales - The loaded multiscale pyramid
+ * @param name - A base name for the output file (e.g. from the URL)
+ * @param format - The target output format
+ * @param onProgress - Optional callback for progress updates
+ * @returns The serialized file bytes and output filename
+ */
+export async function exportMultiscales(
+  multiscales: Multiscales,
+  name: string,
+  format: OutputFormat,
+  onProgress?: ProgressCallback,
+): Promise<{ outputData: Uint8Array; filename: string }> {
+  return packageOutput(multiscales, name, format, onProgress)
 }
 
 /**
@@ -262,7 +516,7 @@ export async function convertToOmeZarr(
  */
 export function downloadFile(data: Uint8Array, filename: string): void {
   const blob = new Blob([data as unknown as BlobPart], {
-    type: "application/zip",
+    type: "application/octet-stream",
   })
   const url = URL.createObjectURL(blob)
   const a = document.createElement("a")

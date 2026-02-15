@@ -1,5 +1,5 @@
 /**
- * Convert to OME-Zarr - Main UI module
+ * Image Converter - Main UI module
  */
 
 import "@awesome.me/webawesome/dist/components/button/button.js"
@@ -17,12 +17,18 @@ import { Niivue, SLICE_TYPE } from "@niivue/niivue"
 import {
   type ConversionProgress,
   type ConversionResult,
-  convertToOmeZarr,
+  convertImage,
   downloadFile,
+  exportMultiscales,
   fetchImageFile,
   formatFileSize,
   getMultiscalesInfo,
+  isOmeZarrUrl,
+  loadOmeZarrUrl,
   Methods,
+  OUTPUT_FORMAT_LABELS,
+  OUTPUT_FORMATS,
+  type OutputFormat,
 } from "./converter.ts"
 
 // Color scheme: follow the browser/OS preference
@@ -60,6 +66,9 @@ const urlInput = document.getElementById("url-input") as HTMLInputElement
 const urlLoadBtn = document.getElementById("url-load-btn") as HTMLElement
 
 // Settings inputs
+const outputFormatSelect = document.getElementById(
+  "output-format",
+) as HTMLSelectElement
 const chunkSizeInput = document.getElementById("chunk-size") as HTMLInputElement
 const methodSelect = document.getElementById("method") as HTMLSelectElement
 const colormapSelect = document.getElementById("colormap") as HTMLSelectElement
@@ -90,6 +99,10 @@ const DEFAULT_CHUNK_SIZE_3D = "96"
 // State
 let selectedFile: File | null = null
 let lastResult: ConversionResult | null = null
+/** Multiscales loaded directly from an OME-Zarr URL (no conversion). */
+let loadedMultiscales: Multiscales | null = null
+/** Base name derived from the OME-Zarr URL (for output filenames). */
+let loadedName = ""
 let nv: Niivue | null = null
 let currentImage: OMEZarrNVImage | null = null
 
@@ -100,6 +113,14 @@ const SLICE_TYPE_MAP: Record<string, SLICE_TYPE> = {
   sagittal: SLICE_TYPE.SAGITTAL,
   multiplanar: SLICE_TYPE.MULTIPLANAR,
   render: SLICE_TYPE.RENDER,
+}
+
+// Populate output format select from the canonical list
+for (const format of OUTPUT_FORMATS) {
+  const option = document.createElement("wa-option")
+  option.setAttribute("value", format)
+  option.textContent = OUTPUT_FORMAT_LABELS[format]
+  outputFormatSelect.appendChild(option)
 }
 
 /** Check whether the volume has a "z" spatial axis. */
@@ -141,9 +162,33 @@ function initNiivue(): void {
   nv.attachToCanvas(canvas)
 }
 
+/**
+ * Get the currently selected output format from the UI.
+ */
+function getSelectedFormat(): OutputFormat {
+  return ((outputFormatSelect as unknown as { value: string }).value ||
+    "ozx") as OutputFormat
+}
+
+/**
+ * Update the convert button label depending on the current state.
+ *
+ * - When an OME-Zarr URL is loaded (no conversion needed), the button
+ *   reads "Export & Download".
+ * - Otherwise it reads "Convert & Download".
+ */
+function updateConvertButtonLabel(): void {
+  convertBtn.textContent =
+    loadedMultiscales && !selectedFile
+      ? "Export & Download"
+      : "Convert & Download"
+}
+
 // File handling
 function handleFile(file: File, { fromUrl = false } = {}): void {
   selectedFile = file
+  loadedMultiscales = null
+  loadedName = ""
   fileInfo.textContent = `${file.name} (${formatFileSize(file.size)})`
   convertBtn.removeAttribute("disabled")
   lastResult = null
@@ -168,15 +213,14 @@ function handleFile(file: File, { fromUrl = false } = {}): void {
     : DEFAULT_CHUNK_SIZE_3D
   ;(chunkSizeInput as unknown as { value: string }).value = chunkDefault
 
-  // Auto-start conversion immediately
-  void startConversion()
+  updateConvertButtonLabel()
 }
 
 /**
- * Fetch an image from a remote URL and feed it into the conversion
- * pipeline. The URL is fetched with progress reporting, then the
- * resulting `File` is passed to `handleFile` which triggers
- * auto-conversion.
+ * Fetch an image from a remote URL and feed it into the UI.
+ *
+ * OME-Zarr URLs are loaded directly into the viewer without
+ * conversion. Other URLs are fetched as files for later conversion.
  *
  * @param url - The remote URL to fetch
  */
@@ -184,33 +228,51 @@ async function handleUrl(url: string): Promise<void> {
   const trimmed = url.trim()
   if (!trimmed) return
 
-  // Disable the load button and show progress while fetching
+  // Disable controls and show progress while loading
   urlLoadBtn.setAttribute("disabled", "")
   convertBtn.setAttribute("disabled", "")
   progressContainer.classList.add("visible")
 
   try {
-    const file = await fetchImageFile(trimmed, updateProgress)
+    if (isOmeZarrUrl(trimmed)) {
+      // --- OME-Zarr URL: load directly into the viewer ---
+      selectedFile = null
+      lastResult = null
+      const multiscales = await loadOmeZarrUrl(trimmed, updateProgress)
+      loadedMultiscales = multiscales
+      loadedName = trimmed.replace(/\/+$/, "").split("/").pop() || "image"
+      fileInfo.textContent = `OME-Zarr: ${loadedName}`
+
+      // Show the multiscales table immediately and kick off
+      // the preview in the background (progressive loading from
+      // the remote store can be slow).
+      updateMultiscalesTable({ multiscales })
+      void showPreview({ multiscales })
+
+      convertBtn.removeAttribute("disabled")
+    } else {
+      // --- Regular image URL: fetch as file ---
+      const file = await fetchImageFile(trimmed, updateProgress)
+      handleFile(file, { fromUrl: true })
+    }
 
     // Update the browser URL so the current state is shareable
     const newUrl = new URL(window.location.href)
     newUrl.searchParams.set("url", trimmed)
     history.replaceState(null, "", newUrl)
-
-    handleFile(file, { fromUrl: true })
   } catch (error) {
     console.error("Failed to fetch URL:", error)
     const message = error instanceof Error ? error.message : String(error)
     progressText.textContent = `Error: ${message}`
   } finally {
     urlLoadBtn.removeAttribute("disabled")
-    // Re-enable the convert button if a file is currently selected.
-    // If no file has been selected yet, keep it disabled.
-    if (selectedFile) {
+    // Re-enable the convert button if we have something to work with
+    if (selectedFile || loadedMultiscales) {
       convertBtn.removeAttribute("disabled")
     } else {
       convertBtn.setAttribute("disabled", "")
     }
+    updateConvertButtonLabel()
   }
 }
 
@@ -277,7 +339,9 @@ function set3DControlsEnabled(enabled: boolean): void {
 }
 
 // Preview with NiiVue
-async function showPreview(result: ConversionResult): Promise<void> {
+async function showPreview(
+  result: Pick<ConversionResult, "multiscales">,
+): Promise<void> {
   initNiivue()
   if (!nv) return
 
@@ -362,7 +426,9 @@ function highlightLevel(levelIndex: number): void {
 }
 
 // Update multiscales table
-function updateMultiscalesTable(result: ConversionResult): void {
+function updateMultiscalesTable(
+  result: Pick<ConversionResult, "multiscales">,
+): void {
   const info = getMultiscalesInfo(result.multiscales)
   const tbody = multiscalesTable.querySelector(
     "tbody",
@@ -390,7 +456,12 @@ function updateMultiscalesTable(result: ConversionResult): void {
   multiscalesCard.classList.remove("hidden")
 }
 
-// Conversion logic (shared by auto-convert and manual re-convert)
+/**
+ * Convert a local file and download the result.
+ *
+ * Reads the file, generates a multiscale pyramid, packages in the
+ * selected output format, shows the preview, and downloads.
+ */
 async function startConversion(): Promise<void> {
   if (!selectedFile) return
 
@@ -406,9 +477,10 @@ async function startConversion(): Promise<void> {
       ),
       method: ((methodSelect as unknown as { value: string }).value ||
         "itkwasm_gaussian") as Methods,
+      outputFormat: getSelectedFormat(),
     }
 
-    lastResult = await convertToOmeZarr(selectedFile, options, updateProgress)
+    lastResult = await convertImage(selectedFile, options, updateProgress)
 
     // Sync the method dropdown if auto-detection changed it
     // (e.g. label image detected while default Gaussian was selected)
@@ -426,8 +498,8 @@ async function startConversion(): Promise<void> {
     // Update table
     updateMultiscalesTable(lastResult)
 
-    // Auto-download
-    downloadFile(lastResult.ozxData, lastResult.filename)
+    // Download
+    downloadFile(lastResult.outputData, lastResult.filename)
   } catch (error) {
     console.error("Conversion failed:", error)
     progressText.textContent = `Error: ${
@@ -438,16 +510,54 @@ async function startConversion(): Promise<void> {
   }
 }
 
-// Convert button (re-convert with current settings)
+/**
+ * Export an already-loaded OME-Zarr to the selected output format
+ * and trigger a download.
+ */
+async function startExport(): Promise<void> {
+  if (!loadedMultiscales) return
+
+  convertBtn.setAttribute("disabled", "")
+  progressContainer.classList.add("visible")
+
+  try {
+    const format = getSelectedFormat()
+    updateProgress({ stage: "packaging", percent: 0, message: "Exporting..." })
+
+    const { outputData, filename } = await exportMultiscales(
+      loadedMultiscales,
+      loadedName,
+      format,
+      updateProgress,
+    )
+
+    updateProgress({ stage: "done", percent: 100, message: "Export complete!" })
+    downloadFile(outputData, filename)
+  } catch (error) {
+    console.error("Export failed:", error)
+    progressText.textContent = `Error: ${
+      error instanceof Error ? error.message : String(error)
+    }`
+  } finally {
+    convertBtn.removeAttribute("disabled")
+  }
+}
+
+// Convert / Export button
 convertBtn.addEventListener("click", () => {
-  void startConversion()
+  if (loadedMultiscales && !selectedFile) {
+    void startExport()
+  } else {
+    void startConversion()
+  }
 })
 
 // Settings change handlers for live preview updates
 colormapSelect.addEventListener("change", () => {
-  if (lastResult && nv && nv.volumes.length > 0) {
+  const ms = lastResult?.multiscales ?? loadedMultiscales
+  if (ms && nv && nv.volumes.length > 0) {
     // Label images use discrete colormaps managed by the library
-    if (lastResult.multiscales.method === Methods.ITKWASM_LABEL_IMAGE) {
+    if (ms.method === Methods.ITKWASM_LABEL_IMAGE) {
       return
     }
     const colormap =
@@ -458,19 +568,22 @@ colormapSelect.addEventListener("change", () => {
 })
 
 opacitySlider.addEventListener("input", () => {
-  if (lastResult && nv && nv.volumes.length > 0) {
+  const ms = lastResult?.multiscales ?? loadedMultiscales
+  if (ms && nv && nv.volumes.length > 0) {
     updateGradientSettings()
   }
 })
 
 silhouetteSlider.addEventListener("input", () => {
-  if (lastResult && nv && nv.volumes.length > 0) {
+  const ms = lastResult?.multiscales ?? loadedMultiscales
+  if (ms && nv && nv.volumes.length > 0) {
     updateGradientSettings()
   }
 })
 
 sliceTypeSelect.addEventListener("change", () => {
-  if (lastResult && nv && nv.volumes.length > 0) {
+  const ms = lastResult?.multiscales ?? loadedMultiscales
+  if (ms && nv && nv.volumes.length > 0) {
     const sliceTypeStr =
       (sliceTypeSelect as unknown as { value: string }).value || "multiplanar"
     const sliceType = SLICE_TYPE_MAP[sliceTypeStr] ?? SLICE_TYPE.MULTIPLANAR

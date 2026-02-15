@@ -50,6 +50,9 @@ importers:
       '@fideus-labs/fidnii':
         specifier: workspace:*
         version: link:../../fidnii
+      '@fideus-labs/fiff':
+        specifier: ^0.3.2
+        version: 0.3.2(@fideus-labs/ngff-zarr@0.10.0)
       '@fideus-labs/ngff-zarr':
         specifier: ^0.10.0
         version: 0.10.0
