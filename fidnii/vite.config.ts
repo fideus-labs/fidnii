@@ -55,6 +55,7 @@ export default defineConfig({
     // inlines fizarrita's code and the relative worker URL resolves to the
     // wrong location (.vite/deps/ instead of fizarrita's dist/).
     exclude: [
+      "@fideus-labs/fiff",
       "@fideus-labs/fizarrita",
       "@fideus-labs/ngff-zarr",
       "@fideus-labs/ngff-zarr/browser",

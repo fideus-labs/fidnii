@@ -5,6 +5,7 @@ import {
   BufferManager,
   buildSelection,
   computeChannelMinMax,
+  fromTiff,
   getChannelInfo,
   getChunkShape,
   getRGBNiftiDataType,
@@ -15,8 +16,10 @@ import {
   normalizedToWorld,
   normalizeToUint8,
   OMEZarrNVImage,
+  TiffStore,
   worldToNormalized,
 } from "@fideus-labs/fidnii"
+import { buildTiff, makeImageTags } from "@fideus-labs/fiff"
 import { fromNgffZarr } from "@fideus-labs/ngff-zarr/browser"
 import { DRAG_MODE, Niivue, SLICE_TYPE } from "@niivue/niivue"
 
@@ -39,6 +42,10 @@ declare global {
       worldToNormalized: typeof worldToNormalized
       BufferManager: typeof BufferManager
       NiftiDataType: typeof NiftiDataType
+      fromTiff: typeof fromTiff
+      TiffStore: typeof TiffStore
+      buildTiff: typeof buildTiff
+      makeImageTags: typeof makeImageTags
     }
   }
 }
@@ -58,10 +65,18 @@ window.fidnii = {
   worldToNormalized,
   BufferManager,
   NiftiDataType,
+  fromTiff,
+  TiffStore,
+  buildTiff,
+  makeImageTags,
 }
 
 const DATA_URL =
   "https://ome-zarr-scivis.s3.us-east-1.amazonaws.com/v0.5/96x2/beechnut.ome.zarr"
+
+// Support ?tiff=<url> to load TIFF files via fromTiff()
+const urlParams = new URLSearchParams(window.location.search)
+const TIFF_URL = urlParams.get("tiff")
 
 // DOM elements — info panel
 const statusEl = document.getElementById("status")!
@@ -260,7 +275,9 @@ async function loadImage(
     nv2.removeVolume(nv2.volumes[0])
   }
 
-  const multiscales = await fromNgffZarr(DATA_URL)
+  const multiscales = TIFF_URL
+    ? await fromTiff(TIFF_URL)
+    : await fromNgffZarr(DATA_URL)
 
   const image = await OMEZarrNVImage.create({
     multiscales,

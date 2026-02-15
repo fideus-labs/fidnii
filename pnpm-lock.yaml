@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@fideus-labs/ngff-zarr': ^0.9.0
+  '@fideus-labs/fiff': ^0.3.2
   zarrita: ^0.6.1
   '@fideus-labs/fizarrita': ^1.3.0
   '@fideus-labs/worker-pool': ^1.0.0
@@ -51,8 +51,8 @@ importers:
         specifier: workspace:*
         version: link:../../fidnii
       '@fideus-labs/ngff-zarr':
-        specifier: ^0.9.0
-        version: 0.9.0
+        specifier: ^0.10.0
+        version: 0.10.0
       '@itk-wasm/image-io':
         specifier: ^1.6.0
         version: 1.6.0
@@ -76,8 +76,8 @@ importers:
         specifier: workspace:*
         version: link:../../fidnii
       '@fideus-labs/ngff-zarr':
-        specifier: ^0.9.0
-        version: 0.9.0
+        specifier: ^0.10.0
+        version: 0.10.0
       '@niivue/niivue':
         specifier: ^0.67.0
         version: 0.67.0
@@ -94,9 +94,12 @@ importers:
 
   fidnii:
     dependencies:
+      '@fideus-labs/fiff':
+        specifier: ^0.3.2
+        version: 0.3.2(@fideus-labs/ngff-zarr@0.10.0)
       '@fideus-labs/ngff-zarr':
-        specifier: ^0.9.0
-        version: 0.9.0
+        specifier: ^0.10.0
+        version: 0.10.0
       '@itk-wasm/downsample':
         specifier: ^1.8.1
         version: 1.8.1
@@ -509,13 +512,21 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@fideus-labs/fiff@0.3.2':
+    resolution: {integrity: sha512-Ci+AJ5sar0FZkXSakRfW26vRV2rvc3o26ZXUh2AT21TkeaYqhhgiAhBpKMVsMIPe9ToVk5iSRO/maW0iSxg3TA==}
+    peerDependencies:
+      '@fideus-labs/ngff-zarr': ^0.10.0
+    peerDependenciesMeta:
+      '@fideus-labs/ngff-zarr':
+        optional: true
+
   '@fideus-labs/fizarrita@1.3.0':
     resolution: {integrity: sha512-jjczNtv9GKqJupT1ACxFvjmAnOvpDCk/6+Wia/aIuzw/JRcNH+rhK0arNYLIrqGEhv3q7+irE2IPTzAJleSOKw==}
     peerDependencies:
       zarrita: ^0.6.1
 
-  '@fideus-labs/ngff-zarr@0.9.0':
-    resolution: {integrity: sha512-p87JLa0HeORDrlqXO98eRSAD1QBssF9kvCcmLz3vWf5wNCyHUaG5BztKPAbwdbdOdUsnUsBLNVanDWq9G/VQ9w==}
+  '@fideus-labs/ngff-zarr@0.10.0':
+    resolution: {integrity: sha512-mVVw/xnYeuGZekVkP9zhISoJwPj7YA1d2bM4eHjVAWG0NlmS6vv6j4b0kBLKRBOGe6qbtGuyZBY038XiN8J48w==}
 
   '@fideus-labs/worker-pool@1.0.0':
     resolution: {integrity: sha512-Mwx8fFKKpTUcEtR7w45MQJ/RnZFUPBtefEvGTZGlZMAVSfD7W61rpB8ZdgS4V0CXfppwcb90BF7F/aANWvupnA==}
@@ -619,6 +630,9 @@ packages:
 
   '@perma/map@1.0.3':
     resolution: {integrity: sha512-Bf5njk0fnJGTFE2ETntq0N1oJ6YdCPIpTDn3R3KYZJQdeYSOCNL7mBrFlGnbqav8YQhJA/p81pvHINX9vAtHkQ==}
+
+  '@petamoriken/float16@3.9.3':
+    resolution: {integrity: sha512-8awtpHXCx/bNpFt4mt2xdkgtgVvKqty8VbjHI/WWWQuEw+KLzFot3f4+LkQY9YmOtq7A5GdOnqoIC8Pdygjk2g==}
 
   '@playwright/test@1.58.2':
     resolution: {integrity: sha512-akea+6bHYBBfA9uQqSYmlJXn61cTa+jbO87xVLCWbTqbWadRVmhxlXATaOjOgcBaWU4ePo0wB41KMFv3o35IXA==}
@@ -1241,6 +1255,10 @@ packages:
   function-bind@1.1.2:
     resolution: {integrity: sha512-7XHNxH7qX9xG5mIwxkhumTox/MIRNcOgDrxWsMt2pAr23WHp6MrRlN7FBSFpCpr+oVO0F744iUgR82nJMfG2SA==}
 
+  geotiff@3.0.3:
+    resolution: {integrity: sha512-yRoDQDYxWYiB421p0cbxJvdy79OlQW+rxDI9GDbIUeWCAh6YAZ0vlTKF448EAiEuuUpBsNaegd2flavF0p+kvw==}
+    engines: {node: '>=10.19'}
+
   get-caller-file@2.0.5:
     resolution: {integrity: sha512-DyFP3BM/3YHTQOCUL/w0OZHR0lpKeGrxotcHWcqNEdnltqFwXVfhEBQ94eIo34AfQpo0rGki4cyIiftY06h2Fg==}
     engines: {node: 6.* || 8.* || >= 10.*}
@@ -1535,6 +1553,9 @@ packages:
     resolution: {integrity: sha512-+vS+yywGQW6CN1J1hbGkez//6ixGHIQqfxDN/d3JDm531w9GfGt2lAWTDfZTw/CEl80XsN0raFcnEraR3ldw9g==}
     hasBin: true
 
+  lerc@3.0.0:
+    resolution: {integrity: sha512-Rm4J/WaHhRa93nCN2mwWDZFoRVF18G1f47C+kvQWyHGEZxFpTUi73p7lMVSAndyxGt6lJ2/CFbOcf9ra5p8aww==}
+
   lines-and-columns@1.2.4:
     resolution: {integrity: sha512-7ylylesZQ/PV29jhEDl3Ufjo6ZX7gCqJr5F7PKrqc93v7fzSymt1BpwEU8nAUXs8qzzvqhbjhK5QZg6Mt/HkBg==}
 
@@ -1716,9 +1737,15 @@ packages:
   package-manager-detector@0.2.11:
     resolution: {integrity: sha512-BEnLolu+yuz22S56CU1SUKq3XC3PkwD5wv4ikR4MfGvnRVcmzXR9DwSlW2fEamyTPyXHomBJRzgapeuBvRNzJQ==}
 
+  pako@2.1.0:
+    resolution: {integrity: sha512-w+eufiZ1WuJYgPXbV/PO3NCMEc3xqylkKHzp8bxp1uW4qaSNQUkwmLLEc3kKsfz8lpV1F8Ht3U1Cm+9Srog2ug==}
+
   parent-module@1.0.1:
     resolution: {integrity: sha512-GQ2EWRpQV8/o+Aw8YqtfZZPfNRWZYkbidE9k5rpl/hC3vtHHBfGm2Ifi6qWV+coDGkrUKZAxE3Lot5kcsRlh+g==}
     engines: {node: '>=6'}
+
+  parse-headers@2.0.6:
+    resolution: {integrity: sha512-Tz11t3uKztEW5FEVZnj1ox8GKblWn+PvHY9TmJV5Mll2uHEwRdR/5Li1OlXoECjLYkApdhWy44ocONwXLiKO5A==}
 
   parse-json@5.2.0:
     resolution: {integrity: sha512-ayCKvm/phCGxOkYRSCM82iDwct8/EonSEgCSxWxD7ve6jHggsFl4fZVQBPRNgQoKiuV/odhFrGzQXZwbifC8Rg==}
@@ -1817,6 +1844,10 @@ packages:
 
   queue-microtask@1.2.3:
     resolution: {integrity: sha512-NuaNSa6flKT5JaSYQzJok04JzTL1CA6aGhv5rfLW3PgqA+M2ChpZQnAC8h8i4ZFkBS8X5RqkDBHA7r4hej3K9A==}
+
+  quick-lru@6.1.2:
+    resolution: {integrity: sha512-AAFUA5O1d83pIHEhJwWCq/RQcRukCkn/NSm2QsTEMle5f2hP0ChI2+3Xb051PZCkLryI/Ir1MVKviT2FIloaTQ==}
+    engines: {node: '>=12'}
 
   rabin-rs@2.1.0:
     resolution: {integrity: sha512-5y72gAXPzIBsAMHcpxZP8eMDuDT98qMP1BqSDHRbHkJJXEgWIN1lA47LxUqzsK6jknOJtgfkQr9v+7qMlFDm6g==}
@@ -2068,6 +2099,9 @@ packages:
   wasm-feature-detect@1.8.0:
     resolution: {integrity: sha512-zksaLKM2fVlnB5jQQDqKXXwYHLQUVH9es+5TOOHwGOVJOCeRBCiPjwSg+3tN2AdTCzjgli4jijCH290kXb/zWQ==}
 
+  web-worker@1.5.0:
+    resolution: {integrity: sha512-RiMReJrTAiA+mBjGONMnjVDP2u3p9R1vkcGz6gDIrOMT3oGuYwX2WRMYI9ipkphSuE5XKEhydbhNEJh4NY9mlw==}
+
   webidl-conversions@3.0.1:
     resolution: {integrity: sha512-2JAn3z8AR6rjK8Sm8orRC0h/bcl/DqL7tRPdGZ4I1CjdF+EaMLmYxBHyXuKL849eucPFhvBoxMsflfOb8kxaeQ==}
 
@@ -2089,6 +2123,9 @@ packages:
 
   wrappy@1.0.2:
     resolution: {integrity: sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ==}
+
+  xml-utils@1.10.2:
+    resolution: {integrity: sha512-RqM+2o1RYs6T8+3DzDSoTRAUfrvaejbVHcp3+thnAtDKo8LskR+HomLajEy5UjTz24rpka7AxVBRR3g2wTUkJA==}
 
   xtend@4.0.2:
     resolution: {integrity: sha512-LKYU1iAXJXUgAXn9URjiu+MWhyUXHsvfp7mcuYm9dSUKK0/CjtrUwFAxD82/mCWbtLsGjFIad0wIsod4zrTAEQ==}
@@ -2120,6 +2157,9 @@ packages:
 
   zod@4.3.6:
     resolution: {integrity: sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg==}
+
+  zstddec@0.2.0:
+    resolution: {integrity: sha512-oyPnDa1X5c13+Y7mA/FDMNJrn4S8UNBe0KCqtDmor40Re7ALrPN6npFwyYVRRh+PqozZQdeg23QtbcamZnG5rA==}
 
 snapshots:
 
@@ -2535,12 +2575,20 @@ snapshots:
   '@esbuild/win32-x64@0.27.3':
     optional: true
 
+  '@fideus-labs/fiff@0.3.2(@fideus-labs/ngff-zarr@0.10.0)':
+    dependencies:
+      geotiff: 3.0.3
+      pako: 2.1.0
+      zarrita: 0.6.1
+    optionalDependencies:
+      '@fideus-labs/ngff-zarr': 0.10.0
+
   '@fideus-labs/fizarrita@1.3.0(zarrita@0.6.1)':
     dependencies:
       '@fideus-labs/worker-pool': 1.0.0
       zarrita: 0.6.1
 
-  '@fideus-labs/ngff-zarr@0.9.0':
+  '@fideus-labs/ngff-zarr@0.10.0':
     dependencies:
       '@fideus-labs/fizarrita': 1.3.0(zarrita@0.6.1)
       '@fideus-labs/worker-pool': 1.0.0
@@ -2702,6 +2750,8 @@ snapshots:
     dependencies:
       '@multiformats/murmur3': 2.2.0
       murmurhash3js-revisited: 3.0.0
+
+  '@petamoriken/float16@3.9.3': {}
 
   '@playwright/test@1.58.2':
     dependencies:
@@ -3260,6 +3310,17 @@ snapshots:
 
   function-bind@1.1.2: {}
 
+  geotiff@3.0.3:
+    dependencies:
+      '@petamoriken/float16': 3.9.3
+      lerc: 3.0.0
+      pako: 2.1.0
+      parse-headers: 2.0.6
+      quick-lru: 6.1.2
+      web-worker: 1.5.0
+      xml-utils: 1.10.2
+      zstddec: 0.2.0
+
   get-caller-file@2.0.5: {}
 
   get-intrinsic@1.3.0:
@@ -3578,6 +3639,8 @@ snapshots:
       lefthook-windows-arm64: 2.1.0
       lefthook-windows-x64: 2.1.0
 
+  lerc@3.0.0: {}
+
   lines-and-columns@1.2.4: {}
 
   lit-element@4.2.2:
@@ -3719,9 +3782,13 @@ snapshots:
     dependencies:
       quansync: 0.2.11
 
+  pako@2.1.0: {}
+
   parent-module@1.0.1:
     dependencies:
       callsites: 3.1.0
+
+  parse-headers@2.0.6: {}
 
   parse-json@5.2.0:
     dependencies:
@@ -3806,6 +3873,8 @@ snapshots:
   quansync@0.2.11: {}
 
   queue-microtask@1.2.3: {}
+
+  quick-lru@6.1.2: {}
 
   rabin-rs@2.1.0: {}
 
@@ -4059,6 +4128,8 @@ snapshots:
 
   wasm-feature-detect@1.8.0: {}
 
+  web-worker@1.5.0: {}
+
   webidl-conversions@3.0.1: {}
 
   whatwg-url@5.0.0:
@@ -4087,6 +4158,8 @@ snapshots:
       strip-ansi: 6.0.1
 
   wrappy@1.0.2: {}
+
+  xml-utils@1.10.2: {}
 
   xtend@4.0.2: {}
 
@@ -4119,3 +4192,5 @@ snapshots:
   zod@3.25.76: {}
 
   zod@4.3.6: {}
+
+  zstddec@0.2.0: {}

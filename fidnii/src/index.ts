@@ -34,6 +34,8 @@
  * ```
  */
 
+export type { TiffStoreOptions } from "@fideus-labs/fiff"
+export { TiffStore } from "@fideus-labs/fiff"
 // Re-export Methods enum so consumers can check isLabelImage or compare method values
 export { Methods } from "@fideus-labs/ngff-zarr"
 // Worker pool lifecycle (re-exported from ngff-zarr)
@@ -72,6 +74,9 @@ export type {
 } from "./events.js"
 // Event system (browser-native EventTarget API)
 export { OMEZarrNVImageEvent } from "./events.js"
+export type { FromTiffOptions } from "./fromTiff.js"
+// TIFF support (via @fideus-labs/fiff)
+export { fromTiff } from "./fromTiff.js"
 // RGB normalization utilities
 export type { ChannelWindow } from "./normalize.js"
 export { computeChannelMinMax, normalizeToUint8 } from "./normalize.js"
