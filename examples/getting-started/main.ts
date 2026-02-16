@@ -17,7 +17,11 @@ async function main() {
   const canvas = document.getElementById("gl") as HTMLCanvasElement
 
   // Initialize NiiVue
-  const nv = new Niivue({ backColor: [0, 0, 0, 1] })
+  const nv = new Niivue({
+    backColor: [0, 0, 0, 1],
+    isOrientCube: false,
+    isOrientationTextVisible: false,
+  })
   await nv.attachToCanvas(canvas)
   nv.setSliceType(nv.sliceTypeRender)
 

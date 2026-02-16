@@ -402,12 +402,21 @@ async function main() {
   const canvas2 = document.getElementById("gl2") as HTMLCanvasElement
 
   // Create primary NV instance (3D render mode)
-  const nv = new Niivue({ backColor: [0, 0, 0, 1] })
+  const nv = new Niivue({
+    backColor: [0, 0, 0, 1],
+    isOrientCube: false,
+    isOrientationTextVisible: false,
+  })
   await nv.attachToCanvas(canvas)
   nv.setSliceType(nv.sliceTypeRender)
 
   // Create secondary NV instance (2D slice mode, no crosshairs)
-  const nv2 = new Niivue({ backColor: [0, 0, 0, 1], crosshairWidth: 0 })
+  const nv2 = new Niivue({
+    backColor: [0, 0, 0, 1],
+    crosshairWidth: 0,
+    isOrientCube: false,
+    isOrientationTextVisible: false,
+  })
   await nv2.attachToCanvas(canvas2)
   nv2.setSliceType(nv2.sliceTypeAxial)
 
