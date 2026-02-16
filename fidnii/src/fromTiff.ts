@@ -36,6 +36,12 @@ export interface FromTiffOptions {
    *
    * This is a convenience shorthand — the same pool can also be
    * passed via `tiff.pool`.
+   *
+   * Note: {@link fromTiff} does not manage the lifecycle of the pool.
+   * If you create a pool and pass it here (or via `tiff.pool`), you
+   * are responsible for terminating it when it is no longer needed,
+   * e.g. by calling `pool.terminateWorkers()` after you are done with
+   * the associated {@link TiffStore} and image usage.
    */
   pool?: DeflatePool
 }
@@ -81,6 +87,8 @@ export async function fromTiff(
 
   let store: TiffStore
   if (source instanceof TiffStore) {
+    // Note: When passing a pre-built TiffStore, configure the pool via
+    // TiffStore constructor options rather than through FromTiffOptions.pool.
     store = source
   } else if (typeof source === "string") {
     store = await TiffStore.fromUrl(source, tiffOpts)
