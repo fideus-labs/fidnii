@@ -237,6 +237,8 @@ async function handleUrl(url: string): Promise<void> {
   // Disable controls and show progress while loading
   urlLoadBtn.setAttribute("disabled", "")
   convertBtn.setAttribute("disabled", "")
+  browseBtn.setAttribute("disabled", "")
+  fileInput.setAttribute("disabled", "")
   progressContainer.classList.add("visible")
 
   try {
@@ -286,6 +288,8 @@ async function handleUrl(url: string): Promise<void> {
     loadedName = ""
   } finally {
     urlLoadBtn.removeAttribute("disabled")
+    browseBtn.removeAttribute("disabled")
+    fileInput.removeAttribute("disabled")
     // Re-enable the convert button if we have something to work with
     if (selectedFile || loadedMultiscales) {
       convertBtn.removeAttribute("disabled")
