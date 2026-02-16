@@ -16,30 +16,13 @@ import {
   computeOmeroFromNgffImage,
   fromNgffZarr,
   itkImageToNgffImage,
+  ngffImageToItkImage,
   toNgffZarrOzx,
 } from "@fideus-labs/ngff-zarr/browser"
 import { readImage, writeImage } from "@itk-wasm/image-io"
 import type { Image } from "itk-wasm"
 
 export { Methods } from "@fideus-labs/ngff-zarr"
-
-/**
- * Lazy-load `ngffImageToItkImage` from ngff-zarr's deep module path.
- *
- * This function is in ngff-zarr's main (Node) entry point but omitted
- * from the `/browser` sub-export. The underlying module is fully
- * browser-compatible (no Node APIs). We use a dynamic import with the
- * specifier built at runtime so that neither Vite's import analysis
- * nor TypeScript's module resolution interfere.
- */
-async function loadNgffImageToItkImage(): Promise<
-  (img: NgffImage) => Promise<Image>
-> {
-  const specifier =
-    "@fideus-labs/ngff-zarr" + "/esm/io/ngff_image_to_itk_image.js"
-  const mod = await import(/* @vite-ignore */ specifier)
-  return mod.ngffImageToItkImage
-}
 
 /**
  * Maximum number of unique labels for auto-detection of label images.
@@ -374,12 +357,7 @@ async function packageOutput(
 
   // ITK-Wasm formats: convert the highest-resolution NgffImage
   // back to an ITK-Wasm Image, then serialize with writeImage.
-  // ngffImageToItkImage lives in ngff-zarr's main (Node) entry point
-  // but not the /browser sub-export. The module itself is fully
-  // browser-compatible, so we lazy-import it via its deep path to
-  // bypass Vite's static exports-map check.
   report(80, "Converting to ITK-Wasm Image...")
-  const ngffImageToItkImage = await loadNgffImageToItkImage()
   const highResImage = multiscales.images[0]
   const itkImage = await ngffImageToItkImage(highResImage)
 

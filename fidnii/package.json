@@ -24,7 +24,7 @@
   },
   "dependencies": {
     "@fideus-labs/fiff": "^0.3.2",
-    "@fideus-labs/ngff-zarr": "^0.10.0",
+    "@fideus-labs/ngff-zarr": "^0.11.0",
     "@itk-wasm/downsample": "^1.8.1",
     "lru-cache": "^11.1.0",
     "@niivue/niivue": "^0.67.0",
