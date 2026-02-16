@@ -19,6 +19,7 @@ import {
   ngffImageToItkImage,
   toNgffZarrOzx,
 } from "@fideus-labs/ngff-zarr/browser"
+import { WorkerPool } from "@fideus-labs/worker-pool"
 import { setPipelinesBaseUrl as setPipelinesBaseUrlDownsample } from "@itk-wasm/downsample"
 import {
   readImage,
@@ -380,11 +381,17 @@ async function packageOutput(
 
   if (format === "ome-tiff") {
     report(80, "Creating OME-TIFF file...")
-    const options: FiffWriteOptions = {
-      compression: "deflate",
+    const pool = new WorkerPool(navigator.hardwareConcurrency ?? 4)
+    try {
+      const options: FiffWriteOptions = {
+        compression: "deflate",
+        pool,
+      }
+      const buffer = await toOmeTiff(multiscales, options)
+      return { outputData: new Uint8Array(buffer), filename }
+    } finally {
+      pool.terminateWorkers()
     }
-    const buffer = await toOmeTiff(multiscales, options)
-    return { outputData: new Uint8Array(buffer), filename }
   }
 
   // ITK-Wasm formats: convert the highest-resolution NgffImage

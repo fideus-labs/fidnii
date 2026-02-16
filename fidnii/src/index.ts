@@ -34,7 +34,7 @@
  * ```
  */
 
-export type { TiffStoreOptions } from "@fideus-labs/fiff"
+export type { DeflatePool, TiffStoreOptions } from "@fideus-labs/fiff"
 export { TiffStore } from "@fideus-labs/fiff"
 // Re-export Methods enum so consumers can check isLabelImage or compare method values
 export { Methods } from "@fideus-labs/ngff-zarr"

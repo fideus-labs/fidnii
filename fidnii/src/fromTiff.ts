@@ -10,7 +10,7 @@
  * {@link fromNgffZarr} for OME-Zarr metadata parsing.
  */
 
-import type { TiffStoreOptions } from "@fideus-labs/fiff"
+import type { DeflatePool, TiffStoreOptions } from "@fideus-labs/fiff"
 import { TiffStore } from "@fideus-labs/fiff"
 import type { Multiscales } from "@fideus-labs/ngff-zarr"
 import type { FromNgffZarrOptions } from "@fideus-labs/ngff-zarr/browser"
@@ -23,6 +23,21 @@ export interface FromTiffOptions {
   tiff?: TiffStoreOptions
   /** Options forwarded to {@link fromNgffZarr} (e.g. validate, cache). */
   ngffZarr?: Omit<FromNgffZarrOptions, "version">
+  /**
+   * Optional worker pool for offloading deflate decompression to Web
+   * Workers when reading compressed TIFFs.
+   *
+   * When provided, registers a worker-backed deflate decoder with
+   * geotiff.js so that all subsequent chunk reads decompress off the
+   * main thread.
+   *
+   * Accepts any object matching the {@link DeflatePool} interface
+   * (e.g. `new WorkerPool(n)` from `@fideus-labs/worker-pool`).
+   *
+   * This is a convenience shorthand — the same pool can also be
+   * passed via `tiff.pool`.
+   */
+  pool?: DeflatePool
 }
 
 /**
@@ -59,15 +74,20 @@ export async function fromTiff(
   source: string | Blob | ArrayBuffer | TiffStore,
   options: FromTiffOptions = {},
 ): Promise<Multiscales> {
+  // Merge top-level pool into tiff sub-options (top-level takes precedence)
+  const tiffOpts: TiffStoreOptions | undefined = options.pool
+    ? { ...options.tiff, pool: options.pool }
+    : options.tiff
+
   let store: TiffStore
   if (source instanceof TiffStore) {
     store = source
   } else if (typeof source === "string") {
-    store = await TiffStore.fromUrl(source, options.tiff)
+    store = await TiffStore.fromUrl(source, tiffOpts)
   } else if (source instanceof Blob) {
-    store = await TiffStore.fromBlob(source, options.tiff)
+    store = await TiffStore.fromBlob(source, tiffOpts)
   } else if (source instanceof ArrayBuffer) {
-    store = await TiffStore.fromArrayBuffer(source, options.tiff)
+    store = await TiffStore.fromArrayBuffer(source, tiffOpts)
   } else {
     throw new Error(
       "[fidnii] fromTiff: source must be a URL string, Blob, " +

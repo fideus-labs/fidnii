@@ -23,7 +23,7 @@
   },
   "pnpm": {
     "overrides": {
-      "@fideus-labs/fiff": "^0.3.2",
+      "@fideus-labs/fiff": "^0.4.0",
       "zarrita": "^0.6.1",
       "@fideus-labs/fizarrita": "^1.4.0",
       "@fideus-labs/worker-pool": "^1.0.0",
