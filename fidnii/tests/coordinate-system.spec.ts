@@ -107,6 +107,29 @@ test.describe("Coordinate System", () => {
     expect(result.hasNonZero).toBe(true)
   })
 
+  test("NVImage affine diagonal signs reflect orientation metadata", async ({
+    page,
+  }) => {
+    const result = await page.evaluate(() => {
+      const image = (window as any).image
+      const affine = image.hdr.affine
+      const firstImage = image.multiscales.images[0]
+      const { getOrientationSigns } = (window as any).fidnii
+      const signs = getOrientationSigns(firstImage.axesOrientations)
+
+      return {
+        signs,
+        diag: [affine[0][0], affine[1][1], affine[2][2]],
+      }
+    })
+
+    // The sign of each diagonal element should match the orientation sign
+    // (positive diagonal = RAS+ direction, negative = anti-RAS+)
+    expect(Math.sign(result.diag[0])).toBe(result.signs.x)
+    expect(Math.sign(result.diag[2])).toBe(result.signs.z)
+    // y may be affected by 2D y-flip, but for 3D data it should match
+  })
+
   test("pixel to world conversion is consistent across resolutions", async ({
     page,
   }) => {

@@ -68,8 +68,13 @@ import {
   affineToNiftiSrows,
   calculateWorldBounds,
   createAffineFromNgffImage,
+  createAffineFromOMEZarr,
 } from "./utils/affine.js"
 import { worldToPixel } from "./utils/coordinates.js"
+import {
+  applyOrientationToAffine,
+  getOrientationSigns,
+} from "./utils/orientation.js"
 import {
   boundsApproxEqual,
   computeViewportBounds2D,
@@ -301,8 +306,14 @@ export class OMEZarrNVImage extends NVImage {
     this._is2D = highResImage.dims.indexOf("z") === -1
     this._flipY2D = options.flipY2D ?? true
 
-    // Calculate volume bounds from highest resolution for most accurate bounds
-    const highResAffine = createAffineFromNgffImage(highResImage)
+    // Calculate volume bounds from highest resolution for most accurate bounds.
+    // Use the unadjusted affine (no orientation signs) because volume bounds
+    // live in OME-Zarr world space and drive internal clip-plane / viewport math.
+    // Orientation is only applied to the NIfTI affine passed to NiiVue.
+    const highResAffine = createAffineFromOMEZarr(
+      highResImage.scale,
+      highResImage.translation,
+    )
     const highResShape = getVolumeShape(highResImage)
     this._volumeBounds = calculateWorldBounds(highResAffine, highResShape)
 
@@ -400,11 +411,15 @@ export class OMEZarrNVImage extends NVImage {
     // Placeholder pixel dimensions
     hdr.pixDims = [1, 1, 1, 1, 0, 0, 0, 0]
 
-    // Placeholder affine (identity, with y-flip for 2D images)
+    // Placeholder affine (identity, with orientation signs and y-flip for 2D)
+    const signs = getOrientationSigns(
+      this.multiscales.images[0]?.axesOrientations,
+    )
+    const ySign = this._flipY2D && this._is2D ? -signs.y : signs.y
     hdr.affine = [
-      [1, 0, 0, 0],
-      [0, this._flipY2D && this._is2D ? -1 : 1, 0, 0],
-      [0, 0, 1, 0],
+      [signs.x, 0, 0, 0],
+      [0, ySign, 0, 0],
+      [0, 0, signs.z, 0],
       [0, 0, 0, 1],
     ]
 
@@ -698,25 +713,22 @@ export class OMEZarrNVImage extends NVImage {
       1,
     ]
 
-    // Build affine with offset for region start
-    const affine = createAffineFromNgffImage(ngffImage)
-
-    // Adjust translation for region offset
-    // Buffer pixel [0,0,0] corresponds to source pixel region.chunkAlignedStart
+    // Build the unadjusted affine (no orientation signs) and offset it
+    // to the loaded region. Buffer bounds use this OME-Zarr-space affine
+    // for internal clip-plane / viewport math.
     const regionStart = region.chunkAlignedStart
+    const affine = createAffineFromOMEZarr(
+      ngffImage.scale,
+      ngffImage.translation,
+    )
     // regionStart is [z, y, x], affine translation is [x, y, z] (indices 12, 13, 14)
     affine[12] += regionStart[2] * sx // x offset
     affine[13] += regionStart[1] * sy // y offset
     affine[14] += regionStart[0] * sz // z offset
 
-    // Update current buffer bounds from the un-flipped affine
-    // (bounds stay in OME-Zarr world space for clip plane math)
+    // Update current buffer bounds in OME-Zarr world space
     this._currentBufferBounds = {
-      min: [
-        affine[12], // x offset (world coord of buffer origin)
-        affine[13], // y offset
-        affine[14], // z offset
-      ],
+      min: [affine[12], affine[13], affine[14]],
       max: [
         affine[12] + fetchedShape[2] * sx,
         affine[13] + fetchedShape[1] * sy,
@@ -724,11 +736,17 @@ export class OMEZarrNVImage extends NVImage {
       ],
     }
 
-    // For 2D images, negate y-scale so NiiVue's calculateRAS() flips
-    // the rows to account for top-to-bottom pixel storage order.
+    // Apply orientation signs so the NIfTI affine encodes anatomical
+    // direction for NiiVue's calculateRAS()
+    applyOrientationToAffine(affine, ngffImage.axesOrientations)
+
+    // For 2D images, flip y so NiiVue's calculateRAS() accounts for
+    // top-to-bottom pixel storage order. We shift the translation so
+    // the last row maps to where the first row was, then negate the
+    // y column. This composes correctly with any orientation sign.
     if (this._flipY2D && this._is2D) {
-      affine[5] = -sy
-      affine[13] += (fetchedShape[1] - 1) * sy
+      affine[13] += affine[5] * (fetchedShape[1] - 1)
+      affine[5] = -affine[5]
     }
 
     // Update affine in header
@@ -2366,17 +2384,19 @@ export class OMEZarrNVImage extends NVImage {
       1,
     ]
 
-    // Build affine with offset for region start, then normalize
+    // Build affine with orientation signs, then offset for region start.
+    // Use the oriented scale (from affine columns) for the translation
+    // offset so the sign is consistent with the column direction.
     const affine = createAffineFromNgffImage(ngffImage)
     // Adjust translation for region offset (fetchStart is [z, y, x])
-    affine[12] += fetchStart[2] * sx // x offset
-    affine[13] += fetchStart[1] * sy // y offset
-    affine[14] += fetchStart[0] * sz // z offset
+    affine[12] += fetchStart[2] * affine[0] // x offset (orientation-aware)
+    affine[13] += fetchStart[1] * affine[5] // y offset (orientation-aware)
+    affine[14] += fetchStart[0] * affine[10] // z offset (orientation-aware)
 
-    // For 2D images, negate y-scale before normalization
+    // For 2D images, flip y before normalization (composes with orientation)
     if (this._flipY2D && this._is2D) {
-      affine[5] = -sy
-      affine[13] += (fetchedShape[1] - 1) * sy
+      affine[13] += affine[5] * (fetchedShape[1] - 1)
+      affine[5] = -affine[5]
     }
 
     // Apply normalization to the entire affine (scale columns + translation)
