@@ -257,7 +257,7 @@ async function handleUrl(url: string): Promise<void> {
       )
       loadedName = zarrSegment
         ? zarrSegment.replace(/\.ome\.zarr$/i, "")
-        : segments[segments.length - 1] || "image"
+        : segments.pop() || "image"
       fileInfo.textContent = `OME-Zarr: ${loadedName}`
 
       // Show the multiscales table immediately and kick off

@@ -51,6 +51,15 @@ async function loadNgffImageToItkImage(): Promise<
     )
   }
 
+  if (typeof mod !== "object" || mod === null) {
+    throw new Error(
+      "The dynamically imported module from '" +
+        specifier +
+        "' did not return an object. " +
+        "The `@fideus-labs/ngff-zarr` package structure may have changed.",
+    )
+  }
+
   const candidate = (
     mod as { ngffImageToItkImage?: (img: NgffImage) => Promise<Image> }
   ).ngffImageToItkImage
