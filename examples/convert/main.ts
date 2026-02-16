@@ -15,6 +15,7 @@ import type { Multiscales } from "@fideus-labs/ngff-zarr"
 import { Niivue, SLICE_TYPE } from "@niivue/niivue"
 
 import {
+  type ChunkProgressCallback,
   type ConversionProgress,
   type ConversionResult,
   convertImage,
@@ -52,6 +53,15 @@ const progressContainer = document.getElementById(
 ) as HTMLDivElement
 const progressBar = document.getElementById("progress-bar") as HTMLElement
 const progressText = document.getElementById("progress-text") as HTMLElement
+const chunkProgressContainer = document.getElementById(
+  "chunk-progress-container",
+) as HTMLDivElement
+const chunkProgressBar = document.getElementById(
+  "chunk-progress-bar",
+) as HTMLElement
+const chunkProgressText = document.getElementById(
+  "chunk-progress-text",
+) as HTMLElement
 const placeholder = document.getElementById("placeholder") as HTMLDivElement
 const canvas = document.getElementById("gl") as HTMLCanvasElement
 const multiscalesCard = document.getElementById(
@@ -328,6 +338,23 @@ function updateProgress(progress: ConversionProgress): void {
   progressText.textContent = progress.message
 }
 
+const CHUNK_STAGE_LABELS: Record<string, string> = {
+  omero: "OMERO computation",
+  packaging: "OZX packaging",
+}
+
+const updateChunkProgress: ChunkProgressCallback = (
+  stage,
+  completed,
+  total,
+) => {
+  chunkProgressContainer.style.display = "block"
+  const percent = total > 0 ? Math.round((completed / total) * 100) : 0
+  chunkProgressBar.setAttribute("value", String(percent))
+  const label = CHUNK_STAGE_LABELS[stage] ?? stage
+  chunkProgressText.textContent = `${label}: ${completed} / ${total} chunks`
+}
+
 /** Enable or disable the 3D-only preview controls. */
 function set3DControlsEnabled(enabled: boolean): void {
   const controls = [opacitySlider, silhouetteSlider, sliceTypeSelect]
@@ -470,6 +497,9 @@ async function startConversion(): Promise<void> {
   // Disable convert button during conversion
   convertBtn.setAttribute("disabled", "")
   progressContainer.classList.add("visible")
+  chunkProgressContainer.style.display = "none"
+  chunkProgressBar.setAttribute("value", "0")
+  chunkProgressText.textContent = ""
 
   try {
     const options = {
@@ -482,7 +512,12 @@ async function startConversion(): Promise<void> {
       outputFormat: getSelectedFormat(),
     }
 
-    lastResult = await convertImage(selectedFile, options, updateProgress)
+    lastResult = await convertImage(
+      selectedFile,
+      options,
+      updateProgress,
+      updateChunkProgress,
+    )
 
     // Sync the method dropdown if auto-detection changed it
     // (e.g. label image detected while default Gaussian was selected)
