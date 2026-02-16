@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Convert to OME-Zarr</title>
+    <title>Image Converter</title>
     <link rel="icon" type="image/x-icon" href="/favicon/favicon.ico" />
     <link
       rel="icon"
@@ -265,7 +265,7 @@
     <div class="header">
       <h1>
         <img src="/fidnii-logo.png" alt="Fidnii" />
-        Convert to OME-Zarr
+        Image Converter
       </h1>
       <a
         class="github-star"
@@ -304,7 +304,7 @@
               id="url-input"
               type="url"
               label="Image URL"
-              placeholder="https://example.com/image.nii.gz"
+              placeholder="https://example.com/image.nii.gz or .ome.zarr"
               with-clear
             ></wa-input>
             <wa-button
@@ -318,8 +318,15 @@
         </wa-card>
 
         <wa-card>
-          <div slot="header">OME-Zarr Settings</div>
+          <div slot="header">Conversion Settings</div>
           <div class="settings-grid">
+            <wa-select
+              id="output-format"
+              label="Output Format"
+              value="ozx"
+              class="full-width"
+            >
+            </wa-select>
             <wa-input
               id="chunk-size"
               type="number"
@@ -356,7 +363,7 @@
             disabled
             style="flex: 1"
           >
-            Re-convert & Download
+            Convert & Download
           </wa-button>
 
         </div>
