@@ -105,6 +105,8 @@ jobs:
         if: runner.os != 'Linux'
         run: pnpm exec playwright install chromium
 
+      - run: pnpm build
+
       - run: pnpm test
 
       - name: Upload Playwright report
