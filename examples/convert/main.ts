@@ -74,6 +74,7 @@ const multiscalesTable = document.getElementById(
 // URL input elements
 const urlInput = document.getElementById("url-input") as HTMLInputElement
 const urlLoadBtn = document.getElementById("url-load-btn") as HTMLElement
+const sampleBtn = document.getElementById("sample-btn") as HTMLElement
 
 // Settings inputs
 const outputFormatSelect = document.getElementById(
@@ -298,6 +299,16 @@ urlInput.addEventListener("keydown", (e: Event) => {
   if ((e as KeyboardEvent).key === "Enter") {
     void handleUrl((urlInput as unknown as { value: string }).value)
   }
+})
+
+// Sample image button: load the bundled MRI and immediately convert
+sampleBtn.addEventListener("click", () => {
+  void (async () => {
+    await handleUrl("/mri.nii.gz")
+    if (selectedFile || loadedMultiscales) {
+      convertBtn.click()
+    }
+  })()
 })
 
 // Drag and drop
