@@ -365,7 +365,10 @@ async function packageOutput(
   const { serializedImage, webWorker } = await writeImage(itkImage, filename)
   ;(webWorker as Worker | null)?.terminate()
 
-  return { outputData: serializedImage.data, filename }
+  // itk-wasm allocates output buffers on SharedArrayBuffer when
+  // available (COOP/COEP context). Blob rejects shared views, so
+  // copy into a plain ArrayBuffer-backed Uint8Array.
+  return { outputData: new Uint8Array(serializedImage.data), filename }
 }
 
 /**
