@@ -23,7 +23,7 @@
     "test:ui": "playwright test --ui"
   },
   "dependencies": {
-    "@fideus-labs/fiff": "^0.3.2",
+    "@fideus-labs/fiff": "^0.4.0",
     "@fideus-labs/ngff-zarr": "^0.11.0",
     "@itk-wasm/downsample": "^1.8.1",
     "lru-cache": "^11.1.0",
