@@ -236,16 +236,18 @@ function handleFile(file: File, { fromUrl = false } = {}): void {
  * conversion. Other URLs are fetched as files for later conversion.
  *
  * @param url - The remote URL to fetch
+ * @returns True if the URL was successfully loaded, false otherwise
  */
-async function handleUrl(url: string): Promise<void> {
+async function handleUrl(url: string): Promise<boolean> {
   const trimmed = url.trim()
-  if (!trimmed) return
+  if (!trimmed) return false
 
   // Disable controls and show progress while loading
   urlLoadBtn.setAttribute("disabled", "")
   convertBtn.setAttribute("disabled", "")
   progressContainer.classList.add("visible")
 
+  let success = false
   try {
     if (isOmeZarrUrl(trimmed)) {
       // --- OME-Zarr URL: load directly into the viewer ---
@@ -273,6 +275,7 @@ async function handleUrl(url: string): Promise<void> {
     const newUrl = new URL(window.location.href)
     newUrl.searchParams.set("url", trimmed)
     history.replaceState(null, "", newUrl)
+    success = true
   } catch (error) {
     console.error("Failed to fetch URL:", error)
     const message = error instanceof Error ? error.message : String(error)
@@ -287,6 +290,7 @@ async function handleUrl(url: string): Promise<void> {
     }
     updateConvertButtonLabel()
   }
+  return success
 }
 
 // URL input: load button click
@@ -304,9 +308,14 @@ urlInput.addEventListener("keydown", (e: Event) => {
 // Sample image button: load the bundled MRI and immediately convert
 sampleBtn.addEventListener("click", () => {
   void (async () => {
-    await handleUrl("/mri.nii.gz")
-    if (selectedFile || loadedMultiscales) {
-      convertBtn.click()
+    sampleBtn.setAttribute("disabled", "")
+    try {
+      const success = await handleUrl("/mri.nii.gz")
+      if (success) {
+        convertBtn.click()
+      }
+    } finally {
+      sampleBtn.removeAttribute("disabled")
     }
   })()
 })
