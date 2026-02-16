@@ -116,11 +116,17 @@ const SLICE_TYPE_MAP: Record<string, SLICE_TYPE> = {
 }
 
 // Populate output format select from the canonical list
-for (const format of OUTPUT_FORMATS) {
-  const option = document.createElement("wa-option")
-  option.setAttribute("value", format)
-  option.textContent = OUTPUT_FORMAT_LABELS[format]
-  outputFormatSelect.appendChild(option)
+if (!outputFormatSelect) {
+  console.error(
+    "Output format select element not found. Please verify the HTML element ID used to bind `outputFormatSelect`.",
+  )
+} else {
+  for (const format of OUTPUT_FORMATS) {
+    const option = document.createElement("wa-option")
+    option.setAttribute("value", format)
+    option.textContent = OUTPUT_FORMAT_LABELS[format]
+    outputFormatSelect.appendChild(option)
+  }
 }
 
 /** Check whether the volume has a "z" spatial axis. */
@@ -240,7 +246,16 @@ async function handleUrl(url: string): Promise<void> {
       lastResult = null
       const multiscales = await loadOmeZarrUrl(trimmed, updateProgress)
       loadedMultiscales = multiscales
-      loadedName = trimmed.replace(/\/+$/, "").split("/").pop() || "image"
+      // Extract a meaningful name from the URL
+      const cleanUrl = trimmed.replace(/\/+$/, "")
+      const segments = cleanUrl.split("/").filter(Boolean)
+      // Try to find a segment containing .ome.zarr for better naming
+      const zarrSegment = segments.find((s) =>
+        s.toLowerCase().includes(".ome.zarr"),
+      )
+      loadedName = zarrSegment
+        ? zarrSegment.replace(/\.ome\.zarr$/i, "")
+        : segments[segments.length - 1] || "image"
       fileInfo.textContent = `OME-Zarr: ${loadedName}`
 
       // Show the multiscales table immediately and kick off
@@ -264,6 +279,11 @@ async function handleUrl(url: string): Promise<void> {
     console.error("Failed to fetch URL:", error)
     const message = error instanceof Error ? error.message : String(error)
     progressText.textContent = `Error: ${message}`
+    // Reset state to avoid inconsistent UI after a failed load
+    selectedFile = null
+    lastResult = null
+    loadedMultiscales = null
+    loadedName = ""
   } finally {
     urlLoadBtn.removeAttribute("disabled")
     // Re-enable the convert button if we have something to work with

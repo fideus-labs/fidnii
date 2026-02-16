@@ -37,8 +37,34 @@ async function loadNgffImageToItkImage(): Promise<
 > {
   const specifier =
     "@fideus-labs/ngff-zarr" + "/esm/io/ngff_image_to_itk_image.js"
-  const mod = await import(/* @vite-ignore */ specifier)
-  return mod.ngffImageToItkImage
+
+  let mod: unknown
+  try {
+    mod = await import(/* @vite-ignore */ specifier)
+  } catch (_error) {
+    throw new Error(
+      "Failed to dynamically import `ngffImageToItkImage` from '@fideus-labs/ngff-zarr'. " +
+        "The internal module path '" +
+        specifier +
+        "' may have changed. " +
+        "Consider updating to a version that exports `ngffImageToItkImage` from the `/browser` entry point.",
+    )
+  }
+
+  const candidate = (
+    mod as { ngffImageToItkImage?: (img: NgffImage) => Promise<Image> }
+  ).ngffImageToItkImage
+
+  if (typeof candidate !== "function") {
+    throw new Error(
+      "The dynamically imported module from '" +
+        specifier +
+        "' does not export a `ngffImageToItkImage` function. " +
+        "The `@fideus-labs/ngff-zarr` package structure or exports may have changed.",
+    )
+  }
+
+  return candidate
 }
 
 /**
@@ -378,16 +404,45 @@ async function packageOutput(
   // but not the /browser sub-export. The module itself is fully
   // browser-compatible, so we lazy-import it via its deep path to
   // bypass Vite's static exports-map check.
-  report(80, "Converting to ITK-Wasm Image...")
-  const ngffImageToItkImage = await loadNgffImageToItkImage()
-  const highResImage = multiscales.images[0]
-  const itkImage = await ngffImageToItkImage(highResImage)
+  report(
+    80,
+    "Converting to ITK-Wasm Image (loads full highest-resolution image into memory)...",
+  )
 
-  report(90, `Writing ${FORMAT_EXTENSION[format]} file...`)
-  const { serializedImage, webWorker } = await writeImage(itkImage, filename)
-  ;(webWorker as Worker | null)?.terminate()
+  // NOTE: When exporting to ITK-Wasm formats, only the highest-resolution
+  // level of the multiscale pyramid is preserved. All lower resolutions
+  // are discarded in the output file.
+  if (multiscales.images.length > 1) {
+    console.warn(
+      "[converter] ITK-Wasm export will load the full highest-resolution image into memory. " +
+        "For very large OME-Zarr datasets this may result in high memory usage or browser crashes.",
+    )
+    console.warn(
+      "[converter] Exporting to this format preserves only the highest-resolution level; " +
+        "multiscale pyramid levels will not be included.",
+    )
+  }
 
-  return { outputData: serializedImage.data, filename }
+  let currentStage = "loading ITK-Wasm NGFF converter"
+  try {
+    const ngffImageToItkImage = await loadNgffImageToItkImage()
+    currentStage = "converting NGFF image to ITK-Wasm Image"
+    const highResImage = multiscales.images[0]
+    const itkImage = await ngffImageToItkImage(highResImage)
+
+    currentStage = "writing ITK-Wasm image to output format"
+    report(90, `Writing ${FORMAT_EXTENSION[format]} file...`)
+    const { serializedImage, webWorker } = await writeImage(itkImage, filename)
+    ;(webWorker as Worker | null)?.terminate()
+
+    return { outputData: serializedImage.data, filename }
+  } catch (error) {
+    const underlyingMessage =
+      error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `ITK-Wasm conversion failed during "${currentStage}" for format "${format}": ${underlyingMessage}`,
+    )
+  }
 }
 
 /**
