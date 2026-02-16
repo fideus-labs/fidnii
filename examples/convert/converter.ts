@@ -144,6 +144,19 @@ export interface ConversionProgress {
 
 export type ProgressCallback = (progress: ConversionProgress) => void
 
+/**
+ * Callback for per-chunk progress during OMERO computation or OZX packaging.
+ *
+ * @param stage - Which operation is reporting progress
+ * @param completed - Number of chunks completed so far
+ * @param total - Total number of chunks to process
+ */
+export type ChunkProgressCallback = (
+  stage: "omero" | "packaging",
+  completed: number,
+  total: number,
+) => void
+
 export interface ConversionResult {
   multiscales: Multiscales
   outputData: Uint8Array
@@ -331,6 +344,7 @@ async function packageOutput(
   inputName: string,
   format: OutputFormat,
   onProgress?: ProgressCallback,
+  onChunkProgress?: ChunkProgressCallback,
 ): Promise<{ outputData: Uint8Array; filename: string }> {
   const report = (percent: number, message: string) => {
     onProgress?.({ stage: "packaging", percent, message })
@@ -342,6 +356,9 @@ async function packageOutput(
     report(80, "Creating OZX file...")
     const ozxData = await toNgffZarrOzx(multiscales, {
       enabledRfcs: [4],
+      onProgress: onChunkProgress
+        ? (completed, total) => onChunkProgress("packaging", completed, total)
+        : undefined,
     })
     return { outputData: ozxData, filename }
   }
@@ -386,6 +403,7 @@ export async function convertImage(
   file: File,
   options: ConversionOptions,
   onProgress?: ProgressCallback,
+  onChunkProgress?: ChunkProgressCallback,
 ): Promise<ConversionResult> {
   const report = (
     stage: ConversionProgress["stage"],
@@ -425,6 +443,9 @@ export async function convertImage(
   const chunkCache = new Map()
   const omero = await computeOmeroFromNgffImage(ngffImage, {
     cache: chunkCache,
+    onProgress: onChunkProgress
+      ? (completed, total) => onChunkProgress("omero", completed, total)
+      : undefined,
   })
 
   // Stage 3: Generate multiscales (downsampling)
@@ -460,6 +481,7 @@ export async function convertImage(
     file.name,
     options.outputFormat,
     onProgress,
+    onChunkProgress,
   )
 
   report("done", 100, "Conversion complete!")
