@@ -137,6 +137,8 @@ function initNiivue(): void {
     show3Dcrosshair: false,
     crosshairWidth: 0,
     backColor: [0, 0, 0, 1],
+    isOrientCube: false,
+    isOrientationTextVisible: false,
   })
   nv.attachToCanvas(canvas)
 }
