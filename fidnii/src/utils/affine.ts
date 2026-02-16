@@ -4,6 +4,8 @@
 import type { NgffImage } from "@fideus-labs/ngff-zarr"
 import { mat4 } from "gl-matrix"
 
+import { applyOrientationToAffine } from "./orientation.js"
+
 /**
  * Create a 4x4 affine transformation matrix from OME-Zarr scale and translation.
  *
@@ -76,11 +78,22 @@ export function createAffineFromOMEZarr(
 /**
  * Create an affine matrix from an NgffImage.
  *
- * @param ngffImage - The NgffImage containing scale and translation
- * @returns 4x4 affine matrix
+ * If the image has RFC-4 anatomical orientation metadata
+ * (`axesOrientations`), the affine column vectors and translations
+ * are sign-flipped so the matrix encodes direction relative to
+ * the NIfTI RAS+ convention. This allows NiiVue's `calculateRAS()`
+ * to correctly determine the anatomical layout.
+ *
+ * When no orientation metadata is present, the matrix is identical
+ * to a plain scale + translation affine (backward-compatible).
+ *
+ * @param ngffImage - The NgffImage containing scale, translation,
+ *   and optional `axesOrientations`
+ * @returns 4x4 affine matrix with orientation signs applied
  */
 export function createAffineFromNgffImage(ngffImage: NgffImage): mat4 {
-  return createAffineFromOMEZarr(ngffImage.scale, ngffImage.translation)
+  const affine = createAffineFromOMEZarr(ngffImage.scale, ngffImage.translation)
+  return applyOrientationToAffine(affine, ngffImage.axesOrientations)
 }
 
 /**

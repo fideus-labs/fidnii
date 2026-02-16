@@ -2,12 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  applyOrientationToAffine,
   BufferManager,
   buildSelection,
   computeChannelMinMax,
+  createAffineFromOMEZarr,
   fromTiff,
   getChannelInfo,
   getChunkShape,
+  getOrientationSigns,
   getRGBNiftiDataType,
   getVolumeShape,
   isRGBImage,
@@ -46,6 +49,9 @@ declare global {
       TiffStore: typeof TiffStore
       buildTiff: typeof buildTiff
       makeImageTags: typeof makeImageTags
+      getOrientationSigns: typeof getOrientationSigns
+      applyOrientationToAffine: typeof applyOrientationToAffine
+      createAffineFromOMEZarr: typeof createAffineFromOMEZarr
     }
   }
 }
@@ -69,6 +75,9 @@ window.fidnii = {
   TiffStore,
   buildTiff,
   makeImageTags,
+  getOrientationSigns,
+  applyOrientationToAffine,
+  createAffineFromOMEZarr,
 }
 
 const DATA_URL =
