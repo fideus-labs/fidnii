@@ -19,10 +19,25 @@ import {
   ngffImageToItkImage,
   toNgffZarrOzx,
 } from "@fideus-labs/ngff-zarr/browser"
-import { readImage, writeImage } from "@itk-wasm/image-io"
+import { setPipelinesBaseUrl as setPipelinesBaseUrlDownsample } from "@itk-wasm/downsample"
+import {
+  readImage,
+  setPipelinesBaseUrl as setPipelinesBaseUrlImageIo,
+  writeImage,
+} from "@itk-wasm/image-io"
 import type { Image } from "itk-wasm"
 
 export { Methods } from "@fideus-labs/ngff-zarr"
+
+// Use local, vendored WebAssembly module assets copied by viteStaticCopy
+// @ts-expect-error import.meta.env is provided by Vite at runtime
+const viteBaseUrl = import.meta.env.BASE_URL || "/"
+const pipelinesBaseUrl = new URL(
+  `${viteBaseUrl}pipelines`,
+  document.location.origin,
+).href
+setPipelinesBaseUrlImageIo(pipelinesBaseUrl)
+setPipelinesBaseUrlDownsample(pipelinesBaseUrl)
 
 /**
  * Maximum number of unique labels for auto-detection of label images.
