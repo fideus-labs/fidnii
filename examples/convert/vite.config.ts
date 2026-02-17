@@ -1,4 +1,5 @@
 import { createLogger, defineConfig } from "vite"
+import { viteStaticCopy } from "vite-plugin-static-copy"
 
 const logger = createLogger()
 const originalWarnOnce = logger.warnOnce.bind(logger)
@@ -33,9 +34,24 @@ export default defineConfig({
       "@fideus-labs/fiff",
       "@fideus-labs/ngff-zarr",
       "itk-wasm",
-      "@itk-wasm/compress-stringify",
       "@itk-wasm/image-io",
+      "@itk-wasm/downsample",
       "@thewtex/zstddec",
     ],
   },
+  plugins: [
+    // put lazy loaded JavaScript and Wasm bundles in dist directory
+    viteStaticCopy({
+      targets: [
+        {
+          src: "node_modules/@itk-wasm/image-io/dist/pipelines/*.{js,wasm,wasm.zst}",
+          dest: "pipelines/",
+        },
+        {
+          src: "node_modules/@itk-wasm/downsample/dist/pipelines/*.{js,wasm,wasm.zst}",
+          dest: "pipelines/",
+        },
+      ],
+    }),
+  ],
 })
