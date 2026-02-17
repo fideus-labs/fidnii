@@ -396,6 +396,14 @@ async function showPreview(
 
   placeholder.style.display = "none"
 
+  // Enable orientation markers (L/R/A/P/S/I text labels and 3D
+  // orientation cube) when the source format carries anatomical
+  // orientation metadata, e.g. NIfTI, NRRD, DICOM.
+  const hasOrientation =
+    result.multiscales.images[0]?.axesOrientations !== undefined
+  nv.opts.isOrientCube = hasOrientation
+  nv.opts.isOrientationTextVisible = hasOrientation
+
   const volumeIs3D = is3DVolume(result.multiscales)
   const imageIsRGB = isRGBOrRGBA(result.multiscales)
 
