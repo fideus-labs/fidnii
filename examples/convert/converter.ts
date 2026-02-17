@@ -5,6 +5,7 @@
 import type { WriteOptions as FiffWriteOptions } from "@fideus-labs/fiff"
 import { toOmeTiff } from "@fideus-labs/fiff"
 import {
+  bytesOnlyCodecs,
   createMetadataWithVersion,
   Methods,
   type Multiscales,
@@ -18,6 +19,7 @@ import {
   itkImageToNgffImage,
   ngffImageToItkImage,
   toNgffZarrOzx,
+  zarrGet,
 } from "@fideus-labs/ngff-zarr/browser"
 import { WorkerPool } from "@fideus-labs/worker-pool"
 import { setPipelinesBaseUrl as setPipelinesBaseUrlDownsample } from "@itk-wasm/downsample"
@@ -386,6 +388,7 @@ async function packageOutput(
       const options: FiffWriteOptions = {
         compression: "deflate",
         pool,
+        getPlane: zarrGet,
       }
       const buffer = await toOmeTiff(multiscales, options)
       return { outputData: new Uint8Array(buffer), filename }
@@ -473,9 +476,15 @@ export async function convertImage(
   // Stage 3: Generate multiscales (downsampling)
   report("downsampling", 30, "Generating multiscale pyramid...")
 
+  // Use uncompressed codecs for OME-TIFF output to avoid a wasteful
+  // blosc compress → blosc decompress round-trip on the main thread.
+  // The zarr arrays are ephemeral and will be immediately re-read by
+  // toOmeTiff(), so skipping compression is a significant speedup.
+  const useUncompressed = options.outputFormat === "ome-tiff"
   const multiscalesV04 = await toMultiscales(ngffImage, {
     method,
     chunks: options.chunkSize,
+    codecs: useUncompressed ? bytesOnlyCodecs() : undefined,
   })
 
   report(
