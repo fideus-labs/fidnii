@@ -74,6 +74,7 @@ const multiscalesTable = document.getElementById(
 // URL input elements
 const urlInput = document.getElementById("url-input") as HTMLInputElement
 const urlLoadBtn = document.getElementById("url-load-btn") as HTMLElement
+const sampleBtn = document.getElementById("sample-btn") as HTMLElement
 
 // Settings inputs
 const outputFormatSelect = document.getElementById(
@@ -235,16 +236,18 @@ function handleFile(file: File, { fromUrl = false } = {}): void {
  * conversion. Other URLs are fetched as files for later conversion.
  *
  * @param url - The remote URL to fetch
+ * @returns True if the URL was successfully loaded, false otherwise
  */
-async function handleUrl(url: string): Promise<void> {
+async function handleUrl(url: string): Promise<boolean> {
   const trimmed = url.trim()
-  if (!trimmed) return
+  if (!trimmed) return false
 
   // Disable controls and show progress while loading
   urlLoadBtn.setAttribute("disabled", "")
   convertBtn.setAttribute("disabled", "")
   progressContainer.classList.add("visible")
 
+  let success = false
   try {
     if (isOmeZarrUrl(trimmed)) {
       // --- OME-Zarr URL: load directly into the viewer ---
@@ -272,6 +275,7 @@ async function handleUrl(url: string): Promise<void> {
     const newUrl = new URL(window.location.href)
     newUrl.searchParams.set("url", trimmed)
     history.replaceState(null, "", newUrl)
+    success = true
   } catch (error) {
     console.error("Failed to fetch URL:", error)
     const message = error instanceof Error ? error.message : String(error)
@@ -286,6 +290,7 @@ async function handleUrl(url: string): Promise<void> {
     }
     updateConvertButtonLabel()
   }
+  return success
 }
 
 // URL input: load button click
@@ -298,6 +303,21 @@ urlInput.addEventListener("keydown", (e: Event) => {
   if ((e as KeyboardEvent).key === "Enter") {
     void handleUrl((urlInput as unknown as { value: string }).value)
   }
+})
+
+// Sample image button: load the bundled MRI and immediately convert
+sampleBtn.addEventListener("click", () => {
+  void (async () => {
+    sampleBtn.setAttribute("disabled", "")
+    try {
+      const success = await handleUrl("/mri.nii.gz")
+      if (success) {
+        convertBtn.click()
+      }
+    } finally {
+      sampleBtn.removeAttribute("disabled")
+    }
+  })()
 })
 
 // Drag and drop
