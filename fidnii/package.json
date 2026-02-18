@@ -23,7 +23,7 @@
     "test:ui": "playwright test --ui"
   },
   "dependencies": {
-    "@fideus-labs/fiff": "^0.5.0",
+    "@fideus-labs/fiff": "^0.5.2",
     "@fideus-labs/ngff-zarr": "^0.12.0",
     "@itk-wasm/downsample": "^1.8.1",
     "lru-cache": "^11.1.0",
@@ -34,7 +34,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@fideus-labs/fizarrita": "^1.3.0",
+    "@fideus-labs/fizarrita": "^1.4.0",
     "@fideus-labs/worker-pool": "^1.0.0",
     "@playwright/test": "^1.58.1",
     "@types/node": "^20.19.30",

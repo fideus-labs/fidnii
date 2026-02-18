@@ -388,8 +388,7 @@ async function packageOutput(
       const options: FiffWriteOptions = {
         compression: "deflate",
         pool,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        getPlane: zarrGet as any,
+        getPlane: zarrGet as FiffWriteOptions["getPlane"],
       }
       const buffer = await toOmeTiff(multiscales, options)
       return { outputData: new Uint8Array(buffer), filename }
