@@ -74,6 +74,7 @@ import { worldToPixel } from "./utils/coordinates.js"
 import {
   applyOrientationToAffine,
   getOrientationMapping,
+  getOrientationSigns,
 } from "./utils/orientation.js"
 import {
   boundsApproxEqual,
@@ -755,8 +756,12 @@ export class OMEZarrNVImage extends NVImage {
     // the last row maps to where the first row was, then negate the
     // y column. This composes correctly with any orientation sign.
     if (this._flipY2D && this._is2D) {
-      affine[13] += affine[5] * (fetchedShape[1] - 1)
-      affine[5] = -affine[5]
+      // Get the y axis orientation mapping to find where the y scale is stored
+      const mapping = getOrientationMapping(ngffImage.axesOrientations)
+      // The y scale is at affine[4 + physicalRow] (column 1, appropriate row)
+      const yScaleIndex = 4 + mapping.y.physicalRow
+      affine[13] += affine[yScaleIndex] * (fetchedShape[1] - 1)
+      affine[yScaleIndex] = -affine[yScaleIndex]
     }
 
     // Update affine in header
@@ -2395,18 +2400,27 @@ export class OMEZarrNVImage extends NVImage {
     ]
 
     // Build affine with orientation signs, then offset for region start.
-    // Use the oriented scale (from affine columns) for the translation
-    // offset so the sign is consistent with the column direction.
+    // Use the original unoriented scale values with orientation signs for
+    // the translation offset calculation. This ensures correctness even when
+    // axes are permuted (where affine diagonal may be zero).
     const affine = createAffineFromNgffImage(ngffImage)
+
+    // Get orientation signs to apply to the offset calculation
+    const signs = getOrientationSigns(ngffImage.axesOrientations)
+
     // Adjust translation for region offset (fetchStart is [z, y, x])
-    affine[12] += fetchStart[2] * affine[0] // x offset (orientation-aware)
-    affine[13] += fetchStart[1] * affine[5] // y offset (orientation-aware)
-    affine[14] += fetchStart[0] * affine[10] // z offset (orientation-aware)
+    affine[12] += fetchStart[2] * signs.x * sx // x offset (orientation-aware)
+    affine[13] += fetchStart[1] * signs.y * sy // y offset (orientation-aware)
+    affine[14] += fetchStart[0] * signs.z * sz // z offset (orientation-aware)
 
     // For 2D images, flip y before normalization (composes with orientation)
     if (this._flipY2D && this._is2D) {
-      affine[13] += affine[5] * (fetchedShape[1] - 1)
-      affine[5] = -affine[5]
+      // Get the y axis orientation mapping to find where the y scale is stored
+      const mapping = getOrientationMapping(ngffImage.axesOrientations)
+      // The y scale is at affine[4 + physicalRow] (column 1, appropriate row)
+      const yScaleIndex = 4 + mapping.y.physicalRow
+      affine[13] += affine[yScaleIndex] * (fetchedShape[1] - 1)
+      affine[yScaleIndex] = -affine[yScaleIndex]
     }
 
     // Apply normalization to the entire affine (scale columns + translation)
