@@ -24,7 +24,7 @@
   },
   "dependencies": {
     "@fideus-labs/fiff": "^0.5.2",
-    "@fideus-labs/ngff-zarr": "^0.12.0",
+    "@fideus-labs/ngff-zarr": "^0.12.1",
     "@itk-wasm/downsample": "^1.8.1",
     "@niivue/niivue": "^0.67.0",
     "gl-matrix": "^3.4.4",
@@ -34,7 +34,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@fideus-labs/fizarrita": "^1.4.0",
+    "@fideus-labs/fizarrita": "^1.4.1",
     "@fideus-labs/worker-pool": "^1.0.0",
     "@playwright/test": "^1.58.1",
     "@types/node": "^20.19.30",

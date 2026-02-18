@@ -25,7 +25,8 @@
     "overrides": {
       "@fideus-labs/fiff": "^0.5.2",
       "zarrita": "^0.6.1",
-      "@fideus-labs/fizarrita": "^1.4.0",
+      "@fideus-labs/fizarrita": "^1.4.1",
+      "@fideus-labs/ngff-zarr": "^0.12.1",
       "@fideus-labs/worker-pool": "^1.0.0",
       "@playwright/test": "^1.58.2",
       "typescript": "^5.9.3",
