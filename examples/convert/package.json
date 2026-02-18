@@ -12,7 +12,7 @@
     "@awesome.me/webawesome": "^3.2.1",
     "@fideus-labs/fidnii": "workspace:*",
     "@fideus-labs/fiff": "^0.5.2",
-    "@fideus-labs/ngff-zarr": "^0.12.1",
+    "@fideus-labs/ngff-zarr": "^0.12.3",
     "@fideus-labs/worker-pool": "^1.0.0",
     "@itk-wasm/downsample": "^1.8.1",
     "@itk-wasm/image-io": "^1.6.0",
