@@ -459,7 +459,33 @@ export async function convertImage(
 
   // Stage 2: Convert to NgffImage
   report("converting", 20, "Converting to NGFF format...")
-  const ngffImage = await itkImageToNgffImage(itkImage)
+  // Enable anatomical orientation for formats that carry it in their
+  // headers so the affine and NiiVue markers reflect the true layout.
+  const lowerName = file.name.toLowerCase()
+  const isLikelyDicom =
+    lowerName.endsWith(".dcm") ||
+    // DICOM series are often stored without an extension or with numeric extensions
+    !lowerName.includes(".") ||
+    /\.\d+$/.test(lowerName)
+  const hasOrientation =
+    // Compressed NIfTI before considering any generic .gz patterns
+    lowerName.endsWith(".nii.gz") ||
+    lowerName.endsWith(".nii") ||
+    lowerName.endsWith(".nrrd") ||
+    lowerName.endsWith(".nhdr") ||
+    lowerName.endsWith(".mha") ||
+    lowerName.endsWith(".mhd") ||
+    lowerName.endsWith(".mnc") ||
+    lowerName.endsWith(".gipl") ||
+    lowerName.endsWith(".hdf5") ||
+    lowerName.endsWith(".fdf") ||
+    lowerName.endsWith(".mgz") ||
+    lowerName.endsWith(".img") ||
+    lowerName.endsWith(".hdr") ||
+    isLikelyDicom
+  const ngffImage = await itkImageToNgffImage(itkImage, {
+    addAnatomicalOrientation: hasOrientation,
+  })
 
   // Stage 2b: Compute OMERO visualization metadata from highest resolution image.
   // A shared chunk cache lets computeOmeroFromNgffImage cache decoded chunks,
