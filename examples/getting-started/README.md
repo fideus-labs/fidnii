@@ -6,8 +6,8 @@ A minimal example showing how to load and display an OME-Zarr image using
 ## Quick Start
 
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm run dev
 ```
 
 Open http://localhost:5173 in your browser.
