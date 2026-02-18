@@ -10,6 +10,8 @@ import {
   fromTiff,
   getChannelInfo,
   getChunkShape,
+  getOrientationInfo,
+  getOrientationMapping,
   getOrientationSigns,
   getRGBNiftiDataType,
   getVolumeShape,
@@ -50,6 +52,8 @@ declare global {
       buildTiff: typeof buildTiff
       makeImageTags: typeof makeImageTags
       getOrientationSigns: typeof getOrientationSigns
+      getOrientationMapping: typeof getOrientationMapping
+      getOrientationInfo: typeof getOrientationInfo
       applyOrientationToAffine: typeof applyOrientationToAffine
       createAffineFromOMEZarr: typeof createAffineFromOMEZarr
     }
@@ -76,6 +80,8 @@ window.fidnii = {
   buildTiff,
   makeImageTags,
   getOrientationSigns,
+  getOrientationMapping,
+  getOrientationInfo,
   applyOrientationToAffine,
   createAffineFromOMEZarr,
 }

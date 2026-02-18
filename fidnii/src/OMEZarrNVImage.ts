@@ -73,7 +73,7 @@ import {
 import { worldToPixel } from "./utils/coordinates.js"
 import {
   applyOrientationToAffine,
-  getOrientationSigns,
+  getOrientationMapping,
 } from "./utils/orientation.js"
 import {
   boundsApproxEqual,
@@ -411,17 +411,27 @@ export class OMEZarrNVImage extends NVImage {
     // Placeholder pixel dimensions
     hdr.pixDims = [1, 1, 1, 1, 0, 0, 0, 0]
 
-    // Placeholder affine (identity, with orientation signs and y-flip for 2D)
-    const signs = getOrientationSigns(
+    // Placeholder affine (unit scale with orientation permutation/signs)
+    // This is replaced by real data when loadResolutionLevel completes,
+    // but having a reasonable placeholder avoids rendering glitches during
+    // the initial frame.
+    const mapping = getOrientationMapping(
       this.multiscales.images[0]?.axesOrientations,
     )
-    const ySign = this._flipY2D && this._is2D ? -signs.y : signs.y
-    hdr.affine = [
-      [signs.x, 0, 0, 0],
-      [0, ySign, 0, 0],
-      [0, 0, signs.z, 0],
+    const placeholderAffine = [
+      [0, 0, 0, 0],
+      [0, 0, 0, 0],
+      [0, 0, 0, 0],
       [0, 0, 0, 1],
     ]
+    placeholderAffine[mapping.x.physicalRow][0] = mapping.x.sign
+    let ySign = mapping.y.sign
+    if (this._flipY2D && this._is2D) {
+      ySign = (ySign * -1) as 1 | -1
+    }
+    placeholderAffine[mapping.y.physicalRow][1] = ySign
+    placeholderAffine[mapping.z.physicalRow][2] = mapping.z.sign
+    hdr.affine = placeholderAffine
 
     hdr.sform_code = 1 // Scanner coordinates
 

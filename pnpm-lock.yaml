@@ -52,10 +52,10 @@ importers:
         version: link:../../fidnii
       '@fideus-labs/fiff':
         specifier: ^0.3.2
-        version: 0.3.2(@fideus-labs/ngff-zarr@0.11.0)
+        version: 0.3.2(@fideus-labs/ngff-zarr@0.12.0)
       '@fideus-labs/ngff-zarr':
-        specifier: ^0.11.0
-        version: 0.11.0
+        specifier: ^0.12.0
+        version: 0.12.0
       '@itk-wasm/downsample':
         specifier: ^1.8.1
         version: 1.8.1
@@ -85,8 +85,8 @@ importers:
         specifier: workspace:*
         version: link:../../fidnii
       '@fideus-labs/ngff-zarr':
-        specifier: ^0.11.0
-        version: 0.11.0
+        specifier: ^0.12.0
+        version: 0.12.0
       '@niivue/niivue':
         specifier: ^0.67.0
         version: 0.67.0
@@ -105,10 +105,10 @@ importers:
     dependencies:
       '@fideus-labs/fiff':
         specifier: ^0.3.2
-        version: 0.3.2(@fideus-labs/ngff-zarr@0.11.0)
+        version: 0.3.2(@fideus-labs/ngff-zarr@0.12.0)
       '@fideus-labs/ngff-zarr':
-        specifier: ^0.11.0
-        version: 0.11.0
+        specifier: ^0.12.0
+        version: 0.12.0
       '@itk-wasm/downsample':
         specifier: ^1.8.1
         version: 1.8.1
@@ -534,8 +534,8 @@ packages:
     peerDependencies:
       zarrita: ^0.6.1
 
-  '@fideus-labs/ngff-zarr@0.11.0':
-    resolution: {integrity: sha512-rE7Q2wsriVFXOIpCbhyzY8nwbFjg/LPMrYYEORf7cqFF46EH380EUOi+sYOom5CUvbHZKMpPUZ8gckiepXrbsw==}
+  '@fideus-labs/ngff-zarr@0.12.0':
+    resolution: {integrity: sha512-XWWVeRRcfODam2RQ6hpbLASHsAi19ll5sySoneiHjH2YKiSBVgBdErYcs+JMhgc3KI5YrQxYFOdLNGwBlJ3/xg==}
 
   '@fideus-labs/worker-pool@1.0.0':
     resolution: {integrity: sha512-Mwx8fFKKpTUcEtR7w45MQJ/RnZFUPBtefEvGTZGlZMAVSfD7W61rpB8ZdgS4V0CXfppwcb90BF7F/aANWvupnA==}
@@ -2618,20 +2618,20 @@ snapshots:
   '@esbuild/win32-x64@0.27.3':
     optional: true
 
-  '@fideus-labs/fiff@0.3.2(@fideus-labs/ngff-zarr@0.11.0)':
+  '@fideus-labs/fiff@0.3.2(@fideus-labs/ngff-zarr@0.12.0)':
     dependencies:
       geotiff: 3.0.3
       pako: 2.1.0
       zarrita: 0.6.1
     optionalDependencies:
-      '@fideus-labs/ngff-zarr': 0.11.0
+      '@fideus-labs/ngff-zarr': 0.12.0
 
   '@fideus-labs/fizarrita@1.4.0(zarrita@0.6.1)':
     dependencies:
       '@fideus-labs/worker-pool': 1.0.0
       zarrita: 0.6.1
 
-  '@fideus-labs/ngff-zarr@0.11.0':
+  '@fideus-labs/ngff-zarr@0.12.0':
     dependencies:
       '@fideus-labs/fizarrita': 1.4.0(zarrita@0.6.1)
       '@fideus-labs/worker-pool': 1.0.0
