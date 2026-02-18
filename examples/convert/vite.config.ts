@@ -29,6 +29,7 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
+    include: ["@fideus-labs/worker-pool"],
     exclude: [
       "@awesome.me/webawesome",
       "@fideus-labs/fiff",

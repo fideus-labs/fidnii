@@ -5,6 +5,7 @@
 import type { WriteOptions as FiffWriteOptions } from "@fideus-labs/fiff"
 import { toOmeTiff } from "@fideus-labs/fiff"
 import {
+  bytesOnlyCodecs,
   createMetadataWithVersion,
   Methods,
   type Multiscales,
@@ -18,7 +19,9 @@ import {
   itkImageToNgffImage,
   ngffImageToItkImage,
   toNgffZarrOzx,
+  zarrGet,
 } from "@fideus-labs/ngff-zarr/browser"
+import { WorkerPool } from "@fideus-labs/worker-pool"
 import { setPipelinesBaseUrl as setPipelinesBaseUrlDownsample } from "@itk-wasm/downsample"
 import {
   readImage,
@@ -380,11 +383,18 @@ async function packageOutput(
 
   if (format === "ome-tiff") {
     report(80, "Creating OME-TIFF file...")
-    const options: FiffWriteOptions = {
-      compression: "deflate",
+    const pool = new WorkerPool(navigator.hardwareConcurrency ?? 4)
+    try {
+      const options: FiffWriteOptions = {
+        compression: "deflate",
+        pool,
+        getPlane: zarrGet as FiffWriteOptions["getPlane"],
+      }
+      const buffer = await toOmeTiff(multiscales, options)
+      return { outputData: new Uint8Array(buffer), filename }
+    } finally {
+      pool.terminateWorkers()
     }
-    const buffer = await toOmeTiff(multiscales, options)
-    return { outputData: new Uint8Array(buffer), filename }
   }
 
   // ITK-Wasm formats: convert the highest-resolution NgffImage
@@ -466,9 +476,15 @@ export async function convertImage(
   // Stage 3: Generate multiscales (downsampling)
   report("downsampling", 30, "Generating multiscale pyramid...")
 
+  // Use uncompressed codecs for OME-TIFF output to avoid a wasteful
+  // blosc compress → blosc decompress round-trip on the main thread.
+  // The zarr arrays are ephemeral and will be immediately re-read by
+  // toOmeTiff(), so skipping compression is a significant speedup.
+  const useUncompressed = options.outputFormat === "ome-tiff"
   const multiscalesV04 = await toMultiscales(ngffImage, {
     method,
     chunks: options.chunkSize,
+    codecs: useUncompressed ? bytesOnlyCodecs() : undefined,
   })
 
   report(
