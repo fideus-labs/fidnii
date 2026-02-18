@@ -151,9 +151,14 @@ export {
   worldToPixelAffine,
 } from "./utils/coordinates.js"
 // Orientation utilities (NGFF RFC-4 anatomical orientation)
-export type { OrientationSigns } from "./utils/orientation.js"
+export type {
+  OrientationMapping,
+  OrientationSigns,
+} from "./utils/orientation.js"
 export {
   applyOrientationToAffine,
+  getOrientationInfo,
+  getOrientationMapping,
   getOrientationSigns,
 } from "./utils/orientation.js"
 // Viewport bounds utilities
