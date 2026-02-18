@@ -503,15 +503,16 @@ export async function convertImage(
   // Stage 3: Generate multiscales (downsampling)
   report("downsampling", 30, "Generating multiscale pyramid...")
 
-  // Use uncompressed codecs for OME-TIFF output to avoid a wasteful
-  // blosc compress → blosc decompress round-trip on the main thread.
-  // The zarr arrays are ephemeral and will be immediately re-read by
-  // toOmeTiff(), so skipping compression is a significant speedup.
-  const useUncompressed = options.outputFormat === "ome-tiff"
+  // Use uncompressed codecs since the zarr arrays are ephemeral
+  // in-memory data. packageOutput() will re-read and re-encode
+  // the chunks in the final output format (OZX applies its own
+  // blosc/zstd, OME-TIFF applies deflate, ITK-Wasm serializes
+  // directly). Skipping the intermediate compression avoids a
+  // wasteful compress → decompress round-trip.
   const multiscalesV04 = await toMultiscales(ngffImage, {
     method,
     chunks: options.chunkSize,
-    codecs: useUncompressed ? bytesOnlyCodecs() : undefined,
+    codecs: bytesOnlyCodecs(),
   })
 
   report(
