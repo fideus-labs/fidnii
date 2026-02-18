@@ -17,10 +17,9 @@ import { Niivue, SLICE_TYPE } from "@niivue/niivue"
 import {
   type ChunkProgressCallback,
   type ConversionProgress,
-  type ConversionResult,
+  type ConvertResult,
   convertImage,
   downloadFile,
-  exportMultiscales,
   fetchImageFile,
   formatFileSize,
   getMultiscalesInfo,
@@ -30,6 +29,7 @@ import {
   OUTPUT_FORMAT_LABELS,
   OUTPUT_FORMATS,
   type OutputFormat,
+  packageOutput,
 } from "./converter.ts"
 
 // Color scheme: follow the browser/OS preference
@@ -48,6 +48,7 @@ const browseBtn = document.getElementById("browse-btn") as HTMLElement
 const fileInput = document.getElementById("file-input") as HTMLInputElement
 const fileInfo = document.getElementById("file-info") as HTMLDivElement
 const convertBtn = document.getElementById("convert-btn") as HTMLElement
+const downloadBtn = document.getElementById("download-btn") as HTMLElement
 const progressContainer = document.getElementById(
   "progress-container",
 ) as HTMLDivElement
@@ -109,7 +110,7 @@ const DEFAULT_CHUNK_SIZE_3D = "96"
 
 // State
 let selectedFile: File | null = null
-let lastResult: ConversionResult | null = null
+let lastResult: ConvertResult | null = null
 /** Multiscales loaded directly from an OME-Zarr URL (no conversion). */
 let loadedMultiscales: Multiscales | null = null
 /** Base name derived from the OME-Zarr URL (for output filenames). */
@@ -183,18 +184,10 @@ function getSelectedFormat(): OutputFormat {
     "ozx") as OutputFormat
 }
 
-/**
- * Update the convert button label depending on the current state.
- *
- * - When an OME-Zarr URL is loaded (no conversion needed), the button
- *   reads "Export & Download".
- * - Otherwise it reads "Convert & Download".
- */
-function updateConvertButtonLabel(): void {
-  convertBtn.textContent =
-    loadedMultiscales && !selectedFile
-      ? "Export & Download"
-      : "Convert & Download"
+/** Update button labels depending on the current state. */
+function updateButtonLabels(): void {
+  convertBtn.textContent = "Convert"
+  downloadBtn.textContent = "Download"
 }
 
 // File handling
@@ -218,6 +211,9 @@ function handleFile(file: File, { fromUrl = false } = {}): void {
   // Reset multiscales table
   multiscalesCard.classList.add("hidden")
 
+  // Disable download until a new conversion completes
+  downloadBtn.setAttribute("disabled", "")
+
   // Use a larger default chunk size for 2D images
   const dotIndex = file.name.lastIndexOf(".")
   const ext = dotIndex !== -1 ? file.name.slice(dotIndex).toLowerCase() : ""
@@ -226,7 +222,7 @@ function handleFile(file: File, { fromUrl = false } = {}): void {
     : DEFAULT_CHUNK_SIZE_3D
   ;(chunkSizeInput as unknown as { value: string }).value = chunkDefault
 
-  updateConvertButtonLabel()
+  updateButtonLabels()
 }
 
 /**
@@ -264,7 +260,9 @@ async function handleUrl(url: string): Promise<boolean> {
       updateMultiscalesTable({ multiscales })
       void showPreview({ multiscales })
 
-      convertBtn.removeAttribute("disabled")
+      // No conversion needed for OME-Zarr — only Download is relevant
+      convertBtn.setAttribute("disabled", "")
+      downloadBtn.removeAttribute("disabled")
     } else {
       // --- Regular image URL: fetch as file ---
       const file = await fetchImageFile(trimmed, updateProgress)
@@ -282,37 +280,46 @@ async function handleUrl(url: string): Promise<boolean> {
     progressText.textContent = `Error: ${message}`
   } finally {
     urlLoadBtn.removeAttribute("disabled")
-    // Re-enable the convert button if we have something to work with
-    if (selectedFile || loadedMultiscales) {
+    // Re-enable the convert button if we have a file to convert.
+    // (OME-Zarr URLs don't need conversion — Download is already enabled above.)
+    if (selectedFile) {
       convertBtn.removeAttribute("disabled")
-    } else {
+    } else if (!loadedMultiscales) {
       convertBtn.setAttribute("disabled", "")
     }
-    updateConvertButtonLabel()
+    updateButtonLabels()
   }
   return success
 }
 
+/** Load a URL and auto-convert if it's a regular image file. */
+async function loadUrlAndConvert(url: string): Promise<void> {
+  const success = await handleUrl(url)
+  if (success && selectedFile) {
+    void startConversion()
+  }
+}
+
 // URL input: load button click
 urlLoadBtn.addEventListener("click", () => {
-  void handleUrl((urlInput as unknown as { value: string }).value)
+  void loadUrlAndConvert((urlInput as unknown as { value: string }).value)
 })
 
 // URL input: Enter key triggers load
 urlInput.addEventListener("keydown", (e: Event) => {
   if ((e as KeyboardEvent).key === "Enter") {
-    void handleUrl((urlInput as unknown as { value: string }).value)
+    void loadUrlAndConvert((urlInput as unknown as { value: string }).value)
   }
 })
 
-// Sample image button: load the bundled MRI and immediately convert
+// Sample image button: load the bundled MRI and auto-convert
 sampleBtn.addEventListener("click", () => {
   void (async () => {
     sampleBtn.setAttribute("disabled", "")
     try {
       const success = await handleUrl("/mri.nii.gz")
-      if (success) {
-        convertBtn.click()
+      if (success && selectedFile) {
+        void startConversion()
       }
     } finally {
       sampleBtn.removeAttribute("disabled")
@@ -337,6 +344,7 @@ dropZone.addEventListener("drop", (e) => {
   const files = e.dataTransfer?.files
   if (files && files.length > 0) {
     handleFile(files[0])
+    void startConversion()
   }
 })
 
@@ -349,6 +357,7 @@ fileInput.addEventListener("change", () => {
   const files = fileInput.files
   if (files && files.length > 0) {
     handleFile(files[0])
+    void startConversion()
   }
 })
 
@@ -389,7 +398,7 @@ function set3DControlsEnabled(enabled: boolean): void {
 
 // Preview with NiiVue
 async function showPreview(
-  result: Pick<ConversionResult, "multiscales">,
+  result: Pick<ConvertResult, "multiscales">,
 ): Promise<void> {
   initNiivue()
   if (!nv) return
@@ -484,7 +493,7 @@ function highlightLevel(levelIndex: number): void {
 
 // Update multiscales table
 function updateMultiscalesTable(
-  result: Pick<ConversionResult, "multiscales">,
+  result: Pick<ConvertResult, "multiscales">,
 ): void {
   const info = getMultiscalesInfo(result.multiscales)
   const tbody = multiscalesTable.querySelector(
@@ -514,16 +523,16 @@ function updateMultiscalesTable(
 }
 
 /**
- * Convert a local file and download the result.
- *
- * Reads the file, generates a multiscale pyramid, packages in the
- * selected output format, shows the preview, and downloads.
+ * Convert a local file: generate a multiscale pyramid and show
+ * the preview. Does not package or download the output — that is
+ * handled by {@link startDownload}.
  */
 async function startConversion(): Promise<void> {
   if (!selectedFile) return
 
-  // Disable convert button during conversion
+  // Disable both buttons during conversion
   convertBtn.setAttribute("disabled", "")
+  downloadBtn.setAttribute("disabled", "")
   progressContainer.classList.add("visible")
   chunkProgressContainer.style.display = "none"
   chunkProgressBar.setAttribute("value", "0")
@@ -537,7 +546,6 @@ async function startConversion(): Promise<void> {
       ),
       method: ((methodSelect as unknown as { value: string }).value ||
         "itkwasm_gaussian") as Methods,
-      outputFormat: getSelectedFormat(),
     }
 
     lastResult = await convertImage(
@@ -563,8 +571,8 @@ async function startConversion(): Promise<void> {
     // Update table
     updateMultiscalesTable(lastResult)
 
-    // Download
-    downloadFile(lastResult.outputData, lastResult.filename)
+    // Enable download now that multiscales are ready
+    downloadBtn.removeAttribute("disabled")
   } catch (error) {
     console.error("Conversion failed:", error)
     progressText.textContent = `Error: ${
@@ -576,45 +584,63 @@ async function startConversion(): Promise<void> {
 }
 
 /**
- * Export an already-loaded OME-Zarr to the selected output format
- * and trigger a download.
+ * Package the current multiscales in the selected output format and
+ * trigger a browser download.
+ *
+ * Works for both locally-converted files and directly-loaded OME-Zarr
+ * URLs — whichever produced the available multiscales.
  */
-async function startExport(): Promise<void> {
-  if (!loadedMultiscales) return
+async function startDownload(): Promise<void> {
+  const multiscales = lastResult?.multiscales ?? loadedMultiscales
+  const name = selectedFile?.name ?? loadedName
+  if (!multiscales || !name) return
 
-  convertBtn.setAttribute("disabled", "")
+  downloadBtn.setAttribute("disabled", "")
   progressContainer.classList.add("visible")
+  chunkProgressContainer.style.display = "none"
+  chunkProgressBar.setAttribute("value", "0")
+  chunkProgressText.textContent = ""
 
   try {
     const format = getSelectedFormat()
-    updateProgress({ stage: "packaging", percent: 0, message: "Exporting..." })
+    updateProgress({
+      stage: "packaging",
+      percent: 0,
+      message: "Packaging output...",
+    })
 
-    const { outputData, filename } = await exportMultiscales(
-      loadedMultiscales,
-      loadedName,
+    const { outputData, filename } = await packageOutput(
+      multiscales,
+      name,
       format,
       updateProgress,
+      updateChunkProgress,
     )
 
-    updateProgress({ stage: "done", percent: 100, message: "Export complete!" })
+    updateProgress({
+      stage: "done",
+      percent: 100,
+      message: "Download ready!",
+    })
     downloadFile(outputData, filename)
   } catch (error) {
-    console.error("Export failed:", error)
+    console.error("Download failed:", error)
     progressText.textContent = `Error: ${
       error instanceof Error ? error.message : String(error)
     }`
   } finally {
-    convertBtn.removeAttribute("disabled")
+    downloadBtn.removeAttribute("disabled")
   }
 }
 
-// Convert / Export button
+// Convert button
 convertBtn.addEventListener("click", () => {
-  if (loadedMultiscales && !selectedFile) {
-    void startExport()
-  } else {
-    void startConversion()
-  }
+  void startConversion()
+})
+
+// Download button
+downloadBtn.addEventListener("click", () => {
+  void startDownload()
 })
 
 // Settings change handlers for live preview updates
@@ -662,5 +688,5 @@ sliceTypeSelect.addEventListener("change", () => {
 const urlParam = new URLSearchParams(window.location.search).get("url")
 if (urlParam) {
   ;(urlInput as unknown as { value: string }).value = urlParam
-  void handleUrl(urlParam)
+  void loadUrlAndConvert(urlParam)
 }

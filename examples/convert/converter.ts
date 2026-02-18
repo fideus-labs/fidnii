@@ -151,7 +151,6 @@ export const OUTPUT_FORMATS: OutputFormat[] = Object.keys(
 export interface ConversionOptions {
   chunkSize: number
   method: Methods
-  outputFormat: OutputFormat
 }
 
 export interface ConversionProgress {
@@ -175,10 +174,8 @@ export type ChunkProgressCallback = (
   total: number,
 ) => void
 
-export interface ConversionResult {
+export interface ConvertResult {
   multiscales: Multiscales
-  outputData: Uint8Array
-  filename: string
 }
 
 /**
@@ -355,9 +352,10 @@ function outputFilename(inputName: string, format: OutputFormat): string {
  *   output filename)
  * @param format - The target output format
  * @param onProgress - Optional callback for progress updates
+ * @param onChunkProgress - Optional callback for per-chunk progress
  * @returns The serialized file bytes and output filename
  */
-async function packageOutput(
+export async function packageOutput(
   multiscales: Multiscales,
   inputName: string,
   format: OutputFormat,
@@ -414,22 +412,25 @@ async function packageOutput(
 }
 
 /**
- * Convert an image file to the requested output format.
+ * Convert an image file into a multiscale pyramid.
  *
- * The pipeline reads the input image, generates a multiscale pyramid,
- * then packages the result in the requested format.
+ * Reads the input image, generates a multiscale pyramid with the
+ * selected downsampling method, and returns the result. Packaging
+ * into a specific output format is handled separately by
+ * {@link packageOutput}.
  *
  * @param file - The input image file
- * @param options - Conversion options (chunk size, method, output format)
+ * @param options - Conversion options (chunk size, downsampling method)
  * @param onProgress - Optional callback for progress updates
- * @returns The conversion result with multiscales, output bytes, and filename
+ * @param onChunkProgress - Optional callback for per-chunk progress
+ * @returns The multiscale pyramid
  */
 export async function convertImage(
   file: File,
   options: ConversionOptions,
   onProgress?: ProgressCallback,
   onChunkProgress?: ChunkProgressCallback,
-): Promise<ConversionResult> {
+): Promise<ConvertResult> {
   const report = (
     stage: ConversionProgress["stage"],
     percent: number,
@@ -502,15 +503,16 @@ export async function convertImage(
   // Stage 3: Generate multiscales (downsampling)
   report("downsampling", 30, "Generating multiscale pyramid...")
 
-  // Use uncompressed codecs for OME-TIFF output to avoid a wasteful
-  // blosc compress → blosc decompress round-trip on the main thread.
-  // The zarr arrays are ephemeral and will be immediately re-read by
-  // toOmeTiff(), so skipping compression is a significant speedup.
-  const useUncompressed = options.outputFormat === "ome-tiff"
+  // Use uncompressed codecs since the zarr arrays are ephemeral
+  // in-memory data. packageOutput() will re-read and re-encode
+  // the chunks in the final output format (OZX applies its own
+  // blosc/zstd, OME-TIFF applies deflate, ITK-Wasm serializes
+  // directly). Skipping the intermediate compression avoids a
+  // wasteful compress → decompress round-trip.
   const multiscalesV04 = await toMultiscales(ngffImage, {
     method,
     chunks: options.chunkSize,
-    codecs: useUncompressed ? bytesOnlyCodecs() : undefined,
+    codecs: bytesOnlyCodecs(),
   })
 
   report(
@@ -532,22 +534,9 @@ export async function convertImage(
     chunks: multiscalesV04.chunks,
   })
 
-  // Stage 4: Package in the requested output format
-  const { outputData, filename } = await packageOutput(
-    multiscales,
-    file.name,
-    options.outputFormat,
-    onProgress,
-    onChunkProgress,
-  )
-
   report("done", 100, "Conversion complete!")
 
-  return {
-    multiscales,
-    outputData,
-    filename,
-  }
+  return { multiscales }
 }
 
 /**
