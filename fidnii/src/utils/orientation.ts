@@ -113,7 +113,7 @@ export function getOrientationMapping(
   const yOrientation = axesOrientations.y ?? axesOrientations.Y
   const zOrientation = axesOrientations.z ?? axesOrientations.Z
 
-  return {
+  const mapping = {
     x:
       (xOrientation ? getOrientationInfo(xOrientation) : undefined) ??
       defaultMapping.x,
@@ -124,6 +124,23 @@ export function getOrientationMapping(
       (zOrientation ? getOrientationInfo(zOrientation) : undefined) ??
       defaultMapping.z,
   }
+
+  // Validate that each physicalRow is used exactly once to prevent
+  // degenerate affine matrices where columns overwrite each other
+  const rowsUsed = new Set([
+    mapping.x.physicalRow,
+    mapping.y.physicalRow,
+    mapping.z.physicalRow,
+  ])
+
+  if (rowsUsed.size !== 3) {
+    console.warn(
+      "[fidnii] Invalid orientation metadata: multiple axes map to the same physical row. Falling back to identity mapping.",
+    )
+    return defaultMapping
+  }
+
+  return mapping
 }
 
 /**
