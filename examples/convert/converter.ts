@@ -486,6 +486,7 @@ export async function convertImage(
     isLikelyDicom
   const ngffImage = await itkImageToNgffImage(itkImage, {
     addAnatomicalOrientation: hasOrientation,
+    chunks: options.chunkSize,
   })
 
   // Stage 2b: Compute OMERO visualization metadata from highest resolution image.
