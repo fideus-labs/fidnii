@@ -1,5 +1,24 @@
 # @fideus-labs/fidnii
 
+## 0.5.0
+
+### Minor Changes
+
+- [#38](https://github.com/fideus-labs/fidnii/pull/38) [`ede249e`](https://github.com/fideus-labs/fidnii/commit/ede249ecef07324af33c8aa6254f69d504265674) Thanks [@thewtex](https://github.com/thewtex)! - Apply NGFF RFC-4 anatomical orientation to NIfTI affine matrix, including full axis permutation support, so NiiVue correctly renders LPS, RAS, and permuted orientations (e.g. oblique MRI direction matrices). Upgrade `@fideus-labs/ngff-zarr` to 0.12.0 for the upstream `itkDirectionToAnatomicalOrientation` fix.
+
+### Patch Changes
+
+- [#31](https://github.com/fideus-labs/fidnii/pull/31) [`9b036ae`](https://github.com/fideus-labs/fidnii/commit/9b036ae0e591a5f32d2a62f89bdacf8591f49a84) Thanks [@thewtex](https://github.com/thewtex)! - Eliminate blosc round-trip during OME-TIFF conversion
+
+  - Use `bytesOnlyCodecs()` from ngff-zarr v0.12.0 to skip blosc compression
+    during `toMultiscales()` when the output format is OME-TIFF, avoiding the
+    wasteful compress→decompress cycle that blocked the main thread (~2 seconds)
+  - Pass `zarrGet` as a custom `getPlane` callback to `toOmeTiff()` via fiff
+    v0.5.0's new `WriteOptions.getPlane`, offloading any remaining zarr reads
+    to the worker pool
+  - Offload TIFF deflate compression to Web Workers via fiff worker pool support
+  - Bump `@fideus-labs/fiff` to ^0.5.0 and `@fideus-labs/ngff-zarr` to ^0.12.0
+
 ## 0.4.0
 
 ### Minor Changes
