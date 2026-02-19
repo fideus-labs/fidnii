@@ -414,7 +414,11 @@ test.describe("Slice Mode", () => {
 
     // Switch NV2 to Coronal to trigger slab creation
     await page.selectOption("#slice-type", "1")
-    await page.waitForTimeout(2000)
+    await page.waitForFunction(() => {
+      const image = (window as any).image
+      const slabState = image.getSlabBufferState(1)
+      return !!(slabState && slabState.nvImage)
+    })
 
     const result = await page.evaluate(async () => {
       const image = (window as any).image
@@ -424,7 +428,7 @@ test.describe("Slice Mode", () => {
       const slabState = image.getSlabBufferState(1)
       return {
         mainColormap: image.colormap,
-        slabColormap: slabState?.nvImage?._colormap,
+        slabColormap: slabState?.nvImage?.colormap,
       }
     })
 
@@ -436,7 +440,11 @@ test.describe("Slice Mode", () => {
     page,
   }) => {
     // NV2 starts in Axial mode, so the axial slab already exists
-    await page.waitForTimeout(2000)
+    await page.waitForFunction(() => {
+      const image = (window as any).image
+      const slabState = image.getSlabBufferState(0)
+      return !!(slabState && slabState.nvImage)
+    })
 
     // Change the colormap after the slab is already created
     await page.evaluate(async () => {
@@ -451,7 +459,7 @@ test.describe("Slice Mode", () => {
       const slabState = image.getSlabBufferState(0)
       return {
         mainColormap: image.colormap,
-        slabColormap: slabState?.nvImage?._colormap,
+        slabColormap: slabState?.nvImage?.colormap,
       }
     })
 
