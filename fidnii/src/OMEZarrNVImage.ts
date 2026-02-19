@@ -128,7 +128,7 @@ export class OMEZarrNVImage extends NVImage {
     // Propagate to all existing slab NVImages
     if (!this.isLabelImage) {
       for (const slab of this._slabBuffers.values()) {
-        slab.nvImage._colormap = cm
+        slab.nvImage.colormap = cm
       }
     }
   }
