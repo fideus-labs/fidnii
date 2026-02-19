@@ -203,7 +203,7 @@ let _largeFileTimer: ReturnType<typeof setTimeout> | null = null
 /**
  * Show a bottom drawer recommending ngff-zarr Python tooling for
  * files larger than {@link LARGE_FILE_THRESHOLD}.  The drawer
- * auto-closes after 10 seconds or on user interaction.
+ * auto-closes after 10 seconds or on dismissal.
  */
 function showLargeFileDrawer(): void {
   // Clear any pending auto-close from a previous showing
