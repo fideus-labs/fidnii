@@ -260,15 +260,15 @@
       .large-file-tip dt {
         font-weight: 600;
       }
-      .large-file-tip dt a {
-        color: var(--wa-color-primary-600);
+      .large-file-tip a {
+        color: var(--wa-color-text-link);
         text-decoration: none;
       }
-      .large-file-tip dt a:hover {
+      .large-file-tip a:hover {
         text-decoration: underline;
       }
-      .large-file-tip dt a:focus-visible {
-        outline: 2px solid var(--wa-color-primary-600);
+      .large-file-tip a:focus-visible {
+        outline: 2px solid var(--wa-color-text-link);
         outline-offset: 2px;
         text-decoration: underline;
       }
@@ -550,7 +550,7 @@
           <dd>
             Install with
             <code>pip install 'ngff-zarr[cli]'</code> and run
-            <code>ngff-zarr -i input.nrrd -o output.ome.zarr</code>
+            <code>ngff-zarr -i input.nrrd -o output.ozx</code>
           </dd>
           <dt>
             <a
@@ -562,7 +562,6 @@
           </dt>
           <dd>
             Programmatic control with out-of-core, memory-limited processing
-            via Dask
           </dd>
           <dt>
             <a
@@ -573,8 +572,7 @@
             >
           </dt>
           <dd>
-            AI agent integration that can generate Python scripts for batch
-            processing
+            AI agent integration for batch processing
           </dd>
         </dl>
       </div>

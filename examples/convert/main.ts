@@ -225,7 +225,7 @@ function showLargeFileDrawer(): void {
   _largeFileTimer = setTimeout(() => {
     largeFileDrawer.open = false
     _largeFileTimer = null
-  }, 10_000)
+  }, 20_000)
 
   // If the user dismisses the drawer early, cancel the timer
   _largeFileHideListener = () => {
