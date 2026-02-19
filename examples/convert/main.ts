@@ -31,7 +31,7 @@ import {
   type OutputFormat,
   packageOutput,
 } from "./converter.ts"
-import { FAST_COLORMAP } from "./fast-colormap.js"
+import { FAST_COLORMAP } from "./fast-colormap.ts"
 
 // Color scheme: follow the browser/OS preference
 const darkQuery = window.matchMedia("(prefers-color-scheme: dark)")

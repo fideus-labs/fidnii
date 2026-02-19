@@ -225,4 +225,4 @@ ${formatArray(I, "    ")}
 }
 `
 
-process.stdout.write(output)
+console.log(output)
