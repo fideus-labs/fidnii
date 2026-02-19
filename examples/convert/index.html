@@ -52,11 +52,56 @@
         flex-direction: column;
         align-items: center;
         gap: 0.75rem;
+        position: relative;
+        overflow: hidden;
+        border-radius: 1.25rem;
+        cursor: pointer;
+      }
+      h1::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(
+          90deg,
+          transparent 0%,
+          rgba(255, 255, 255, 0.08) 30%,
+          rgba(255, 255, 255, 0.2) 50%,
+          rgba(255, 255, 255, 0.08) 70%,
+          transparent 100%
+        );
+        pointer-events: none;
+        z-index: 1;
+        opacity: 0;
+      }
+      h1:hover::before {
+        animation: electricSweep 0.9s ease-out forwards;
+        opacity: 1;
+      }
+      @keyframes electricSweep {
+        0% {
+          left: -100%;
+          opacity: 0.8;
+        }
+        100% {
+          left: 100%;
+          opacity: 0;
+        }
+      }
+      h1 a {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.75rem;
+        color: inherit;
+        text-decoration: none;
       }
       h1 img {
         height: auto;
         width: 280px;
-        border-radius: 0.75rem;
+        border-radius: 1.25rem;
         filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.25));
       }
       .github-star {
@@ -71,12 +116,56 @@
         text-decoration: none;
         font-size: 0.875rem;
         font-weight: 500;
-        transition: border-color 0.15s, background 0.15s;
+        transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
         white-space: nowrap;
+        position: relative;
+        overflow: hidden;
+      }
+      .github-star::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(
+          90deg,
+          transparent 0%,
+          rgba(255, 215, 0, 0.15) 25%,
+          rgba(255, 215, 0, 0.4) 50%,
+          rgba(255, 215, 0, 0.15) 75%,
+          transparent 100%
+        );
+        pointer-events: none;
+        z-index: 1;
+      }
+      .github-star:hover::before {
+        animation: goldShineSweep 0.6s ease-out;
       }
       .github-star:hover {
-        border-color: var(--wa-color-primary-500);
+        border-color: rgba(255, 215, 0, 0.6);
         background: var(--wa-color-surface-hover);
+        box-shadow:
+          0 0 8px rgba(255, 215, 0, 0.3),
+          0 0 20px rgba(255, 215, 0, 0.15);
+      }
+      @keyframes goldShineSweep {
+        0% {
+          left: -100%;
+          transform: skewX(-25deg);
+        }
+        100% {
+          left: 100%;
+          transform: skewX(-25deg);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        h1:hover::before {
+          animation: none;
+        }
+        .github-star:hover::before {
+          animation: none;
+        }
       }
       .github-star:focus-visible {
         outline: 2px solid var(--wa-color-primary-500);
@@ -457,8 +546,14 @@
 
     <footer class="footer">
       <h1>
-        <img src="/fidnii-convert-logo.webp" alt="Fidnii Image Converter" />
-        Fidnii Image Converter
+        <a
+          href="https://github.com/fideus-labs/fidnii"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <img src="/fidnii-convert-logo.webp" alt="Fidnii Image Converter" />
+          Fidnii Image Converter
+        </a>
       </h1>
       <a
         class="github-star"
