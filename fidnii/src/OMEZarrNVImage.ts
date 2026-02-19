@@ -1589,10 +1589,83 @@ export class OMEZarrNVImage extends NVImage {
   }
 
   /**
-   * Wait for all pending fetches to complete.
+   * Wait for all async work to settle: debounced timers (clip plane
+   * refetch, viewport update, slab reload), the main `populateVolume`
+   * pipeline, all slab loads, and in-flight coalescer fetches.
+   *
+   * The method polls in a loop because debounced timers may fire while
+   * we are waiting, triggering new loads. It only resolves once every
+   * source of async work is idle simultaneously.
    */
   async waitForIdle(): Promise<void> {
-    await this.coalescer.onIdle()
+    // Polling interval for active-load checks (ms).
+    const POLL_MS = 50
+
+    while (true) {
+      // ---- Debounced timers ----
+      // Wait for pending debounce timers to fire (and potentially
+      // trigger new loads) before checking load state.
+
+      if (this.clipPlaneRefetchTimeout !== null) {
+        await new Promise<void>((r) =>
+          setTimeout(r, this.clipPlaneDebounceMs + POLL_MS),
+        )
+        continue
+      }
+
+      if (this._viewportUpdateTimeout !== null) {
+        await new Promise<void>((r) =>
+          setTimeout(r, OMEZarrNVImage.VIEWPORT_DEBOUNCE_MS + POLL_MS),
+        )
+        continue
+      }
+
+      if (this._slabReloadTimeouts.size > 0) {
+        // Slab reload debounce is 100 ms (hardcoded in
+        // _debouncedSlabReload).
+        await new Promise<void>((r) => setTimeout(r, 100 + POLL_MS))
+        continue
+      }
+
+      // ---- Active loads ----
+
+      if (this.isLoading || this._pendingPopulateRequest !== null) {
+        await new Promise<void>((r) => setTimeout(r, POLL_MS))
+        continue
+      }
+
+      let slabBusy = false
+      for (const slabState of this._slabBuffers.values()) {
+        if (slabState.isLoading || slabState.pendingReload !== null) {
+          slabBusy = true
+          break
+        }
+      }
+      if (slabBusy) {
+        await new Promise<void>((r) => setTimeout(r, POLL_MS))
+        continue
+      }
+
+      // ---- In-flight fetches ----
+
+      await this.coalescer.onIdle()
+
+      // ---- Convergence check ----
+      // A debounce timer or pending request may have appeared while we
+      // were awaiting the coalescer. If so, loop again.
+
+      const stillBusy =
+        this.isLoading ||
+        this._pendingPopulateRequest !== null ||
+        this.clipPlaneRefetchTimeout !== null ||
+        this._viewportUpdateTimeout !== null ||
+        this._slabReloadTimeouts.size > 0 ||
+        Array.from(this._slabBuffers.values()).some(
+          (s) => s.isLoading || s.pendingReload !== null,
+        )
+
+      if (!stillBusy) break
+    }
   }
 
   // ============================================================
