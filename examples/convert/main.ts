@@ -31,6 +31,7 @@ import {
   type OutputFormat,
   packageOutput,
 } from "./converter.ts"
+import { FAST_COLORMAP } from "./fast-colormap.js"
 
 // Color scheme: follow the browser/OS preference
 const darkQuery = window.matchMedia("(prefers-color-scheme: dark)")
@@ -169,11 +170,12 @@ function initNiivue(): void {
   nv = new Niivue({
     show3Dcrosshair: false,
     crosshairWidth: 0,
-    backColor: [0, 0, 0, 1],
+    backColor: [0.384, 0.365, 0.353, 1],
     isOrientCube: false,
     isOrientationTextVisible: false,
   })
   nv.attachToCanvas(canvas)
+  nv.addColormap("fast", FAST_COLORMAP)
 }
 
 /**
@@ -425,7 +427,7 @@ async function showPreview(
 
   // Get colormap setting
   const colormap =
-    (colormapSelect as unknown as { value: string }).value || "gray"
+    (colormapSelect as unknown as { value: string }).value || "fast"
 
   // Create NVImage from multiscales
   const image = await OMEZarrNVImage.create({
@@ -652,7 +654,7 @@ colormapSelect.addEventListener("change", () => {
       return
     }
     const colormap =
-      (colormapSelect as unknown as { value: string }).value || "gray"
+      (colormapSelect as unknown as { value: string }).value || "fast"
     nv.volumes[0].colormap = colormap
     nv.updateGLVolume()
   }
