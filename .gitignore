@@ -3,6 +3,7 @@ node_modules/
 
 # Test data
 *.nii.gz
+test-results/
 
 # Ad-hoc screenshots (root level)
 /*.png
