@@ -4,6 +4,7 @@
 
 import "@awesome.me/webawesome/dist/components/button/button.js"
 import "@awesome.me/webawesome/dist/components/card/card.js"
+import "@awesome.me/webawesome/dist/components/drawer/drawer.js"
 import "@awesome.me/webawesome/dist/components/input/input.js"
 import "@awesome.me/webawesome/dist/components/option/option.js"
 import "@awesome.me/webawesome/dist/components/progress-bar/progress-bar.js"
@@ -108,6 +109,9 @@ const IMAGE_2D_EXTENSIONS = new Set([
 const DEFAULT_CHUNK_SIZE_2D = "256"
 const DEFAULT_CHUNK_SIZE_3D = "96"
 
+/** File size threshold (300 MB) above which we suggest Python tooling. */
+const LARGE_FILE_THRESHOLD = 300_000_000
+
 // State
 let selectedFile: File | null = null
 let lastResult: ConvertResult | null = null
@@ -190,6 +194,45 @@ function updateButtonLabels(): void {
   downloadBtn.textContent = "Download"
 }
 
+// Large-file recommendation drawer
+const largeFileDrawer = document.getElementById(
+  "large-file-drawer",
+) as HTMLElement & { open: boolean }
+let _largeFileTimer: ReturnType<typeof setTimeout> | null = null
+
+/**
+ * Show a bottom drawer recommending ngff-zarr Python tooling for
+ * files larger than {@link LARGE_FILE_THRESHOLD}.  The drawer
+ * auto-closes after 10 seconds or on user interaction.
+ */
+function showLargeFileDrawer(): void {
+  // Clear any pending auto-close from a previous showing
+  if (_largeFileTimer) {
+    clearTimeout(_largeFileTimer)
+    _largeFileTimer = null
+  }
+
+  largeFileDrawer.open = true
+
+  // Auto-close after 10 seconds
+  _largeFileTimer = setTimeout(() => {
+    largeFileDrawer.open = false
+    _largeFileTimer = null
+  }, 10_000)
+
+  // If the user dismisses the drawer early, cancel the timer
+  largeFileDrawer.addEventListener(
+    "wa-after-hide",
+    () => {
+      if (_largeFileTimer) {
+        clearTimeout(_largeFileTimer)
+        _largeFileTimer = null
+      }
+    },
+    { once: true },
+  )
+}
+
 // File handling
 function handleFile(file: File, { fromUrl = false } = {}): void {
   selectedFile = file
@@ -198,6 +241,11 @@ function handleFile(file: File, { fromUrl = false } = {}): void {
   fileInfo.textContent = `${file.name} (${formatFileSize(file.size)})`
   convertBtn.removeAttribute("disabled")
   lastResult = null
+
+  // Suggest Python tooling for very large files
+  if (file.size > LARGE_FILE_THRESHOLD) {
+    showLargeFileDrawer()
+  }
 
   // Clear any stale ?url= param when loading a local file
   if (!fromUrl) {
