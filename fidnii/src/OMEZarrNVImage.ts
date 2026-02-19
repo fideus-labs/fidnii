@@ -70,12 +70,8 @@ import {
   createAffineFromNgffImage,
   createAffineFromOMEZarr,
 } from "./utils/affine.js"
-import { worldToPixel } from "./utils/coordinates.js"
-import {
-  applyOrientationToAffine,
-  getOrientationMapping,
-  getOrientationSigns,
-} from "./utils/orientation.js"
+import { worldToPixelAffine } from "./utils/coordinates.js"
+import { getOrientationMapping } from "./utils/orientation.js"
 import {
   boundsApproxEqual,
   computeViewportBounds2D,
@@ -724,32 +720,39 @@ export class OMEZarrNVImage extends NVImage {
       1,
     ]
 
-    // Build the unadjusted affine (no orientation signs) and offset it
-    // to the loaded region. Buffer bounds use this OME-Zarr-space affine
-    // for internal clip-plane / viewport math.
+    // Compute buffer bounds in un-oriented OME-Zarr world space.
+    // These drive clip-plane / viewport math and must stay un-oriented.
     const regionStart = region.chunkAlignedStart
-    const affine = createAffineFromOMEZarr(
-      ngffImage.scale,
-      ngffImage.translation,
-    )
-    // regionStart is [z, y, x], affine translation is [x, y, z] (indices 12, 13, 14)
-    affine[12] += regionStart[2] * sx // x offset
-    affine[13] += regionStart[1] * sy // y offset
-    affine[14] += regionStart[0] * sz // z offset
+    const translation = ngffImage.translation
+    const tx = (translation.x ?? translation.X ?? 0) + regionStart[2] * sx
+    const ty = (translation.y ?? translation.Y ?? 0) + regionStart[1] * sy
+    const tz = (translation.z ?? translation.Z ?? 0) + regionStart[0] * sz
 
-    // Update current buffer bounds in OME-Zarr world space
     this._currentBufferBounds = {
-      min: [affine[12], affine[13], affine[14]],
+      min: [tx, ty, tz],
       max: [
-        affine[12] + fetchedShape[2] * sx,
-        affine[13] + fetchedShape[1] * sy,
-        affine[14] + fetchedShape[0] * sz,
+        tx + fetchedShape[2] * sx,
+        ty + fetchedShape[1] * sy,
+        tz + fetchedShape[0] * sz,
       ],
     }
 
-    // Apply orientation signs so the NIfTI affine encodes anatomical
-    // direction for NiiVue's calculateRAS()
-    applyOrientationToAffine(affine, ngffImage.axesOrientations)
+    // Build the fully oriented affine (including orientation permutation
+    // and sign flips), then apply the region offset in world space.
+    // The offset goes through the oriented 3x3 rotation matrix so it
+    // lands on the correct world axis even when NGFF axes are permuted.
+    const affine = createAffineFromNgffImage(ngffImage)
+
+    // regionStart is [z, y, x]; affine columns map NIfTI [i=x, j=y, k=z]
+    const offsetX = regionStart[2] // NIfTI i = NGFF x
+    const offsetY = regionStart[1] // NIfTI j = NGFF y
+    const offsetZ = regionStart[0] // NIfTI k = NGFF z
+    affine[12] +=
+      affine[0] * offsetX + affine[4] * offsetY + affine[8] * offsetZ
+    affine[13] +=
+      affine[1] * offsetX + affine[5] * offsetY + affine[9] * offsetZ
+    affine[14] +=
+      affine[2] * offsetX + affine[6] * offsetY + affine[10] * offsetZ
 
     // For 2D images, flip y so NiiVue's calculateRAS() accounts for
     // top-to-bottom pixel storage order. We shift the translation so
@@ -1804,21 +1807,43 @@ export class OMEZarrNVImage extends NVImage {
   }
 
   /**
-   * Get the orthogonal axis index for a slab slice type.
-   * Returns index in [z, y, x] order:
-   * - Axial: slicing through Z → orthogonal axis = 0 (Z)
-   * - Coronal: slicing through Y → orthogonal axis = 1 (Y)
-   * - Sagittal: slicing through X → orthogonal axis = 2 (X)
+   * Get the NGFF array axis index that is orthogonal to a slice plane.
+   *
+   * NiiVue slice types refer to anatomical planes:
+   * - Axial: perpendicular to S/I (physicalRow 2)
+   * - Coronal: perpendicular to A/P (physicalRow 1)
+   * - Sagittal: perpendicular to R/L (physicalRow 0)
+   *
+   * When the dataset has permuted axes (e.g. NGFF y encodes S/I instead
+   * of A/P), the NGFF array axis that is orthogonal to a given anatomical
+   * plane differs from the default z/y/x mapping. This method uses the
+   * orientation metadata to find the correct NGFF axis.
+   *
+   * Returns index in [z, y, x] order (0=z, 1=y, 2=x).
    */
   private _getOrthogonalAxis(sliceType: SlabSliceType): OrthogonalAxis {
+    // Which physical (RAS) row is perpendicular to this slice plane?
+    let targetRow: 0 | 1 | 2
     switch (sliceType) {
       case SLICE_TYPE.AXIAL:
-        return 0 // Z
+        targetRow = 2 // S/I
+        break
       case SLICE_TYPE.CORONAL:
-        return 1 // Y
+        targetRow = 1 // A/P
+        break
       case SLICE_TYPE.SAGITTAL:
-        return 2 // X
+        targetRow = 0 // R/L
+        break
     }
+
+    const orientations = this.multiscales.images[0]?.axesOrientations
+    const mapping = getOrientationMapping(orientations)
+
+    // Find which NGFF axis maps to targetRow.
+    // mapping.x/y/z have physicalRow; NGFF indices: x=2, y=1, z=0
+    if (mapping.z.physicalRow === targetRow) return 0
+    if (mapping.y.physicalRow === targetRow) return 1
+    return 2
   }
 
   /**
@@ -1869,9 +1894,12 @@ export class OMEZarrNVImage extends NVImage {
       return // Can't convert coordinates yet
     }
 
-    // Convert world to pixel at the slab's current resolution level
+    // Convert world to pixel at the slab's current resolution level.
+    // Must use the full oriented affine (not the naive scale+translation)
+    // because worldCoord is in oriented (NIfTI RAS) space.
     const ngffImage = this.multiscales.images[slabState.levelIndex]
-    const pixelCoord = worldToPixel(worldCoord, ngffImage)
+    const orientedAffine = createAffineFromNgffImage(ngffImage)
+    const pixelCoord = worldToPixelAffine(worldCoord, orientedAffine)
 
     // Check the orthogonal axis
     const orthAxis = this._getOrthogonalAxis(sliceType)
@@ -1917,11 +1945,11 @@ export class OMEZarrNVImage extends NVImage {
       this._slabBuffers.set(sliceType, slabState)
     }
 
-    // Swap the slab's NVImage into this NV instance
-    this._swapVolumeInNiivue(nv, slabState.nvImage)
-
-    // Get the current crosshair position and load the slab.
-    // Use the volume bounds center as a fallback if crosshair isn't available yet.
+    // Capture the crosshair world position BEFORE swapping volumes.
+    // frac2mm() uses the current volume's affine, so it must run while
+    // the 3D (or previous slab) NVImage is still attached. After the swap,
+    // the 1×1×1 placeholder's identity affine would produce incorrect
+    // coordinates.
     let worldCoord: [number, number, number]
     try {
       const crosshairPos = nv.scene?.crosshairPos
@@ -1948,6 +1976,9 @@ export class OMEZarrNVImage extends NVImage {
         (this._volumeBounds.min[2] + this._volumeBounds.max[2]) / 2,
       ]
     }
+
+    // Swap the slab's NVImage into this NV instance (after capturing coords)
+    this._swapVolumeInNiivue(nv, slabState.nvImage)
 
     void this._loadSlab(sliceType, worldCoord, "initial").catch((err) => {
       console.error(
@@ -2210,8 +2241,11 @@ export class OMEZarrNVImage extends NVImage {
     const chunkShape = getChunkShape(ngffImage)
     const volumeShape = getVolumeShape(ngffImage)
 
-    // Convert world position to pixel position at this level
-    const pixelCoord = worldToPixel(worldCoord, ngffImage)
+    // Convert world position to pixel position at this level.
+    // Must use the full oriented affine because worldCoord is in oriented
+    // (NIfTI RAS) space, not raw NGFF scale+translation space.
+    const orientedAffine = createAffineFromNgffImage(ngffImage)
+    const pixelCoord = worldToPixelAffine(worldCoord, orientedAffine)
     const orthPixel = pixelCoord[orthAxis]
 
     // Find the chunk-aligned slab in the orthogonal axis
@@ -2399,19 +2433,29 @@ export class OMEZarrNVImage extends NVImage {
       1,
     ]
 
-    // Build affine with orientation signs, then offset for region start.
-    // Use the original unoriented scale values with orientation signs for
-    // the translation offset calculation. This ensures correctness even when
-    // axes are permuted (where affine diagonal may be zero).
+    // Build the fully oriented affine (including orientation permutation
+    // and sign flips), then apply the region offset in world space.
+    //
+    // The offset must be applied AFTER orientation because the fetch region
+    // start is in NGFF voxel space [z, y, x], and the oriented 3x3 rotation
+    // matrix is needed to transform that voxel offset into world coordinates.
+    // Previously, the offset was applied before orientation which broke when
+    // NGFF axes were permuted (e.g. NGFF z → physical A/P axis).
     const affine = createAffineFromNgffImage(ngffImage)
 
-    // Get orientation signs to apply to the offset calculation
-    const signs = getOrientationSigns(ngffImage.axesOrientations)
-
-    // Adjust translation for region offset (fetchStart is [z, y, x])
-    affine[12] += fetchStart[2] * signs.x * sx // x offset (orientation-aware)
-    affine[13] += fetchStart[1] * signs.y * sy // y offset (orientation-aware)
-    affine[14] += fetchStart[0] * signs.z * sz // z offset (orientation-aware)
+    // Transform the NGFF voxel offset through the oriented 3x3 rotation.
+    // fetchStart is [z, y, x]; affine columns map NIfTI [i=x, j=y, k=z]
+    // to world, so we need offset in NIfTI [x, y, z] order.
+    const offsetX = fetchStart[2] // NIfTI i = NGFF x
+    const offsetY = fetchStart[1] // NIfTI j = NGFF y
+    const offsetZ = fetchStart[0] // NIfTI k = NGFF z
+    // Multiply the 3x3 rotation by the offset vector and add to translation
+    affine[12] +=
+      affine[0] * offsetX + affine[4] * offsetY + affine[8] * offsetZ
+    affine[13] +=
+      affine[1] * offsetX + affine[5] * offsetY + affine[9] * offsetZ
+    affine[14] +=
+      affine[2] * offsetX + affine[6] * offsetY + affine[10] * offsetZ
 
     // For 2D images, flip y before normalization (composes with orientation)
     if (this._flipY2D && this._is2D) {
