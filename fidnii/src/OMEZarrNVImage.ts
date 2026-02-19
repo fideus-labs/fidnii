@@ -67,14 +67,12 @@ import {
 import {
   affineToNiftiSrows,
   calculateWorldBounds,
-  createAffineFromNgffImage,
   createAffineFromOMEZarr,
 } from "./utils/affine.js"
 import { worldToPixel } from "./utils/coordinates.js"
 import {
   applyOrientationToAffine,
   getOrientationMapping,
-  getOrientationSigns,
 } from "./utils/orientation.js"
 import {
   boundsApproxEqual,
@@ -1917,11 +1915,11 @@ export class OMEZarrNVImage extends NVImage {
       this._slabBuffers.set(sliceType, slabState)
     }
 
-    // Swap the slab's NVImage into this NV instance
-    this._swapVolumeInNiivue(nv, slabState.nvImage)
-
-    // Get the current crosshair position and load the slab.
-    // Use the volume bounds center as a fallback if crosshair isn't available yet.
+    // Capture the crosshair world position BEFORE swapping volumes.
+    // frac2mm() uses the current volume's affine, so it must run while
+    // the 3D (or previous slab) NVImage is still attached. After the swap,
+    // the 1×1×1 placeholder's identity affine would produce incorrect
+    // coordinates.
     let worldCoord: [number, number, number]
     try {
       const crosshairPos = nv.scene?.crosshairPos
@@ -1948,6 +1946,9 @@ export class OMEZarrNVImage extends NVImage {
         (this._volumeBounds.min[2] + this._volumeBounds.max[2]) / 2,
       ]
     }
+
+    // Swap the slab's NVImage into this NV instance (after capturing coords)
+    this._swapVolumeInNiivue(nv, slabState.nvImage)
 
     void this._loadSlab(sliceType, worldCoord, "initial").catch((err) => {
       console.error(
@@ -2399,19 +2400,23 @@ export class OMEZarrNVImage extends NVImage {
       1,
     ]
 
-    // Build affine with orientation signs, then offset for region start.
-    // Use the original unoriented scale values with orientation signs for
-    // the translation offset calculation. This ensures correctness even when
-    // axes are permuted (where affine diagonal may be zero).
-    const affine = createAffineFromNgffImage(ngffImage)
+    // Build the un-oriented affine first, apply region offset, then orient.
+    // This matches updateHeaderForRegion (the 3D path) and correctly handles
+    // axis permutations where NGFF axes map to different physical axes
+    // (e.g. NGFF y → physical Z for the sample MRI orientation).
+    const affine = createAffineFromOMEZarr(
+      ngffImage.scale,
+      ngffImage.translation,
+    )
 
-    // Get orientation signs to apply to the offset calculation
-    const signs = getOrientationSigns(ngffImage.axesOrientations)
+    // Adjust translation for region offset in un-oriented space
+    // (fetchStart is [z, y, x], affine translation is [x, y, z])
+    affine[12] += fetchStart[2] * sx // x offset
+    affine[13] += fetchStart[1] * sy // y offset
+    affine[14] += fetchStart[0] * sz // z offset
 
-    // Adjust translation for region offset (fetchStart is [z, y, x])
-    affine[12] += fetchStart[2] * signs.x * sx // x offset (orientation-aware)
-    affine[13] += fetchStart[1] * signs.y * sy // y offset (orientation-aware)
-    affine[14] += fetchStart[0] * signs.z * sz // z offset (orientation-aware)
+    // Apply orientation (permutation + sign) after the offset
+    applyOrientationToAffine(affine, ngffImage.axesOrientations)
 
     // For 2D images, flip y before normalization (composes with orientation)
     if (this._flipY2D && this._is2D) {

@@ -331,4 +331,125 @@ test.describe("Slice Mode", () => {
     await page.selectOption("#slice-type", "2")
     await expect(page.locator("#gl2-label")).toHaveText("Sagittal")
   })
+
+  test("slab data is non-zero after switching to coronal", async ({ page }) => {
+    // Switch NV2 to coronal
+    await page.selectOption("#slice-type", "1")
+
+    const result = await page.evaluate(async () => {
+      const image = (window as any).image
+      await image.waitForIdle()
+
+      // SLICE_TYPE.CORONAL = 1
+      const slabState = image.getSlabBufferState(1)
+      if (!slabState?.nvImage?.img) return null
+
+      const img = slabState.nvImage.img
+      let nonZeroCount = 0
+      for (let i = 0; i < img.length; i++) {
+        if (img[i] !== 0) nonZeroCount++
+      }
+      return {
+        imgLength: img.length,
+        nonZeroCount,
+        nonZeroPercent: (nonZeroCount / img.length) * 100,
+      }
+    })
+
+    expect(result).not.toBeNull()
+    if (result) {
+      expect(result.imgLength).toBeGreaterThan(1)
+      // The slab should contain meaningful data — at least some non-zero pixels
+      expect(result.nonZeroCount).toBeGreaterThan(0)
+    }
+  })
+
+  test("crosshair is positioned within volume after slab switch", async ({
+    page,
+  }) => {
+    // Switch NV2 from Axial to Coronal
+    await page.selectOption("#slice-type", "1")
+
+    const result = await page.evaluate(async () => {
+      const image = (window as any).image
+      const nv2 = (window as any).nv2
+      await image.waitForIdle()
+
+      const crosshairPos = nv2.scene?.crosshairPos
+      if (!crosshairPos) return null
+
+      return {
+        x: crosshairPos[0],
+        y: crosshairPos[1],
+        z: crosshairPos[2],
+      }
+    })
+
+    expect(result).not.toBeNull()
+    if (result) {
+      // All fractional coordinates should be strictly within [0, 1].
+      // Before the fix, frac2mm ran against the placeholder and produced
+      // out-of-range values (clamped to 0 or 1 at the edges).
+      for (const axis of ["x", "y", "z"] as const) {
+        expect(result[axis]).toBeGreaterThanOrEqual(0)
+        expect(result[axis]).toBeLessThanOrEqual(1)
+      }
+      // At least one axis should NOT be at the extreme edge (0 or 1),
+      // indicating the crosshair is positioned within the volume
+      const atEdge = [result.x, result.y, result.z].filter(
+        (v) => v === 0 || v === 1,
+      )
+      expect(atEdge.length).toBeLessThan(3)
+    }
+  })
+
+  test("switching between all slab types preserves crosshair in bounds", async ({
+    page,
+  }) => {
+    // Switch through all slab types and verify crosshair stays in bounds
+    const sliceTypes = [
+      { value: "1", name: "Coronal" },
+      { value: "2", name: "Sagittal" },
+      { value: "0", name: "Axial" },
+    ]
+
+    for (const { value, name } of sliceTypes) {
+      await page.selectOption("#slice-type", value)
+
+      const result = await page.evaluate(async () => {
+        const image = (window as any).image
+        const nv2 = (window as any).nv2
+        await image.waitForIdle()
+
+        const crosshairPos = nv2.scene?.crosshairPos
+        const slabState = image.getSlabBufferState(nv2.opts.sliceType)
+        const img = slabState?.nvImage?.img
+
+        let nonZeroCount = 0
+        if (img) {
+          for (let i = 0; i < img.length; i++) {
+            if (img[i] !== 0) nonZeroCount++
+          }
+        }
+
+        return {
+          crosshair: crosshairPos
+            ? [crosshairPos[0], crosshairPos[1], crosshairPos[2]]
+            : null,
+          hasData: nonZeroCount > 0,
+          imgLength: img?.length ?? 0,
+        }
+      })
+
+      expect(result.crosshair).not.toBeNull()
+      expect(result.hasData).toBe(true)
+      // Crosshair should be in [0, 1] for all axes
+      if (result.crosshair) {
+        for (const v of result.crosshair) {
+          expect(v).toBeGreaterThanOrEqual(0)
+          expect(v).toBeLessThanOrEqual(1)
+        }
+      }
+    }
+  })
 })

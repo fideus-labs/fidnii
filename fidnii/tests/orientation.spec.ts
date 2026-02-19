@@ -639,3 +639,312 @@ test.describe("Orientation — placeholder affine", () => {
     expect([1, -1]).toContain(result.signs.z)
   })
 })
+
+test.describe("Orientation — slab affine offset with permuted axes", () => {
+  // These tests verify that the slab affine computation applies the region
+  // offset BEFORE orientation (matching the 3D updateHeaderForRegion path).
+  // The old buggy code applied the offset AFTER orientation, which produced
+  // wrong world-space translations when axes were permuted.
+  test.beforeEach(async ({ page }) => {
+    await page.goto("/")
+    await page.waitForFunction(() => (window as any).fidnii !== undefined, {
+      timeout: 30000,
+    })
+  })
+
+  test("slab affine matches 3D path for identity (no permutation)", async ({
+    page,
+  }) => {
+    // With no orientation metadata, offset-then-orient and orient-then-offset
+    // produce the same result. This baseline ensures the pattern works.
+    const result = await page.evaluate(() => {
+      const { createAffineFromOMEZarr, applyOrientationToAffine } = (
+        window as any
+      ).fidnii
+
+      const scale = { x: 2, y: 3, z: 4 }
+      const translation = { x: 10, y: 20, z: 30 }
+      // fetchStart is [z, y, x] — simulates a coronal slab at y=50
+      const fetchStart: [number, number, number] = [0, 50, 0]
+
+      // Correct path: offset in un-oriented space, then apply orientation
+      const affine = createAffineFromOMEZarr(scale, translation)
+      affine[12] += fetchStart[2] * scale.x
+      affine[13] += fetchStart[1] * scale.y
+      affine[14] += fetchStart[0] * scale.z
+      applyOrientationToAffine(affine, undefined)
+
+      return {
+        tx: affine[12],
+        ty: affine[13],
+        tz: affine[14],
+      }
+    })
+
+    // x: 10 + 0*2 = 10, y: 20 + 50*3 = 170, z: 30 + 0*4 = 30
+    expect(result.tx).toBeCloseTo(10, 5)
+    expect(result.ty).toBeCloseTo(170, 5)
+    expect(result.tz).toBeCloseTo(30, 5)
+  })
+
+  test("slab affine matches 3D path for LPS (sign flip, no permutation)", async ({
+    page,
+  }) => {
+    const result = await page.evaluate(() => {
+      const { createAffineFromOMEZarr, applyOrientationToAffine } = (
+        window as any
+      ).fidnii
+
+      const scale = { x: 2, y: 3, z: 4 }
+      const translation = { x: 10, y: 20, z: 30 }
+      const fetchStart: [number, number, number] = [0, 50, 0]
+      const orientations = {
+        x: { type: "anatomical", value: "right-to-left" },
+        y: { type: "anatomical", value: "anterior-to-posterior" },
+        z: { type: "anatomical", value: "inferior-to-superior" },
+      }
+
+      // Correct path: offset THEN orient
+      const affine = createAffineFromOMEZarr(scale, translation)
+      affine[12] += fetchStart[2] * scale.x
+      affine[13] += fetchStart[1] * scale.y
+      affine[14] += fetchStart[0] * scale.z
+      applyOrientationToAffine(affine, orientations)
+
+      return {
+        tx: affine[12],
+        ty: affine[13],
+        tz: affine[14],
+        // Also check the 3x3 submatrix is correct
+        sx: affine[0],
+        sy: affine[5],
+        sz: affine[10],
+      }
+    })
+
+    // LPS: translation signs are flipped by applyOrientationToAffine
+    // Un-oriented offset: tx=10, ty=20+150=170, tz=30
+    // After LPS sign flip: tx=-10, ty=-170, tz=30
+    expect(result.tx).toBeCloseTo(-10, 5)
+    expect(result.ty).toBeCloseTo(-170, 5)
+    expect(result.tz).toBeCloseTo(30, 5)
+    expect(result.sx).toBe(-2)
+    expect(result.sy).toBe(-3)
+    expect(result.sz).toBe(4)
+  })
+
+  test("slab affine is correct for mri.nii.gz permuted orientation (coronal slab)", async ({
+    page,
+  }) => {
+    // This is THE critical test case for the bug fix.
+    // mri.nii.gz orientation: x→R/L, y→S/I, z→A/P (y and z permuted)
+    // A coronal slab at NGFF y=96 would have fetchStart=[0, 96, 0].
+    //
+    // OLD BUGGY CODE applied offset after orientation:
+    //   affine[13] += 96 * sy → added 96*sy to physical Y row
+    //   But with permutation, NGFF y maps to physical row 2 (S/I),
+    //   so the offset went to the wrong spatial dimension.
+    //
+    // FIXED CODE applies offset before orientation:
+    //   un-oriented affine[13] += 96 * sy → NGFF y offset in NGFF space
+    //   then applyOrientationToAffine permutes this to physical row 2
+    const result = await page.evaluate(() => {
+      const { createAffineFromOMEZarr, applyOrientationToAffine } = (
+        window as any
+      ).fidnii
+
+      const scale = { x: 1, y: 1, z: 1 }
+      const translation = { x: -127.05, y: 90.13, z: 54.54 }
+      // Coronal slab at NGFF y=96
+      const fetchStart: [number, number, number] = [0, 96, 0]
+      const orientations = {
+        x: { type: "anatomical", value: "right-to-left" },
+        y: { type: "anatomical", value: "superior-to-inferior" },
+        z: { type: "anatomical", value: "posterior-to-anterior" },
+      }
+
+      // Correct path: offset THEN orient
+      const affine = createAffineFromOMEZarr(scale, translation)
+      affine[12] += fetchStart[2] * scale.x // x: -127.05 + 0 = -127.05
+      affine[13] += fetchStart[1] * scale.y // y: 90.13 + 96 = 186.13
+      affine[14] += fetchStart[0] * scale.z // z: 54.54 + 0 = 54.54
+      applyOrientationToAffine(affine, orientations)
+
+      return {
+        srow_x: [affine[0], affine[4], affine[8], affine[12]],
+        srow_y: [affine[1], affine[5], affine[9], affine[13]],
+        srow_z: [affine[2], affine[6], affine[10], affine[14]],
+      }
+    })
+
+    // After orientation (x→row0 sign-1, y→row2 sign-1, z→row1 sign+1):
+    //   srow_x: [-1, 0, 0, 127.05]   — tx = -1 * -127.05 = 127.05
+    //   srow_y: [0, 0, 1, -186.13]    — ty = -1 * 186.13 = -186.13
+    //   srow_z: [0, -1, 0, 54.54]     — tz = +1 * 54.54 = 54.54
+    //
+    // Note: ty includes the offset (90.13 + 96 = 186.13) which then
+    // gets sign-flipped to -186.13 for the physical S/I axis.
+    expect(result.srow_x[0]).toBeCloseTo(-1, 5)
+    expect(result.srow_x[3]).toBeCloseTo(127.05, 2)
+
+    expect(result.srow_y[2]).toBeCloseTo(1, 5)
+    expect(result.srow_y[3]).toBeCloseTo(-186.13, 2)
+
+    expect(result.srow_z[1]).toBeCloseTo(-1, 5)
+    expect(result.srow_z[3]).toBeCloseTo(54.54, 2)
+  })
+
+  test("slab affine is correct for mri.nii.gz permuted orientation (sagittal slab)", async ({
+    page,
+  }) => {
+    // Sagittal slab: fetchStart has x offset
+    const result = await page.evaluate(() => {
+      const { createAffineFromOMEZarr, applyOrientationToAffine } = (
+        window as any
+      ).fidnii
+
+      const scale = { x: 1, y: 1, z: 1 }
+      const translation = { x: -127.05, y: 90.13, z: 54.54 }
+      // Sagittal slab at NGFF x=64
+      const fetchStart: [number, number, number] = [0, 0, 64]
+      const orientations = {
+        x: { type: "anatomical", value: "right-to-left" },
+        y: { type: "anatomical", value: "superior-to-inferior" },
+        z: { type: "anatomical", value: "posterior-to-anterior" },
+      }
+
+      const affine = createAffineFromOMEZarr(scale, translation)
+      affine[12] += fetchStart[2] * scale.x // x: -127.05 + 64 = -63.05
+      affine[13] += fetchStart[1] * scale.y // y: 90.13 + 0 = 90.13
+      affine[14] += fetchStart[0] * scale.z // z: 54.54 + 0 = 54.54
+      applyOrientationToAffine(affine, orientations)
+
+      return {
+        tx: affine[12],
+        ty: affine[13],
+        tz: affine[14],
+      }
+    })
+
+    // tx = -1 * -63.05 = 63.05
+    // ty = -1 * 90.13 = -90.13
+    // tz = +1 * 54.54 = 54.54
+    expect(result.tx).toBeCloseTo(63.05, 2)
+    expect(result.ty).toBeCloseTo(-90.13, 2)
+    expect(result.tz).toBeCloseTo(54.54, 2)
+  })
+
+  test("slab affine is correct for mri.nii.gz permuted orientation (axial slab)", async ({
+    page,
+  }) => {
+    // Axial slab: fetchStart has z offset
+    const result = await page.evaluate(() => {
+      const { createAffineFromOMEZarr, applyOrientationToAffine } = (
+        window as any
+      ).fidnii
+
+      const scale = { x: 1, y: 1, z: 1 }
+      const translation = { x: -127.05, y: 90.13, z: 54.54 }
+      // Axial slab at NGFF z=80
+      const fetchStart: [number, number, number] = [80, 0, 0]
+      const orientations = {
+        x: { type: "anatomical", value: "right-to-left" },
+        y: { type: "anatomical", value: "superior-to-inferior" },
+        z: { type: "anatomical", value: "posterior-to-anterior" },
+      }
+
+      const affine = createAffineFromOMEZarr(scale, translation)
+      affine[12] += fetchStart[2] * scale.x // x: -127.05 + 0 = -127.05
+      affine[13] += fetchStart[1] * scale.y // y: 90.13 + 0 = 90.13
+      affine[14] += fetchStart[0] * scale.z // z: 54.54 + 80 = 134.54
+      applyOrientationToAffine(affine, orientations)
+
+      return {
+        tx: affine[12],
+        ty: affine[13],
+        tz: affine[14],
+      }
+    })
+
+    // tx = -1 * -127.05 = 127.05
+    // ty = -1 * 90.13 = -90.13
+    // tz = +1 * 134.54 = 134.54
+    expect(result.tx).toBeCloseTo(127.05, 2)
+    expect(result.ty).toBeCloseTo(-90.13, 2)
+    expect(result.tz).toBeCloseTo(134.54, 2)
+  })
+
+  test("mm2frac for slab center is in-bounds with permuted axes", async ({
+    page,
+  }) => {
+    // Simulates NiiVue's mm2frac(): given a world-space point, compute
+    // its fractional voxel coordinate via the inverse affine. The old
+    // buggy code produced an affine where the slab center mapped to
+    // out-of-bounds fractions because the offset was applied after
+    // orientation permutation.
+    const result = await page.evaluate(() => {
+      const { createAffineFromOMEZarr, applyOrientationToAffine } = (
+        window as any
+      ).fidnii
+
+      const scale = { x: 1, y: 1, z: 1 }
+      const translation = { x: -127.05, y: 90.13, z: 54.54 }
+      // Coronal slab at NGFF y=96, shape [192, 32, 256]
+      const fetchStart: [number, number, number] = [0, 96, 0]
+      const fetchedShape: [number, number, number] = [192, 32, 256]
+      const orientations = {
+        x: { type: "anatomical", value: "right-to-left" },
+        y: { type: "anatomical", value: "superior-to-inferior" },
+        z: { type: "anatomical", value: "posterior-to-anterior" },
+      }
+
+      // Build slab affine with correct offset-then-orient approach
+      const affine = createAffineFromOMEZarr(scale, translation)
+      affine[12] += fetchStart[2] * scale.x
+      affine[13] += fetchStart[1] * scale.y
+      affine[14] += fetchStart[0] * scale.z
+      applyOrientationToAffine(affine, orientations)
+
+      // Compute world center of the slab volume
+      const [dimZ, dimY, dimX] = fetchedShape
+      const cx = dimX / 2,
+        cy = dimY / 2,
+        cz = dimZ / 2
+      const wx = affine[0] * cx + affine[4] * cy + affine[8] * cz + affine[12]
+      const wy = affine[1] * cx + affine[5] * cy + affine[9] * cz + affine[13]
+      const wz = affine[2] * cx + affine[6] * cy + affine[10] * cz + affine[14]
+
+      // Invert the affine to get mm2frac (3x3 inverse + translation)
+      const det0 =
+        affine[0] * (affine[5] * affine[10] - affine[6] * affine[9]) -
+        affine[4] * (affine[1] * affine[10] - affine[2] * affine[9]) +
+        affine[8] * (affine[1] * affine[6] - affine[2] * affine[5])
+      if (Math.abs(det0) < 1e-10) return { fracX: -1, fracY: -1, fracZ: -1 }
+
+      const inv = new Float64Array(12)
+      inv[0] = (affine[5] * affine[10] - affine[6] * affine[9]) / det0
+      inv[1] = (affine[2] * affine[9] - affine[1] * affine[10]) / det0
+      inv[2] = (affine[1] * affine[6] - affine[2] * affine[5]) / det0
+      inv[3] = (affine[6] * affine[8] - affine[4] * affine[10]) / det0
+      inv[4] = (affine[0] * affine[10] - affine[2] * affine[8]) / det0
+      inv[5] = (affine[2] * affine[4] - affine[0] * affine[6]) / det0
+      inv[6] = (affine[4] * affine[9] - affine[5] * affine[8]) / det0
+      inv[7] = (affine[1] * affine[8] - affine[0] * affine[9]) / det0
+      inv[8] = (affine[0] * affine[5] - affine[1] * affine[4]) / det0
+
+      const dx = wx - affine[12]
+      const dy = wy - affine[13]
+      const dz = wz - affine[14]
+      const fracX = (inv[0] * dx + inv[3] * dy + inv[6] * dz) / dimX
+      const fracY = (inv[1] * dx + inv[4] * dy + inv[7] * dz) / dimY
+      const fracZ = (inv[2] * dx + inv[5] * dy + inv[8] * dz) / dimZ
+
+      return { fracX, fracY, fracZ }
+    })
+
+    // The slab center should map to exactly 0.5 in each fractional axis
+    expect(result.fracX).toBeCloseTo(0.5, 3)
+    expect(result.fracY).toBeCloseTo(0.5, 3)
+    expect(result.fracZ).toBeCloseTo(0.5, 3)
+  })
+})
