@@ -72,7 +72,7 @@ Commit messages are validated by **commitlint** using Conventional Commits
 ### Formatting (Biome)
 
 - **Indentation**: 2 spaces, no tabs
-- **Semicolons**: `asNeeded` — do not add unnecessary semicolons
+- **Semicolons**: None (Biome setting: `asNeeded`)
 - **Quotes**: Double quotes
 - **Line width**: 80 columns
 - **Trailing commas**: All (in multi-line constructs)
