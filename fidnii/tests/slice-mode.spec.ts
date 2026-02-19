@@ -403,6 +403,92 @@ test.describe("Slice Mode", () => {
     }
   })
 
+  test("slab buffer inherits colormap set before slice type switch", async ({
+    page,
+  }) => {
+    // Set a custom colormap on the main image before switching to a slab view
+    await page.evaluate(() => {
+      const image = (window as any).image
+      image.colormap = "hot"
+    })
+
+    // Switch NV2 to Coronal to trigger slab creation
+    await page.selectOption("#slice-type", "1")
+    await page.waitForTimeout(2000)
+
+    const result = await page.evaluate(async () => {
+      const image = (window as any).image
+      await image.waitForIdle()
+
+      // SLICE_TYPE.CORONAL = 1
+      const slabState = image.getSlabBufferState(1)
+      return {
+        mainColormap: image.colormap,
+        slabColormap: slabState?.nvImage?._colormap,
+      }
+    })
+
+    expect(result.mainColormap).toBe("hot")
+    expect(result.slabColormap).toBe("hot")
+  })
+
+  test("colormap setter propagates to existing slab buffers", async ({
+    page,
+  }) => {
+    // NV2 starts in Axial mode, so the axial slab already exists
+    await page.waitForTimeout(2000)
+
+    // Change the colormap after the slab is already created
+    await page.evaluate(async () => {
+      const image = (window as any).image
+      await image.waitForIdle()
+      image.colormap = "cool"
+    })
+
+    const result = await page.evaluate(() => {
+      const image = (window as any).image
+      // SLICE_TYPE.AXIAL = 0
+      const slabState = image.getSlabBufferState(0)
+      return {
+        mainColormap: image.colormap,
+        slabColormap: slabState?.nvImage?._colormap,
+      }
+    })
+
+    expect(result.mainColormap).toBe("cool")
+    expect(result.slabColormap).toBe("cool")
+  })
+
+  test("switching back to render mode after colormap change preserves colormap", async ({
+    page,
+  }) => {
+    // Set colormap, switch to slab, then back to render
+    await page.evaluate(() => {
+      const image = (window as any).image
+      image.colormap = "viridis"
+    })
+
+    // Switch to Axial (slab)
+    await page.selectOption("#slice-type", "0")
+    await page.waitForTimeout(1000)
+
+    // Switch to Render (main image)
+    await page.selectOption("#slice-type", "4")
+    await page.waitForTimeout(500)
+
+    const result = await page.evaluate(() => {
+      const nv2 = (window as any).nv2
+      const image = (window as any).image
+      return {
+        mainColormap: image.colormap,
+        activeVolumeColormap: nv2.volumes[0]?.colormap,
+      }
+    })
+
+    expect(result.mainColormap).toBe("viridis")
+    expect(result.activeVolumeColormap).toBe("viridis")
+  })
+
   test("switching between all slab types preserves crosshair in bounds", async ({
     page,
   }) => {
