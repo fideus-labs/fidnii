@@ -1215,3 +1215,110 @@ test.describe("Orientation — affine offset with permuted axes", () => {
     expect(result.max[2]).toBeCloseTo(266.54, 2)
   })
 })
+
+test.describe("Orientation — orthogonal axis for slab slice type", () => {
+  // Tests for the logic that maps NiiVue slice types (anatomical planes)
+  // to the correct NGFF array axis index. NiiVue AXIAL is perpendicular to
+  // S/I (physicalRow 2), CORONAL to A/P (physicalRow 1), SAGITTAL to R/L
+  // (physicalRow 0). When NGFF axes are permuted, the NGFF index that
+  // corresponds to each physical direction changes.
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto("/")
+    await page.waitForFunction(() => (window as any).fidnii !== undefined, {
+      timeout: 30000,
+    })
+  })
+
+  // Helper: given orientation metadata, compute which NGFF axis index
+  // (0=z, 1=y, 2=x) corresponds to each anatomical plane's orthogonal
+  // direction. This mirrors _getOrthogonalAxis logic.
+  function computeOrthogonalAxes(mapping: {
+    x: { physicalRow: number }
+    y: { physicalRow: number }
+    z: { physicalRow: number }
+  }): { axial: number; coronal: number; sagittal: number } {
+    const findAxis = (targetRow: number): number => {
+      if (mapping.z.physicalRow === targetRow) return 0
+      if (mapping.y.physicalRow === targetRow) return 1
+      return 2
+    }
+    return {
+      axial: findAxis(2), // S/I
+      coronal: findAxis(1), // A/P
+      sagittal: findAxis(0), // R/L
+    }
+  }
+
+  test("identity orientation: axial=z(0), coronal=y(1), sagittal=x(2)", async ({
+    page,
+  }) => {
+    const mapping = await page.evaluate(() => {
+      const { getOrientationMapping } = (window as any).fidnii
+      return getOrientationMapping(undefined)
+    })
+
+    const axes = computeOrthogonalAxes(mapping)
+    expect(axes.axial).toBe(0) // z
+    expect(axes.coronal).toBe(1) // y
+    expect(axes.sagittal).toBe(2) // x
+  })
+
+  test("LPS (sign-flip only): same indices as identity", async ({ page }) => {
+    const mapping = await page.evaluate(() => {
+      const { getOrientationMapping } = (window as any).fidnii
+      return getOrientationMapping({
+        x: { type: "anatomical", value: "right-to-left" },
+        y: { type: "anatomical", value: "anterior-to-posterior" },
+        z: { type: "anatomical", value: "inferior-to-superior" },
+      })
+    })
+
+    const axes = computeOrthogonalAxes(mapping)
+    expect(axes.axial).toBe(0) // z still maps to S/I
+    expect(axes.coronal).toBe(1) // y still maps to A/P
+    expect(axes.sagittal).toBe(2) // x still maps to R/L
+  })
+
+  test("mri.nii.gz permuted: axial=y(1), coronal=z(0), sagittal=x(2)", async ({
+    page,
+  }) => {
+    // x→R/L (row 0), y→S/I (row 2), z→A/P (row 1)
+    const mapping = await page.evaluate(() => {
+      const { getOrientationMapping } = (window as any).fidnii
+      return getOrientationMapping({
+        x: { type: "anatomical", value: "right-to-left" },
+        y: { type: "anatomical", value: "superior-to-inferior" },
+        z: { type: "anatomical", value: "posterior-to-anterior" },
+      })
+    })
+
+    const axes = computeOrthogonalAxes(mapping)
+    // AXIAL (perp to S/I, row 2): y has physicalRow=2 → NGFF index 1
+    expect(axes.axial).toBe(1)
+    // CORONAL (perp to A/P, row 1): z has physicalRow=1 → NGFF index 0
+    expect(axes.coronal).toBe(0)
+    // SAGITTAL (perp to R/L, row 0): x has physicalRow=0 → NGFF index 2
+    expect(axes.sagittal).toBe(2)
+  })
+
+  test("fully permuted: all axes remapped", async ({ page }) => {
+    // x→A/P (row 1), y→R/L (row 0), z→S/I (row 2)
+    const mapping = await page.evaluate(() => {
+      const { getOrientationMapping } = (window as any).fidnii
+      return getOrientationMapping({
+        x: { type: "anatomical", value: "posterior-to-anterior" },
+        y: { type: "anatomical", value: "left-to-right" },
+        z: { type: "anatomical", value: "inferior-to-superior" },
+      })
+    })
+
+    const axes = computeOrthogonalAxes(mapping)
+    // AXIAL (perp to S/I, row 2): z has physicalRow=2 → NGFF index 0
+    expect(axes.axial).toBe(0)
+    // CORONAL (perp to A/P, row 1): x has physicalRow=1 → NGFF index 2
+    expect(axes.coronal).toBe(2)
+    // SAGITTAL (perp to R/L, row 0): y has physicalRow=0 → NGFF index 1
+    expect(axes.sagittal).toBe(1)
+  })
+})

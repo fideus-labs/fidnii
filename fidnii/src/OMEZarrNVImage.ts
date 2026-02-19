@@ -1807,21 +1807,43 @@ export class OMEZarrNVImage extends NVImage {
   }
 
   /**
-   * Get the orthogonal axis index for a slab slice type.
-   * Returns index in [z, y, x] order:
-   * - Axial: slicing through Z → orthogonal axis = 0 (Z)
-   * - Coronal: slicing through Y → orthogonal axis = 1 (Y)
-   * - Sagittal: slicing through X → orthogonal axis = 2 (X)
+   * Get the NGFF array axis index that is orthogonal to a slice plane.
+   *
+   * NiiVue slice types refer to anatomical planes:
+   * - Axial: perpendicular to S/I (physicalRow 2)
+   * - Coronal: perpendicular to A/P (physicalRow 1)
+   * - Sagittal: perpendicular to R/L (physicalRow 0)
+   *
+   * When the dataset has permuted axes (e.g. NGFF y encodes S/I instead
+   * of A/P), the NGFF array axis that is orthogonal to a given anatomical
+   * plane differs from the default z/y/x mapping. This method uses the
+   * orientation metadata to find the correct NGFF axis.
+   *
+   * Returns index in [z, y, x] order (0=z, 1=y, 2=x).
    */
   private _getOrthogonalAxis(sliceType: SlabSliceType): OrthogonalAxis {
+    // Which physical (RAS) row is perpendicular to this slice plane?
+    let targetRow: 0 | 1 | 2
     switch (sliceType) {
       case SLICE_TYPE.AXIAL:
-        return 0 // Z
+        targetRow = 2 // S/I
+        break
       case SLICE_TYPE.CORONAL:
-        return 1 // Y
+        targetRow = 1 // A/P
+        break
       case SLICE_TYPE.SAGITTAL:
-        return 2 // X
+        targetRow = 0 // R/L
+        break
     }
+
+    const orientations = this.multiscales.images[0]?.axesOrientations
+    const mapping = getOrientationMapping(orientations)
+
+    // Find which NGFF axis maps to targetRow.
+    // mapping.x/y/z have physicalRow; NGFF indices: x=2, y=1, z=0
+    if (mapping.z.physicalRow === targetRow) return 0
+    if (mapping.y.physicalRow === targetRow) return 1
+    return 2
   }
 
   /**
