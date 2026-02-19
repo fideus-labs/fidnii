@@ -199,6 +199,7 @@ const largeFileDrawer = document.getElementById(
   "large-file-drawer",
 ) as HTMLElement & { open: boolean }
 let _largeFileTimer: ReturnType<typeof setTimeout> | null = null
+let _largeFileHideListener: (() => void) | null = null
 
 /**
  * Show a bottom drawer recommending ngff-zarr Python tooling for
@@ -212,6 +213,12 @@ function showLargeFileDrawer(): void {
     _largeFileTimer = null
   }
 
+  // Remove any existing hide listener to prevent accumulation
+  if (_largeFileHideListener) {
+    largeFileDrawer.removeEventListener("wa-after-hide", _largeFileHideListener)
+    _largeFileHideListener = null
+  }
+
   largeFileDrawer.open = true
 
   // Auto-close after 10 seconds
@@ -221,16 +228,16 @@ function showLargeFileDrawer(): void {
   }, 10_000)
 
   // If the user dismisses the drawer early, cancel the timer
-  largeFileDrawer.addEventListener(
-    "wa-after-hide",
-    () => {
-      if (_largeFileTimer) {
-        clearTimeout(_largeFileTimer)
-        _largeFileTimer = null
-      }
-    },
-    { once: true },
-  )
+  _largeFileHideListener = () => {
+    if (_largeFileTimer) {
+      clearTimeout(_largeFileTimer)
+      _largeFileTimer = null
+    }
+    _largeFileHideListener = null
+  }
+  largeFileDrawer.addEventListener("wa-after-hide", _largeFileHideListener, {
+    once: true,
+  })
 }
 
 // File handling
