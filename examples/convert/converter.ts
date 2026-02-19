@@ -33,7 +33,6 @@ import type { Image } from "itk-wasm"
 export { Methods } from "@fideus-labs/ngff-zarr"
 
 // Use local, vendored WebAssembly module assets copied by viteStaticCopy
-// @ts-expect-error import.meta.env is provided by Vite at runtime
 const viteBaseUrl = import.meta.env.BASE_URL || "/"
 const pipelinesBaseUrl = new URL(
   `${viteBaseUrl}pipelines`,

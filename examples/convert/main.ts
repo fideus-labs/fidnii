@@ -2,6 +2,8 @@
  * Image Converter - Main UI module
  */
 
+import { registerSW } from "virtual:pwa-register"
+
 import "@awesome.me/webawesome/dist/components/button/button.js"
 import "@awesome.me/webawesome/dist/components/card/card.js"
 import "@awesome.me/webawesome/dist/components/input/input.js"
@@ -31,6 +33,10 @@ import {
   type OutputFormat,
   packageOutput,
 } from "./converter.ts"
+
+// Register service worker for offline support and installability.
+// Uses autoUpdate mode: new versions activate automatically in the background.
+registerSW({ immediate: true })
 
 // Color scheme: follow the browser/OS preference
 const darkQuery = window.matchMedia("(prefers-color-scheme: dark)")
