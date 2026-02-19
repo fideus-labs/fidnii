@@ -250,6 +250,9 @@ export async function isTiffUrl(url: string): Promise<boolean> {
   // Fall back to a HEAD request when the extension is not conclusive
   try {
     const response = await fetch(url, { method: "HEAD", mode: "cors" })
+    if (!response.ok) {
+      return false
+    }
     const contentType = response.headers.get("content-type") ?? ""
     return contentType.includes("image/tiff")
   } catch {
