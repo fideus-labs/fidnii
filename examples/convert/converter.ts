@@ -221,8 +221,20 @@ export function isOmeZarrUrl(url: string): boolean {
   }
 }
 
-/** TIFF extensions recognised by {@link isTiffUrl}. */
+/** TIFF extensions recognised by {@link isTiffFilename} and {@link isTiffUrl}. */
 const TIFF_EXTENSIONS = [".ome.tif", ".ome.tiff", ".tif", ".tiff"]
+
+/**
+ * Check whether a filename has a TIFF extension.
+ *
+ * @param name - Filename or path to check (case-insensitive)
+ * @returns `true` if the name ends with `.tif`, `.tiff`, `.ome.tif`,
+ *   or `.ome.tiff`
+ */
+export function isTiffFilename(name: string): boolean {
+  const lower = name.toLowerCase()
+  return TIFF_EXTENSIONS.some((ext) => lower.endsWith(ext))
+}
 
 /**
  * Check whether a URL looks like a TIFF file.
@@ -243,7 +255,7 @@ export async function isTiffUrl(url: string): Promise<boolean> {
     }
   })()
 
-  if (TIFF_EXTENSIONS.some((ext) => pathname.endsWith(ext))) {
+  if (isTiffFilename(pathname)) {
     return true
   }
 
@@ -279,6 +291,38 @@ export async function loadTiffUrl(
   })
 
   const multiscales = await fromTiff(url)
+
+  onProgress?.({
+    stage: "done",
+    percent: 100,
+    message: "TIFF loaded",
+  })
+
+  return multiscales
+}
+
+/**
+ * Load a local TIFF file via fiff.
+ *
+ * Uses {@link fromTiff} (backed by `TiffStore.fromBlob`) to read the
+ * file directly through fiff rather than decoding via ITK-Wasm.
+ *
+ * @param file - The local TIFF file
+ * @param onProgress - Optional callback for progress updates
+ * @returns The loaded `Multiscales` from the TIFF
+ * @throws If the file cannot be opened as a TIFF
+ */
+export async function loadTiffFile(
+  file: File,
+  onProgress?: ProgressCallback,
+): Promise<Multiscales> {
+  onProgress?.({
+    stage: "reading",
+    percent: 0,
+    message: "Reading TIFF file...",
+  })
+
+  const multiscales = await fromTiff(file)
 
   onProgress?.({
     stage: "done",

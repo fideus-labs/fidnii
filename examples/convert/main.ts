@@ -26,8 +26,10 @@ import {
   formatFileSize,
   getMultiscalesInfo,
   isOmeZarrUrl,
+  isTiffFilename,
   isTiffUrl,
   loadOmeZarrUrl,
+  loadTiffFile,
   loadTiffUrl,
   Methods,
   OUTPUT_FORMAT_LABELS,
@@ -627,7 +629,16 @@ async function startConversion(): Promise<void> {
         "itkwasm_gaussian") as Methods,
     }
 
-    if (selectedFile) {
+    if (selectedFile && isTiffFilename(selectedFile.name)) {
+      // Local TIFF: load via fiff then re-downsample
+      const tiffMs = await loadTiffFile(selectedFile, updateProgress)
+      lastResult = await convertMultiscales(
+        tiffMs,
+        options,
+        updateProgress,
+        updateChunkProgress,
+      )
+    } else if (selectedFile) {
       lastResult = await convertImage(
         selectedFile,
         options,
