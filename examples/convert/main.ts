@@ -20,12 +20,15 @@ import {
   type ConversionProgress,
   type ConvertResult,
   convertImage,
+  convertMultiscales,
   downloadFile,
   fetchImageFile,
   formatFileSize,
   getMultiscalesInfo,
   isOmeZarrUrl,
+  isTiffUrl,
   loadOmeZarrUrl,
+  loadTiffUrl,
   Methods,
   OUTPUT_FORMAT_LABELS,
   OUTPUT_FORMATS,
@@ -320,6 +323,21 @@ async function handleUrl(url: string): Promise<boolean> {
       // No conversion needed for OME-Zarr — only Download is relevant
       convertBtn.setAttribute("disabled", "")
       downloadBtn.removeAttribute("disabled")
+    } else if (await isTiffUrl(trimmed)) {
+      // --- TIFF URL: load via fiff with HTTP range requests ---
+      selectedFile = null
+      lastResult = null
+      const multiscales = await loadTiffUrl(trimmed, updateProgress)
+      loadedMultiscales = multiscales
+      loadedName = trimmed.replace(/\/+$/, "").split("/").pop() || "image"
+      fileInfo.textContent = `TIFF: ${loadedName}`
+
+      updateMultiscalesTable({ multiscales })
+      void showPreview({ multiscales })
+
+      // Allow conversion (re-downsample / repackage) and download
+      convertBtn.removeAttribute("disabled")
+      downloadBtn.removeAttribute("disabled")
     } else {
       // --- Regular image URL: fetch as file ---
       const file = await fetchImageFile(trimmed, updateProgress)
@@ -337,8 +355,9 @@ async function handleUrl(url: string): Promise<boolean> {
     progressText.textContent = `Error: ${message}`
   } finally {
     urlLoadBtn.removeAttribute("disabled")
-    // Re-enable the convert button if we have a file to convert.
-    // (OME-Zarr URLs don't need conversion — Download is already enabled above.)
+    // Re-enable the convert button if we have a source to convert.
+    // OME-Zarr URLs don't need conversion; TIFF URLs and local files
+    // enable Convert in their respective branches above.
     if (selectedFile) {
       convertBtn.removeAttribute("disabled")
     } else if (!loadedMultiscales) {
@@ -580,12 +599,15 @@ function updateMultiscalesTable(
 }
 
 /**
- * Convert a local file: generate a multiscale pyramid and show
- * the preview. Does not package or download the output — that is
- * handled by {@link startDownload}.
+ * Convert the current source into a multiscale pyramid and show the
+ * preview.  Works with both local files (`selectedFile`) and
+ * pre-loaded multiscales from TIFF URLs (`loadedMultiscales`).
+ *
+ * Does not package or download the output — that is handled by
+ * {@link startDownload}.
  */
 async function startConversion(): Promise<void> {
-  if (!selectedFile) return
+  if (!selectedFile && !loadedMultiscales) return
 
   // Disable both buttons during conversion
   convertBtn.setAttribute("disabled", "")
@@ -605,12 +627,24 @@ async function startConversion(): Promise<void> {
         "itkwasm_gaussian") as Methods,
     }
 
-    lastResult = await convertImage(
-      selectedFile,
-      options,
-      updateProgress,
-      updateChunkProgress,
-    )
+    if (selectedFile) {
+      lastResult = await convertImage(
+        selectedFile,
+        options,
+        updateProgress,
+        updateChunkProgress,
+      )
+    } else if (loadedMultiscales) {
+      // Re-downsample from a pre-loaded source (e.g. TIFF URL)
+      lastResult = await convertMultiscales(
+        loadedMultiscales,
+        options,
+        updateProgress,
+        updateChunkProgress,
+      )
+    }
+
+    if (!lastResult) return
 
     // Sync the method dropdown if auto-detection changed it
     // (e.g. label image detected while default Gaussian was selected)

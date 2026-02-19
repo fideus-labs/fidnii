@@ -2,6 +2,7 @@
  * Image conversion pipeline with multiple output format support
  */
 
+import { fromTiff } from "@fideus-labs/fidnii"
 import type { WriteOptions as FiffWriteOptions } from "@fideus-labs/fiff"
 import { toOmeTiff } from "@fideus-labs/fiff"
 import {
@@ -218,6 +219,74 @@ export function isOmeZarrUrl(url: string): boolean {
   } catch {
     return url.replace(/\/+$/, "").toLowerCase().endsWith(".ome.zarr")
   }
+}
+
+/** TIFF extensions recognised by {@link isTiffUrl}. */
+const TIFF_EXTENSIONS = [".ome.tif", ".ome.tiff", ".tif", ".tiff"]
+
+/**
+ * Check whether a URL looks like a TIFF file.
+ *
+ * Inspects the URL path extension first (`.tif`, `.tiff`, `.ome.tif`,
+ * `.ome.tiff`).  When the extension is ambiguous a `HEAD` request is
+ * issued and the response `Content-Type` is checked for `image/tiff`.
+ *
+ * @param url - The URL to check
+ * @returns `true` if the URL is likely a TIFF resource
+ */
+export async function isTiffUrl(url: string): Promise<boolean> {
+  const pathname = (() => {
+    try {
+      return new URL(url).pathname.replace(/\/+$/, "").toLowerCase()
+    } catch {
+      return url.replace(/\/+$/, "").toLowerCase()
+    }
+  })()
+
+  if (TIFF_EXTENSIONS.some((ext) => pathname.endsWith(ext))) {
+    return true
+  }
+
+  // Fall back to a HEAD request when the extension is not conclusive
+  try {
+    const response = await fetch(url, { method: "HEAD", mode: "cors" })
+    const contentType = response.headers.get("content-type") ?? ""
+    return contentType.includes("image/tiff")
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Load a TIFF file from a remote URL via HTTP range requests.
+ *
+ * Uses {@link fromTiff} (backed by `TiffStore.fromUrl`) to stream the
+ * TIFF without downloading the entire file up-front.
+ *
+ * @param url - The remote TIFF URL
+ * @param onProgress - Optional callback for progress updates
+ * @returns The loaded `Multiscales` from the TIFF
+ * @throws If the URL cannot be opened as a TIFF
+ */
+export async function loadTiffUrl(
+  url: string,
+  onProgress?: ProgressCallback,
+): Promise<Multiscales> {
+  onProgress?.({
+    stage: "reading",
+    percent: 0,
+    message: "Opening TIFF via range requests...",
+  })
+
+  const multiscales = await fromTiff(url)
+
+  onProgress?.({
+    stage: "done",
+    percent: 100,
+    message: "TIFF loaded",
+  })
+
+  return multiscales
 }
 
 /**
@@ -526,6 +595,78 @@ export async function convertImage(
   // Create a new Multiscales with version 0.5 metadata and OMERO visualization data
   const metadataV05 = createMetadataWithVersion(multiscalesV04.metadata, "0.5")
   metadataV05.omero = omero // Attach computed OMERO visualization metadata
+
+  const multiscales = new MultiscalesClass({
+    images: multiscalesV04.images,
+    metadata: metadataV05,
+    scaleFactors: multiscalesV04.scaleFactors,
+    method: multiscalesV04.method,
+    chunks: multiscalesV04.chunks,
+  })
+
+  report("done", 100, "Conversion complete!")
+
+  return { multiscales }
+}
+
+/**
+ * Re-downsample an already-loaded `Multiscales` with new settings.
+ *
+ * Takes the highest-resolution image from the source multiscales,
+ * re-runs the downsampling pipeline, and computes OMERO visualization
+ * metadata. This is used for TIFF URLs loaded via fiff where we
+ * already have a `Multiscales` but the user wants to change the
+ * chunk size or downsampling method.
+ *
+ * @param source - The pre-loaded multiscales (e.g. from a TIFF URL)
+ * @param options - Conversion options (chunk size, downsampling method)
+ * @param onProgress - Optional callback for progress updates
+ * @param onChunkProgress - Optional callback for per-chunk progress
+ * @returns A new multiscale pyramid with the requested settings
+ */
+export async function convertMultiscales(
+  source: Multiscales,
+  options: ConversionOptions,
+  onProgress?: ProgressCallback,
+  onChunkProgress?: ChunkProgressCallback,
+): Promise<ConvertResult> {
+  const report = (
+    stage: ConversionProgress["stage"],
+    percent: number,
+    message: string,
+  ) => {
+    onProgress?.({ stage, percent, message })
+  }
+
+  // Use the highest-resolution image as the source
+  const highResImage = source.images[0]
+
+  // Compute OMERO visualization metadata
+  report("converting", 20, "Computing OMERO visualization metadata...")
+  const chunkCache = new Map()
+  const omero = await computeOmeroFromNgffImage(highResImage, {
+    cache: chunkCache,
+    onProgress: onChunkProgress
+      ? (completed, total) => onChunkProgress("omero", completed, total)
+      : undefined,
+  })
+
+  // Generate multiscale pyramid with new settings
+  report("downsampling", 30, "Generating multiscale pyramid...")
+  const multiscalesV04 = await toMultiscales(highResImage, {
+    method: options.method,
+    chunks: options.chunkSize,
+    codecs: bytesOnlyCodecs(),
+  })
+
+  report(
+    "downsampling",
+    70,
+    `Created ${multiscalesV04.images.length} scale levels`,
+  )
+
+  const metadataV05 = createMetadataWithVersion(multiscalesV04.metadata, "0.5")
+  metadataV05.omero = omero
 
   const multiscales = new MultiscalesClass({
     images: multiscalesV04.images,
