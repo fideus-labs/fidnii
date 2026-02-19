@@ -640,12 +640,12 @@ test.describe("Orientation — placeholder affine", () => {
   })
 })
 
-test.describe("Orientation — slab affine offset with permuted axes", () => {
-  // These tests verify the 3D updateHeaderForRegion pattern:
-  // offset in un-oriented space, then apply orientation.
-  // The slab path uses a different (but equivalent) approach:
-  // orient first via createAffineFromNgffImage, then offset
-  // through the rotation matrix. Both should produce the same result.
+test.describe("Orientation — affine offset with permuted axes", () => {
+  // Both the 3D (updateHeaderForRegion) and slab (_updateSlabHeader) paths
+  // use the same orient-then-offset approach: build the fully oriented affine
+  // via createAffineFromNgffImage, then apply the voxel offset through the
+  // 3x3 rotation matrix. This ensures the offset lands on the correct world
+  // axis even when NGFF axes are permuted.
   test.beforeEach(async ({ page }) => {
     await page.goto("/")
     await page.waitForFunction(() => (window as any).fidnii !== undefined, {
@@ -1026,5 +1026,192 @@ test.describe("Orientation — slab affine offset with permuted axes", () => {
     expect(result.finalTx).toBeCloseTo(127.05, 2)
     expect(result.finalTy).toBeCloseTo(5.87, 2)
     expect(result.finalTz).toBeCloseTo(54.54, 2)
+  })
+
+  test("3D orient-then-offset: voxel origin maps to correct world position with permuted axes", async ({
+    page,
+  }) => {
+    // For the MRI orientation (x→R/L, y→S/I, z→A/P), the offset affine's
+    // voxel [0,0,0] should map to the world position corresponding to
+    // the region start in oriented space.
+    const result = await page.evaluate(() => {
+      const { createAffineFromNgffImage } = (window as any).fidnii
+
+      const scale = { x: 1, y: 1, z: 1 }
+      const translation = { x: -127.05, y: 90.13, z: 54.54 }
+      const orientations = {
+        x: { type: "anatomical", value: "right-to-left" },
+        y: { type: "anatomical", value: "superior-to-inferior" },
+        z: { type: "anatomical", value: "posterior-to-anterior" },
+      }
+      const mockNgff = { scale, translation, axesOrientations: orientations }
+      // 3D region at [20, 50, 10] (z=20, y=50, x=10)
+      const regionStart: [number, number, number] = [20, 50, 10]
+
+      // Full-volume affine (no offset) — for reference
+      const fullAffine = createAffineFromNgffImage(mockNgff)
+
+      // World position of voxel [10, 50, 20] in the full volume
+      // This should equal the origin (voxel [0,0,0]) of the offset affine
+      const vx = 10,
+        vy = 50,
+        vz = 20 // NIfTI i=x, j=y, k=z
+      const expectedWx =
+        fullAffine[0] * vx +
+        fullAffine[4] * vy +
+        fullAffine[8] * vz +
+        fullAffine[12]
+      const expectedWy =
+        fullAffine[1] * vx +
+        fullAffine[5] * vy +
+        fullAffine[9] * vz +
+        fullAffine[13]
+      const expectedWz =
+        fullAffine[2] * vx +
+        fullAffine[6] * vy +
+        fullAffine[10] * vz +
+        fullAffine[14]
+
+      // Offset affine — orient first, then offset through rotation
+      const offsetAffine = createAffineFromNgffImage(mockNgff)
+      const ox = regionStart[2]
+      const oy = regionStart[1]
+      const oz = regionStart[0]
+      offsetAffine[12] +=
+        offsetAffine[0] * ox + offsetAffine[4] * oy + offsetAffine[8] * oz
+      offsetAffine[13] +=
+        offsetAffine[1] * ox + offsetAffine[5] * oy + offsetAffine[9] * oz
+      offsetAffine[14] +=
+        offsetAffine[2] * ox + offsetAffine[6] * oy + offsetAffine[10] * oz
+
+      // Voxel [0,0,0] in offset affine = translation
+      return {
+        expectedWx,
+        expectedWy,
+        expectedWz,
+        actualWx: offsetAffine[12],
+        actualWy: offsetAffine[13],
+        actualWz: offsetAffine[14],
+      }
+    })
+
+    // Offset affine's origin should match the full affine's world position
+    // at the region start voxel
+    expect(result.actualWx).toBeCloseTo(result.expectedWx, 5)
+    expect(result.actualWy).toBeCloseTo(result.expectedWy, 5)
+    expect(result.actualWz).toBeCloseTo(result.expectedWz, 5)
+  })
+
+  test("3D orient-then-offset: mm2frac at region center returns 0.5 with non-unit scales", async ({
+    page,
+  }) => {
+    // Tests that the offset affine is correct for anisotropic voxels
+    // by verifying that the center voxel maps to fractional [0.5, 0.5, 0.5].
+    const result = await page.evaluate(() => {
+      const { createAffineFromNgffImage } = (window as any).fidnii
+
+      const scale = { x: 0.5, y: 0.8, z: 1.2 }
+      const translation = { x: -63.5, y: 72.1, z: 32.7 }
+      const orientations = {
+        x: { type: "anatomical", value: "right-to-left" },
+        y: { type: "anatomical", value: "superior-to-inferior" },
+        z: { type: "anatomical", value: "posterior-to-anterior" },
+      }
+      const mockNgff = { scale, translation, axesOrientations: orientations }
+      const regionStart: [number, number, number] = [40, 100, 30]
+      const fetchedShape: [number, number, number] = [80, 64, 128]
+
+      // Build offset affine
+      const affine = createAffineFromNgffImage(mockNgff)
+      const ox = regionStart[2]
+      const oy = regionStart[1]
+      const oz = regionStart[0]
+      affine[12] += affine[0] * ox + affine[4] * oy + affine[8] * oz
+      affine[13] += affine[1] * ox + affine[5] * oy + affine[9] * oz
+      affine[14] += affine[2] * ox + affine[6] * oy + affine[10] * oz
+
+      // Compute world center of the region
+      const [dimZ, dimY, dimX] = fetchedShape
+      const cx = dimX / 2,
+        cy = dimY / 2,
+        cz = dimZ / 2
+      const wx = affine[0] * cx + affine[4] * cy + affine[8] * cz + affine[12]
+      const wy = affine[1] * cx + affine[5] * cy + affine[9] * cz + affine[13]
+      const wz = affine[2] * cx + affine[6] * cy + affine[10] * cz + affine[14]
+
+      // Invert affine 3x3 for mm2frac
+      const det0 =
+        affine[0] * (affine[5] * affine[10] - affine[6] * affine[9]) -
+        affine[4] * (affine[1] * affine[10] - affine[2] * affine[9]) +
+        affine[8] * (affine[1] * affine[6] - affine[2] * affine[5])
+      if (Math.abs(det0) < 1e-10) return { fracX: -1, fracY: -1, fracZ: -1 }
+
+      const inv = new Float64Array(9)
+      inv[0] = (affine[5] * affine[10] - affine[6] * affine[9]) / det0
+      inv[1] = (affine[2] * affine[9] - affine[1] * affine[10]) / det0
+      inv[2] = (affine[1] * affine[6] - affine[2] * affine[5]) / det0
+      inv[3] = (affine[6] * affine[8] - affine[4] * affine[10]) / det0
+      inv[4] = (affine[0] * affine[10] - affine[2] * affine[8]) / det0
+      inv[5] = (affine[2] * affine[4] - affine[0] * affine[6]) / det0
+      inv[6] = (affine[4] * affine[9] - affine[5] * affine[8]) / det0
+      inv[7] = (affine[1] * affine[8] - affine[0] * affine[9]) / det0
+      inv[8] = (affine[0] * affine[5] - affine[1] * affine[4]) / det0
+
+      const dx = wx - affine[12]
+      const dy = wy - affine[13]
+      const dz = wz - affine[14]
+      const fracX = (inv[0] * dx + inv[3] * dy + inv[6] * dz) / dimX
+      const fracY = (inv[1] * dx + inv[4] * dy + inv[7] * dz) / dimY
+      const fracZ = (inv[2] * dx + inv[5] * dy + inv[8] * dz) / dimZ
+
+      return { fracX, fracY, fracZ }
+    })
+
+    expect(result.fracX).toBeCloseTo(0.5, 3)
+    expect(result.fracY).toBeCloseTo(0.5, 3)
+    expect(result.fracZ).toBeCloseTo(0.5, 3)
+  })
+
+  test("3D buffer bounds stay in un-oriented space after orient-then-offset", async ({
+    page,
+  }) => {
+    // The 3D path computes _currentBufferBounds in un-oriented OME-Zarr
+    // space (for clip planes). This must NOT change when we switch the
+    // affine construction to orient-then-offset.
+    const result = await page.evaluate(() => {
+      const scale = { x: 1, y: 1, z: 1 }
+      const translation = { x: -127.05, y: 90.13, z: 54.54 }
+      // regionStart [z, y, x]
+      const regionStart: [number, number, number] = [20, 50, 10]
+      const fetchedShape: [number, number, number] = [192, 32, 256]
+
+      const sx = scale.x
+      const sy = scale.y
+      const sz = scale.z
+      const tx = (translation.x ?? 0) + regionStart[2] * sx
+      const ty = (translation.y ?? 0) + regionStart[1] * sy
+      const tz = (translation.z ?? 0) + regionStart[0] * sz
+
+      const bounds = {
+        min: [tx, ty, tz],
+        max: [
+          tx + fetchedShape[2] * sx,
+          ty + fetchedShape[1] * sy,
+          tz + fetchedShape[0] * sz,
+        ],
+      }
+
+      return bounds
+    })
+
+    // Buffer bounds are in un-oriented OME-Zarr space:
+    // min: [-127.05 + 10, 90.13 + 50, 54.54 + 20] = [-117.05, 140.13, 74.54]
+    // max: [-117.05 + 256, 140.13 + 32, 74.54 + 192] = [138.95, 172.13, 266.54]
+    expect(result.min[0]).toBeCloseTo(-117.05, 2)
+    expect(result.min[1]).toBeCloseTo(140.13, 2)
+    expect(result.min[2]).toBeCloseTo(74.54, 2)
+    expect(result.max[0]).toBeCloseTo(138.95, 2)
+    expect(result.max[1]).toBeCloseTo(172.13, 2)
+    expect(result.max[2]).toBeCloseTo(266.54, 2)
   })
 })

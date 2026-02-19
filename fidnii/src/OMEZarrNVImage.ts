@@ -71,10 +71,7 @@ import {
   createAffineFromOMEZarr,
 } from "./utils/affine.js"
 import { worldToPixelAffine } from "./utils/coordinates.js"
-import {
-  applyOrientationToAffine,
-  getOrientationMapping,
-} from "./utils/orientation.js"
+import { getOrientationMapping } from "./utils/orientation.js"
 import {
   boundsApproxEqual,
   computeViewportBounds2D,
@@ -723,32 +720,39 @@ export class OMEZarrNVImage extends NVImage {
       1,
     ]
 
-    // Build the unadjusted affine (no orientation signs) and offset it
-    // to the loaded region. Buffer bounds use this OME-Zarr-space affine
-    // for internal clip-plane / viewport math.
+    // Compute buffer bounds in un-oriented OME-Zarr world space.
+    // These drive clip-plane / viewport math and must stay un-oriented.
     const regionStart = region.chunkAlignedStart
-    const affine = createAffineFromOMEZarr(
-      ngffImage.scale,
-      ngffImage.translation,
-    )
-    // regionStart is [z, y, x], affine translation is [x, y, z] (indices 12, 13, 14)
-    affine[12] += regionStart[2] * sx // x offset
-    affine[13] += regionStart[1] * sy // y offset
-    affine[14] += regionStart[0] * sz // z offset
+    const translation = ngffImage.translation
+    const tx = (translation.x ?? translation.X ?? 0) + regionStart[2] * sx
+    const ty = (translation.y ?? translation.Y ?? 0) + regionStart[1] * sy
+    const tz = (translation.z ?? translation.Z ?? 0) + regionStart[0] * sz
 
-    // Update current buffer bounds in OME-Zarr world space
     this._currentBufferBounds = {
-      min: [affine[12], affine[13], affine[14]],
+      min: [tx, ty, tz],
       max: [
-        affine[12] + fetchedShape[2] * sx,
-        affine[13] + fetchedShape[1] * sy,
-        affine[14] + fetchedShape[0] * sz,
+        tx + fetchedShape[2] * sx,
+        ty + fetchedShape[1] * sy,
+        tz + fetchedShape[0] * sz,
       ],
     }
 
-    // Apply orientation signs so the NIfTI affine encodes anatomical
-    // direction for NiiVue's calculateRAS()
-    applyOrientationToAffine(affine, ngffImage.axesOrientations)
+    // Build the fully oriented affine (including orientation permutation
+    // and sign flips), then apply the region offset in world space.
+    // The offset goes through the oriented 3x3 rotation matrix so it
+    // lands on the correct world axis even when NGFF axes are permuted.
+    const affine = createAffineFromNgffImage(ngffImage)
+
+    // regionStart is [z, y, x]; affine columns map NIfTI [i=x, j=y, k=z]
+    const offsetX = regionStart[2] // NIfTI i = NGFF x
+    const offsetY = regionStart[1] // NIfTI j = NGFF y
+    const offsetZ = regionStart[0] // NIfTI k = NGFF z
+    affine[12] +=
+      affine[0] * offsetX + affine[4] * offsetY + affine[8] * offsetZ
+    affine[13] +=
+      affine[1] * offsetX + affine[5] * offsetY + affine[9] * offsetZ
+    affine[14] +=
+      affine[2] * offsetX + affine[6] * offsetY + affine[10] * offsetZ
 
     // For 2D images, flip y so NiiVue's calculateRAS() accounts for
     // top-to-bottom pixel storage order. We shift the translation so
