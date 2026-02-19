@@ -106,6 +106,21 @@ export default defineConfig({
             },
           },
           {
+            // Cache the sample MRI file after first download
+            urlPattern: /\/mri\.nii\.gz$/,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "sample-data",
+              expiration: {
+                maxEntries: 5,
+                maxAgeSeconds: 60 * 60 * 24 * 30,
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
+          {
             // Cache the Web Awesome CDN stylesheet for offline use
             urlPattern:
               /^https:\/\/cdn\.jsdelivr\.net\/npm\/@awesome\.me\/webawesome\/.*/i,
