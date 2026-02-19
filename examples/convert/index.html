@@ -159,6 +159,14 @@
           transform: skewX(-25deg);
         }
       }
+      @media (prefers-reduced-motion: reduce) {
+        h1:hover::before {
+          animation: none;
+        }
+        .github-star:hover::before {
+          animation: none;
+        }
+      }
       .github-star:focus-visible {
         outline: 2px solid var(--wa-color-primary-500);
         outline-offset: 2px;
