@@ -237,6 +237,52 @@
       .hidden {
         display: none;
       }
+      .large-file-tip {
+        max-width: 720px;
+        margin: 0 auto;
+      }
+      .large-file-tip strong {
+        font-size: 1rem;
+      }
+      .large-file-tip p {
+        margin: 0.5rem 0 0.75rem 0;
+        font-size: 0.875rem;
+        color: var(--wa-color-text-quiet);
+        line-height: 1.5;
+      }
+      .large-file-tip dl {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 0.25rem 0.75rem;
+        margin: 0;
+        font-size: 0.875rem;
+      }
+      .large-file-tip dt {
+        font-weight: 600;
+      }
+      .large-file-tip a {
+        color: var(--wa-color-text-link);
+        text-decoration: none;
+      }
+      .large-file-tip a:hover {
+        text-decoration: underline;
+      }
+      .large-file-tip a:focus-visible {
+        outline: 2px solid var(--wa-color-text-link);
+        outline-offset: 2px;
+        text-decoration: underline;
+      }
+      .large-file-tip dd {
+        margin: 0;
+        color: var(--wa-color-text-quiet);
+        line-height: 1.5;
+      }
+      .large-file-tip code {
+        font-size: 0.8125rem;
+        background: var(--wa-color-surface-lowered);
+        padding: 0.125rem 0.375rem;
+        border-radius: 4px;
+      }
       @media (max-width: 768px) {
         body {
           padding: 0.5rem;
@@ -472,6 +518,73 @@
         Star on GitHub
       </a>
     </footer>
+
+    <wa-drawer
+      id="large-file-drawer"
+      label="Large file recommendation"
+      placement="bottom"
+      light-dismiss
+      without-header
+      style="--size: auto"
+    >
+      <div class="large-file-tip">
+        <strong>Large file detected</strong>
+        <p>
+          For files over 300 MB, we recommend
+          <a
+            href="https://ngff-zarr.readthedocs.io/"
+            target="_blank"
+            rel="noopener noreferrer"
+            >ngff-zarr</a
+          >
+          Python tooling for faster conversion with better memory management.
+        </p>
+        <dl>
+          <dt>
+            <a
+              href="https://ngff-zarr.readthedocs.io/en/latest/cli.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              >Command Line Interface</a
+            >
+          </dt>
+          <dd>
+            Install with
+            <code>pip install 'ngff-zarr[cli]'</code> and run
+            <code>ngff-zarr -i input.nrrd -o output.ozx</code>
+          </dd>
+          <dt>
+            <a
+              href="https://ngff-zarr.readthedocs.io/en/latest/python.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              >Python API</a
+            >
+          </dt>
+          <dd>
+            Programmatic control with out-of-core, memory-limited processing
+          </dd>
+          <dt>
+            <a
+              href="https://ngff-zarr.readthedocs.io/en/latest/mcp.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              >MCP Server</a
+            >
+          </dt>
+          <dd>
+            AI agent integration for batch processing
+          </dd>
+        </dl>
+      </div>
+      <wa-button
+        slot="footer"
+        variant="brand"
+        size="small"
+        data-drawer="close"
+        >Got it</wa-button
+      >
+    </wa-drawer>
 
     <script type="module" src="/main.ts"></script>
   </body>
