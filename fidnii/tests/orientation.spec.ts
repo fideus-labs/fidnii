@@ -641,10 +641,11 @@ test.describe("Orientation — placeholder affine", () => {
 })
 
 test.describe("Orientation — slab affine offset with permuted axes", () => {
-  // These tests verify that the slab affine computation applies the region
-  // offset BEFORE orientation (matching the 3D updateHeaderForRegion path).
-  // The old buggy code applied the offset AFTER orientation, which produced
-  // wrong world-space translations when axes were permuted.
+  // These tests verify the 3D updateHeaderForRegion pattern:
+  // offset in un-oriented space, then apply orientation.
+  // The slab path uses a different (but equivalent) approach:
+  // orient first via createAffineFromNgffImage, then offset
+  // through the rotation matrix. Both should produce the same result.
   test.beforeEach(async ({ page }) => {
     await page.goto("/")
     await page.waitForFunction(() => (window as any).fidnii !== undefined, {
@@ -946,5 +947,84 @@ test.describe("Orientation — slab affine offset with permuted axes", () => {
     expect(result.fracX).toBeCloseTo(0.5, 3)
     expect(result.fracY).toBeCloseTo(0.5, 3)
     expect(result.fracZ).toBeCloseTo(0.5, 3)
+  })
+
+  test("slab orient-then-offset places NGFF z=96 offset in correct world axis", async ({
+    page,
+  }) => {
+    // The slab path uses createAffineFromNgffImage (orient first)
+    // then applies the offset through the 3x3 rotation matrix.
+    // For the MRI orientation where NGFF z maps to physical A/P (row 1),
+    // a z=96 offset should shift the world-Y translation, not world-Z.
+    const result = await page.evaluate(() => {
+      const { createAffineFromNgffImage } = (window as any).fidnii
+
+      const scale = { x: 1, y: 1, z: 1 }
+      const translation = { x: -127.05, y: 90.13, z: 54.54 }
+      const orientations = {
+        x: { type: "anatomical", value: "right-to-left" },
+        y: { type: "anatomical", value: "superior-to-inferior" },
+        z: { type: "anatomical", value: "posterior-to-anterior" },
+      }
+      // Axial slab at NGFF z=96
+      const fetchStart: [number, number, number] = [96, 0, 0]
+
+      const mockNgff = {
+        scale,
+        translation,
+        axesOrientations: orientations,
+      }
+      const affine = createAffineFromNgffImage(mockNgff)
+
+      // Capture base translation (before offset)
+      const baseTx = affine[12]
+      const baseTy = affine[13]
+      const baseTz = affine[14]
+
+      // Apply offset through rotation matrix
+      const offsetX = fetchStart[2]
+      const offsetY = fetchStart[1]
+      const offsetZ = fetchStart[0]
+      affine[12] +=
+        affine[0] * offsetX + affine[4] * offsetY + affine[8] * offsetZ
+      affine[13] +=
+        affine[1] * offsetX + affine[5] * offsetY + affine[9] * offsetZ
+      affine[14] +=
+        affine[2] * offsetX + affine[6] * offsetY + affine[10] * offsetZ
+
+      return {
+        baseTx,
+        baseTy,
+        baseTz,
+        finalTx: affine[12],
+        finalTy: affine[13],
+        finalTz: affine[14],
+        // 3x3 rotation
+        r: [
+          affine[0],
+          affine[4],
+          affine[8],
+          affine[1],
+          affine[5],
+          affine[9],
+          affine[2],
+          affine[6],
+          affine[10],
+        ],
+      }
+    })
+
+    // Base oriented affine: tx=127.05, ty=-90.13, tz=54.54
+    expect(result.baseTx).toBeCloseTo(127.05, 2)
+    expect(result.baseTy).toBeCloseTo(-90.13, 2)
+    expect(result.baseTz).toBeCloseTo(54.54, 2)
+
+    // The NGFF z offset of 96 should go through the rotation.
+    // NGFF z maps to NIfTI k (column 2): [0, 1, 0] in the rotation.
+    // So: world_offset = R * [0, 0, 96] = [0*96, 1*96, 0*96] = [0, 96, 0]
+    // Final: ty = -90.13 + 96 = 5.87, others unchanged
+    expect(result.finalTx).toBeCloseTo(127.05, 2)
+    expect(result.finalTy).toBeCloseTo(5.87, 2)
+    expect(result.finalTz).toBeCloseTo(54.54, 2)
   })
 })

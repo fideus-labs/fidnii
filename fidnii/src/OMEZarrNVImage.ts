@@ -67,9 +67,10 @@ import {
 import {
   affineToNiftiSrows,
   calculateWorldBounds,
+  createAffineFromNgffImage,
   createAffineFromOMEZarr,
 } from "./utils/affine.js"
-import { worldToPixel } from "./utils/coordinates.js"
+import { worldToPixelAffine } from "./utils/coordinates.js"
 import {
   applyOrientationToAffine,
   getOrientationMapping,
@@ -1867,9 +1868,12 @@ export class OMEZarrNVImage extends NVImage {
       return // Can't convert coordinates yet
     }
 
-    // Convert world to pixel at the slab's current resolution level
+    // Convert world to pixel at the slab's current resolution level.
+    // Must use the full oriented affine (not the naive scale+translation)
+    // because worldCoord is in oriented (NIfTI RAS) space.
     const ngffImage = this.multiscales.images[slabState.levelIndex]
-    const pixelCoord = worldToPixel(worldCoord, ngffImage)
+    const orientedAffine = createAffineFromNgffImage(ngffImage)
+    const pixelCoord = worldToPixelAffine(worldCoord, orientedAffine)
 
     // Check the orthogonal axis
     const orthAxis = this._getOrthogonalAxis(sliceType)
@@ -2211,8 +2215,11 @@ export class OMEZarrNVImage extends NVImage {
     const chunkShape = getChunkShape(ngffImage)
     const volumeShape = getVolumeShape(ngffImage)
 
-    // Convert world position to pixel position at this level
-    const pixelCoord = worldToPixel(worldCoord, ngffImage)
+    // Convert world position to pixel position at this level.
+    // Must use the full oriented affine because worldCoord is in oriented
+    // (NIfTI RAS) space, not raw NGFF scale+translation space.
+    const orientedAffine = createAffineFromNgffImage(ngffImage)
+    const pixelCoord = worldToPixelAffine(worldCoord, orientedAffine)
     const orthPixel = pixelCoord[orthAxis]
 
     // Find the chunk-aligned slab in the orthogonal axis
@@ -2400,23 +2407,29 @@ export class OMEZarrNVImage extends NVImage {
       1,
     ]
 
-    // Build the un-oriented affine first, apply region offset, then orient.
-    // This matches updateHeaderForRegion (the 3D path) and correctly handles
-    // axis permutations where NGFF axes map to different physical axes
-    // (e.g. NGFF y → physical Z for the sample MRI orientation).
-    const affine = createAffineFromOMEZarr(
-      ngffImage.scale,
-      ngffImage.translation,
-    )
+    // Build the fully oriented affine (including orientation permutation
+    // and sign flips), then apply the region offset in world space.
+    //
+    // The offset must be applied AFTER orientation because the fetch region
+    // start is in NGFF voxel space [z, y, x], and the oriented 3x3 rotation
+    // matrix is needed to transform that voxel offset into world coordinates.
+    // Previously, the offset was applied before orientation which broke when
+    // NGFF axes were permuted (e.g. NGFF z → physical A/P axis).
+    const affine = createAffineFromNgffImage(ngffImage)
 
-    // Adjust translation for region offset in un-oriented space
-    // (fetchStart is [z, y, x], affine translation is [x, y, z])
-    affine[12] += fetchStart[2] * sx // x offset
-    affine[13] += fetchStart[1] * sy // y offset
-    affine[14] += fetchStart[0] * sz // z offset
-
-    // Apply orientation (permutation + sign) after the offset
-    applyOrientationToAffine(affine, ngffImage.axesOrientations)
+    // Transform the NGFF voxel offset through the oriented 3x3 rotation.
+    // fetchStart is [z, y, x]; affine columns map NIfTI [i=x, j=y, k=z]
+    // to world, so we need offset in NIfTI [x, y, z] order.
+    const offsetX = fetchStart[2] // NIfTI i = NGFF x
+    const offsetY = fetchStart[1] // NIfTI j = NGFF y
+    const offsetZ = fetchStart[0] // NIfTI k = NGFF z
+    // Multiply the 3x3 rotation by the offset vector and add to translation
+    affine[12] +=
+      affine[0] * offsetX + affine[4] * offsetY + affine[8] * offsetZ
+    affine[13] +=
+      affine[1] * offsetX + affine[5] * offsetY + affine[9] * offsetZ
+    affine[14] +=
+      affine[2] * offsetX + affine[6] * offsetY + affine[10] * offsetZ
 
     // For 2D images, flip y before normalization (composes with orientation)
     if (this._flipY2D && this._is2D) {

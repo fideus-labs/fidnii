@@ -413,7 +413,7 @@ test.describe("Slice Mode", () => {
       { value: "0", name: "Axial" },
     ]
 
-    for (const { value, name } of sliceTypes) {
+    for (const { value } of sliceTypes) {
       await page.selectOption("#slice-type", value)
 
       const result = await page.evaluate(async () => {

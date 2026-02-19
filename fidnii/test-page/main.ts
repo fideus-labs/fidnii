@@ -6,6 +6,7 @@ import {
   BufferManager,
   buildSelection,
   computeChannelMinMax,
+  createAffineFromNgffImage,
   createAffineFromOMEZarr,
   fromTiff,
   getChannelInfo,
@@ -55,6 +56,7 @@ declare global {
       getOrientationMapping: typeof getOrientationMapping
       getOrientationInfo: typeof getOrientationInfo
       applyOrientationToAffine: typeof applyOrientationToAffine
+      createAffineFromNgffImage: typeof createAffineFromNgffImage
       createAffineFromOMEZarr: typeof createAffineFromOMEZarr
     }
   }
@@ -83,6 +85,7 @@ window.fidnii = {
   getOrientationMapping,
   getOrientationInfo,
   applyOrientationToAffine,
+  createAffineFromNgffImage,
   createAffineFromOMEZarr,
 }
 
