@@ -335,6 +335,15 @@ test.describe("Clip Planes", () => {
       // Get initial target level (full volume)
       const initialLevel = image.getTargetLevelIndex()
 
+      // Wait for the clipPlanesChange event, which fires after the
+      // debounce handler has updated targetLevelIndex. We don't need
+      // to wait for the full data fetch — only the resolution decision.
+      const clipPlanesChanged = new Promise<void>((resolve) => {
+        image.addEventListener("clipPlanesChange", () => resolve(), {
+          once: true,
+        })
+      })
+
       // Create 6 clip planes to make a small box (10% of volume in each dimension)
       const center = [
         (bounds.min[0] + bounds.max[0]) / 2,
@@ -374,7 +383,7 @@ test.describe("Clip Planes", () => {
         },
       ])
 
-      await image.waitForIdle()
+      await clipPlanesChanged
       const clippedLevel = image.getTargetLevelIndex()
 
       return { initialLevel, clippedLevel }

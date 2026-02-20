@@ -120,6 +120,7 @@ export class RegionCoalescer {
    * @param region - The pixel region to fetch
    * @param requesterId - ID of the requester (e.g., 'zoom', 'crop-change', 'progressive-load')
    * @param timeIndex - Time point index to fetch (default: 0)
+   * @param signal - Optional AbortSignal to cancel the fetch
    * @returns The fetched region data
    */
   async fetchRegion(
@@ -128,6 +129,7 @@ export class RegionCoalescer {
     region: PixelRegion,
     requesterId: string = "default",
     timeIndex: number = 0,
+    signal?: AbortSignal,
   ): Promise<RegionFetchResult> {
     const key = this.makeKey(ngffImage.data.path, levelIndex, region, timeIndex)
 
@@ -166,10 +168,17 @@ export class RegionCoalescer {
       const selection = buildSelection(ngffImage.dims, region, timeIndex)
       // Pass the chunk cache to fizarrita's getWorker via zarrGet.
       // The `cache` option is available in @fideus-labs/fizarrita >=1.2.0.
-      const zarrOpts = this._cache
-        ? ({ cache: this._cache } as Record<string, unknown>)
-        : undefined
-      const result = await zarrGet(ngffImage.data, selection, zarrOpts)
+      // When an AbortSignal is provided, forward it through `opts` so
+      // that the underlying FetchStore passes it as `RequestInit.signal`,
+      // allowing in-flight HTTP requests to be cancelled.
+      const zarrOpts: Record<string, unknown> = {}
+      if (this._cache) zarrOpts.cache = this._cache
+      if (signal) zarrOpts.opts = { signal }
+      const result = await zarrGet(
+        ngffImage.data,
+        selection,
+        Object.keys(zarrOpts).length > 0 ? zarrOpts : undefined,
+      )
 
       const fetchResult: RegionFetchResult = {
         data: result.data as TypedArray,
