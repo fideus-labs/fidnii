@@ -220,6 +220,13 @@ export class OMEZarrNVImage extends NVImage {
     trigger: PopulateTrigger
   } | null = null
 
+  /**
+   * AbortController for the in-flight `populateVolume` fetch.
+   * Aborted when a new `populateVolume` call supersedes the current one,
+   * allowing in-flight HTTP requests to be cancelled promptly.
+   */
+  private _populateAbortController: AbortController | null = null
+
   /** Current populate trigger (set at start of populateVolume, used by events) */
   private _currentPopulateTrigger: PopulateTrigger = "initial"
 
@@ -579,8 +586,15 @@ export class OMEZarrNVImage extends NVImage {
       }
       // Queue this request (no event - just queuing)
       this._pendingPopulateRequest = { skipPreview, trigger }
+      // Abort the in-flight fetch so the queued request runs sooner
+      this._populateAbortController?.abort()
       return
     }
+
+    // Abort any lingering controller from a previous run (defensive)
+    this._populateAbortController?.abort()
+    const abortController = new AbortController()
+    this._populateAbortController = abortController
 
     this.isLoading = true
     this._currentPopulateTrigger = trigger
@@ -592,7 +606,13 @@ export class OMEZarrNVImage extends NVImage {
 
       // Quick preview from lowest resolution (if different from target and not skipped)
       if (!skipPreview && lowestLevel !== this.targetLevelIndex) {
-        await this.loadResolutionLevel(lowestLevel, "preview")
+        await this.loadResolutionLevel(
+          lowestLevel,
+          "preview",
+          undefined,
+          abortController.signal,
+        )
+        if (abortController.signal.aborted) return
         const prevLevel = this.currentLevelIndex
         this.currentLevelIndex = lowestLevel
 
@@ -608,7 +628,13 @@ export class OMEZarrNVImage extends NVImage {
       }
 
       // Final quality at target resolution
-      await this.loadResolutionLevel(this.targetLevelIndex, "target")
+      await this.loadResolutionLevel(
+        this.targetLevelIndex,
+        "target",
+        undefined,
+        abortController.signal,
+      )
+      if (abortController.signal.aborted) return
       const prevLevelBeforeTarget = this.currentLevelIndex
       this.currentLevelIndex = this.targetLevelIndex
 
@@ -635,6 +661,7 @@ export class OMEZarrNVImage extends NVImage {
       this._previousPixelCount = this.calculateAlignedPixelCount(aligned)
     } finally {
       this.isLoading = false
+      this._populateAbortController = null
       this.handlePendingPopulateRequest()
     }
   }
@@ -678,11 +705,13 @@ export class OMEZarrNVImage extends NVImage {
    * @param levelIndex - Resolution level index
    * @param requesterId - ID for request coalescing
    * @param timeIndex - Time point index to fetch (defaults to `this._timeIndex`)
+   * @param signal - Optional AbortSignal to cancel the fetch
    */
   private async loadResolutionLevel(
     levelIndex: number,
     requesterId: string,
     timeIndex?: number,
+    signal?: AbortSignal,
   ): Promise<void> {
     const effectiveTimeIndex = timeIndex ?? this._timeIndex
     // Emit loadingStart event
@@ -721,6 +750,7 @@ export class OMEZarrNVImage extends NVImage {
       fetchRegion,
       requesterId,
       effectiveTimeIndex,
+      signal,
     )
 
     // Resize buffer to match fetched data exactly (no upsampling!)

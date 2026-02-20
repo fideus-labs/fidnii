@@ -208,8 +208,10 @@ test.describe("Pixel Budget", () => {
       return image.getTargetLevelIndex()
     })
 
-    // Clip to small region using 6 axis-aligned planes
-    await page.evaluate(async () => {
+    // Clip to small region using 6 axis-aligned planes and wait for
+    // the debounced clipPlanesChange event (which fires after the
+    // resolution decision is made, before the async data fetch).
+    const croppedLevel = await page.evaluate(async () => {
       const image = (window as any).image
       const bounds = image.getVolumeBounds()
 
@@ -221,6 +223,12 @@ test.describe("Pixel Budget", () => {
       const centerX = (bounds.min[0] + bounds.max[0]) / 2
       const centerY = (bounds.min[1] + bounds.max[1]) / 2
       const centerZ = (bounds.min[2] + bounds.max[2]) / 2
+
+      const clipPlanesChanged = new Promise<void>((resolve) => {
+        image.addEventListener("clipPlanesChange", () => resolve(), {
+          once: true,
+        })
+      })
 
       // 6 planes forming a box at 45%-55% of each axis
       image.setClipPlanes([
@@ -250,12 +258,7 @@ test.describe("Pixel Budget", () => {
         }, // Z max
       ])
 
-      await image.waitForIdle()
-    })
-
-    // Get level for cropped region
-    const croppedLevel = await page.evaluate(() => {
-      const image = (window as any).image
+      await clipPlanesChanged
       return image.getTargetLevelIndex()
     })
 
