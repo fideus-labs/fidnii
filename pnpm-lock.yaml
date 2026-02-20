@@ -5,10 +5,10 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@fideus-labs/fiff': ^0.5.2
+  '@fideus-labs/fiff': ^0.7.0
   zarrita: ^0.6.1
   '@fideus-labs/fizarrita': ^1.4.1
-  '@fideus-labs/ngff-zarr': ^0.12.3
+  '@fideus-labs/ngff-zarr': ^0.13.0
   '@fideus-labs/worker-pool': ^1.0.0
   '@playwright/test': ^1.58.2
   typescript: ^5.9.3
@@ -52,11 +52,11 @@ importers:
         specifier: workspace:*
         version: link:../../fidnii
       '@fideus-labs/fiff':
-        specifier: ^0.5.2
-        version: 0.5.2(@fideus-labs/ngff-zarr@0.12.3)(@fideus-labs/worker-pool@1.0.0)
+        specifier: ^0.7.0
+        version: 0.7.0(@fideus-labs/ngff-zarr@0.13.0)(@fideus-labs/worker-pool@1.0.0)
       '@fideus-labs/ngff-zarr':
-        specifier: ^0.12.3
-        version: 0.12.3
+        specifier: ^0.13.0
+        version: 0.13.0
       '@fideus-labs/worker-pool':
         specifier: ^1.0.0
         version: 1.0.0
@@ -89,8 +89,8 @@ importers:
         specifier: workspace:*
         version: link:../../fidnii
       '@fideus-labs/ngff-zarr':
-        specifier: ^0.12.3
-        version: 0.12.3
+        specifier: ^0.13.0
+        version: 0.13.0
       '@niivue/niivue':
         specifier: ^0.67.0
         version: 0.67.0
@@ -108,11 +108,11 @@ importers:
   fidnii:
     dependencies:
       '@fideus-labs/fiff':
-        specifier: ^0.5.2
-        version: 0.5.2(@fideus-labs/ngff-zarr@0.12.3)(@fideus-labs/worker-pool@1.0.0)
+        specifier: ^0.7.0
+        version: 0.7.0(@fideus-labs/ngff-zarr@0.13.0)(@fideus-labs/worker-pool@1.0.0)
       '@fideus-labs/ngff-zarr':
-        specifier: ^0.12.3
-        version: 0.12.3
+        specifier: ^0.13.0
+        version: 0.13.0
       '@itk-wasm/downsample':
         specifier: ^1.8.1
         version: 1.8.1
@@ -525,10 +525,10 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@fideus-labs/fiff@0.5.2':
-    resolution: {integrity: sha512-Ci+TSeOJGwPAykkJ7EDu/iDRI0xWGOVF+TemSpnVQnjVUVmvcMjJ+Hpn1ErEWhuzQVWESwkbklHZBmnjVlVFZg==}
+  '@fideus-labs/fiff@0.7.0':
+    resolution: {integrity: sha512-PYXavQfunFlq063e8voqaeUaJlmpbpSISGf87XYfQ2xjP55ctL06HiVQg03lfA1jskoxyr+VMY0tMHUSsobdpQ==}
     peerDependencies:
-      '@fideus-labs/ngff-zarr': ^0.12.3
+      '@fideus-labs/ngff-zarr': ^0.13.0
       '@fideus-labs/worker-pool': ^1.0.0
     peerDependenciesMeta:
       '@fideus-labs/ngff-zarr':
@@ -541,8 +541,8 @@ packages:
     peerDependencies:
       zarrita: ^0.6.1
 
-  '@fideus-labs/ngff-zarr@0.12.3':
-    resolution: {integrity: sha512-gtRh6wQ1fwsP3RFSgsl7QpxzsaDTlem8rVjDG/DF7ltb54i9k8KsxLGlEv+vZw1uxBsjqBgZ0rLHzn0n35PyEg==}
+  '@fideus-labs/ngff-zarr@0.13.0':
+    resolution: {integrity: sha512-Ud13GDA/VVn3JfTEVqzF8Wjbj07APXVIdNg/yAYdg+lWC4rJ0th4zlPlbCu9jrY73vFYaKDUGMpO63LNsM+PGA==}
 
   '@fideus-labs/worker-pool@1.0.0':
     resolution: {integrity: sha512-Mwx8fFKKpTUcEtR7w45MQJ/RnZFUPBtefEvGTZGlZMAVSfD7W61rpB8ZdgS4V0CXfppwcb90BF7F/aANWvupnA==}
@@ -2625,13 +2625,13 @@ snapshots:
   '@esbuild/win32-x64@0.27.3':
     optional: true
 
-  '@fideus-labs/fiff@0.5.2(@fideus-labs/ngff-zarr@0.12.3)(@fideus-labs/worker-pool@1.0.0)':
+  '@fideus-labs/fiff@0.7.0(@fideus-labs/ngff-zarr@0.13.0)(@fideus-labs/worker-pool@1.0.0)':
     dependencies:
+      fflate: 0.8.2
       geotiff: 3.0.3
-      pako: 2.1.0
       zarrita: 0.6.1
     optionalDependencies:
-      '@fideus-labs/ngff-zarr': 0.12.3
+      '@fideus-labs/ngff-zarr': 0.13.0
       '@fideus-labs/worker-pool': 1.0.0
 
   '@fideus-labs/fizarrita@1.4.1(zarrita@0.6.1)':
@@ -2639,7 +2639,7 @@ snapshots:
       '@fideus-labs/worker-pool': 1.0.0
       zarrita: 0.6.1
 
-  '@fideus-labs/ngff-zarr@0.12.3':
+  '@fideus-labs/ngff-zarr@0.13.0':
     dependencies:
       '@fideus-labs/fizarrita': 1.4.1(zarrita@0.6.1)
       '@fideus-labs/worker-pool': 1.0.0
