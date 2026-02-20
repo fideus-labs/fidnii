@@ -112,6 +112,24 @@ export interface OMEZarrNVImageEventMap {
     levelIndex: number
     trigger: PopulateTrigger
   }
+
+  /**
+   * Fired when the active time index changes.
+   *
+   * The `cached` flag indicates whether the frame was served instantly
+   * from the pre-fetch cache (`true`) or required a fresh zarr fetch
+   * (`false`).
+   */
+  timeChange: {
+    /** New time index (0-based) */
+    index: number
+    /** Physical time value at the new index */
+    timeValue: number
+    /** Previous time index */
+    previousIndex: number
+    /** `true` if the frame was served from the pre-fetch cache */
+    cached: boolean
+  }
 }
 
 /**

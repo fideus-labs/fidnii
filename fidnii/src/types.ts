@@ -165,6 +165,24 @@ export interface OMEZarrNVImageOptions {
    * This option has no effect on 3D volumes (images with a `"z"` axis).
    */
   flipY2D?: boolean
+  /**
+   * Initial time index to display (default: 0, or `omero.defaultT` if available).
+   *
+   * Only relevant for datasets with a `"t"` (time) dimension. Ignored
+   * when the dataset has no time axis.
+   */
+  timeIndex?: number
+  /**
+   * Number of adjacent time frames to pre-fetch in each direction (default: 2).
+   *
+   * When the user navigates to time index `t`, frames
+   * `[t - timePrefetchCount, t + timePrefetchCount]` are fetched in the
+   * background so that subsequent scrubbing can swap frames instantly from
+   * the cache. Set to `0` to disable pre-fetching.
+   *
+   * Only relevant for datasets with a `"t"` (time) dimension.
+   */
+  timePrefetchCount?: number
 }
 
 /**
@@ -327,6 +345,74 @@ export const NiftiDataType = {
 
 export type NiftiDataTypeCode =
   (typeof NiftiDataType)[keyof typeof NiftiDataType]
+
+/**
+ * Time units supported by OME-Zarr NGFF.
+ *
+ * Matches the UDUNITS-2 time units recognized by the OME-Zarr
+ * specification for the `"time"` axis type.
+ */
+export type TimeUnit =
+  | "attosecond"
+  | "centisecond"
+  | "day"
+  | "decisecond"
+  | "exasecond"
+  | "femtosecond"
+  | "gigasecond"
+  | "hectosecond"
+  | "hour"
+  | "kilosecond"
+  | "megasecond"
+  | "microsecond"
+  | "millisecond"
+  | "minute"
+  | "nanosecond"
+  | "petasecond"
+  | "picosecond"
+  | "second"
+  | "terasecond"
+  | "yoctosecond"
+  | "yottasecond"
+  | "zeptosecond"
+  | "zettasecond"
+
+/**
+ * Time axis metadata extracted from OME-Zarr multiscales.
+ *
+ * Present only when the dataset has a `"t"` dimension. Contains
+ * the number of time points, physical time step, and unit
+ * information needed for time navigation.
+ */
+export interface TimeAxisInfo {
+  /** Number of time points (from the zarr array shape along `"t"`) */
+  readonly count: number
+  /** Index of the `"t"` dimension in `NgffImage.dims` */
+  readonly dimIndex: number
+  /** Physical time step between adjacent indices (from `scale.t`) */
+  readonly step: number
+  /** Time origin offset (from `translation.t`) */
+  readonly origin: number
+  /** Time unit (e.g., `"second"`, `"millisecond"`), or `undefined` if not specified */
+  readonly unit: TimeUnit | undefined
+}
+
+/**
+ * A pre-fetched 3D frame ready for instant buffer swap.
+ *
+ * Used by the time frame cache to avoid re-fetching when scrubbing
+ * through adjacent time points.
+ */
+export interface CachedTimeFrame {
+  /** The typed array pixel data for this frame */
+  data: TypedArray
+  /** Spatial shape in `[z, y, x]` order */
+  shape: [number, number, number]
+  /** The resolution level this was fetched at */
+  levelIndex: number
+  /** The chunk-aligned pixel region this was fetched for */
+  region: ChunkAlignedRegion
+}
 
 /**
  * Information about a channel (component) dimension in the image.

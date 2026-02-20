@@ -41,6 +41,7 @@ import {
 } from "./ResolutionSelector.js"
 import type {
   AttachedNiivueState,
+  CachedTimeFrame,
   ChannelInfo,
   ChunkAlignedRegion,
   ChunkCache,
@@ -50,6 +51,8 @@ import type {
   PixelRegion,
   SlabBufferState,
   SlabSliceType,
+  TimeAxisInfo,
+  TimeUnit,
   TypedArray,
   VolumeBounds,
   ZarrDtype,
@@ -263,6 +266,45 @@ export class OMEZarrNVImage extends NVImage {
   private _slabAbortControllers: Map<SlabSliceType, AbortController> = new Map()
 
   // ============================================================
+  // Time Dimension State
+  // ============================================================
+
+  /**
+   * Time axis metadata, or `null` if the dataset has no `"t"` dimension.
+   * Populated during construction by inspecting `NgffImage.dims`.
+   */
+  private readonly _timeAxisInfo: TimeAxisInfo | null = null
+
+  /** Current time index (0-based). Always 0 for non-time datasets. */
+  private _timeIndex: number = 0
+
+  /** Number of adjacent time frames to pre-fetch in each direction. */
+  private readonly _timePrefetchCount: number
+
+  /**
+   * LRU cache of pre-fetched 3D time frames, keyed by time index.
+   * Only used when `_timeAxisInfo` is non-null.
+   */
+  private readonly _timeFrameCache: LRUCache<number, CachedTimeFrame>
+
+  /** Set of time indices currently being pre-fetched (for dedup). */
+  private readonly _prefetchingTimeIndices: Set<number> = new Set()
+
+  /** AbortController for the most recent pre-fetch batch. */
+  private _prefetchAbortController: AbortController | null = null
+
+  /**
+   * Snapshot of the chunk-aligned region and resolution level used for
+   * the last successful 3D volume load. Used to serve cached time frames
+   * at the same spatial region. Cleared on clip plane / viewport / resolution
+   * changes.
+   */
+  private _lastLoadedRegion: {
+    region: ChunkAlignedRegion
+    levelIndex: number
+  } | null = null
+
+  // ============================================================
   // 3D Zoom Override
   // ============================================================
 
@@ -278,6 +320,9 @@ export class OMEZarrNVImage extends NVImage {
    * continuous zoom/pan interactions.
    */
   private static readonly VIEWPORT_DEBOUNCE_MS = 500
+
+  /** Default number of adjacent time frames to pre-fetch. */
+  private static readonly DEFAULT_TIME_PREFETCH_COUNT = 2
 
   /**
    * Private constructor. Use OMEZarrNVImage.create() for instantiation.
@@ -328,6 +373,39 @@ export class OMEZarrNVImage extends NVImage {
     // Detect 2D images (no z axis) and store y-flip preference
     this._is2D = highResImage.dims.indexOf("z") === -1
     this._flipY2D = options.flipY2D ?? true
+
+    // Detect time dimension from the zarr axes
+    const tDimIndex = highResImage.dims.indexOf("t")
+    if (tDimIndex !== -1) {
+      const timeCount = highResImage.data.shape[tDimIndex]
+      if (timeCount > 0) {
+        // Look up time unit from axes metadata
+        const timeAxis = this.multiscales.metadata?.axes?.find(
+          (a) => a.name === "t",
+        )
+        this._timeAxisInfo = {
+          count: timeCount,
+          dimIndex: tDimIndex,
+          step: highResImage.scale.t ?? 1,
+          origin: highResImage.translation.t ?? 0,
+          unit: timeAxis?.unit as TimeUnit | undefined,
+        }
+      }
+    }
+
+    // Initialize time state
+    this._timePrefetchCount =
+      options.timePrefetchCount ?? OMEZarrNVImage.DEFAULT_TIME_PREFETCH_COUNT
+    const defaultTimeIndex = options.timeIndex ?? 0
+    this._timeIndex = this._timeAxisInfo
+      ? Math.max(0, Math.min(defaultTimeIndex, this._timeAxisInfo.count - 1))
+      : 0
+
+    // Time frame cache: capacity = current frame + both directions + small buffer
+    const cacheCapacity = 2 * this._timePrefetchCount + 3
+    this._timeFrameCache = new LRUCache<number, CachedTimeFrame>({
+      max: cacheCapacity,
+    })
 
     // Calculate volume bounds from highest resolution for most accurate bounds.
     // Use the unadjusted affine (no orientation signs) because volume bounds
@@ -580,6 +658,12 @@ export class OMEZarrNVImage extends NVImage {
       targetLevel: this.targetLevelIndex,
       trigger: this._currentPopulateTrigger,
     })
+
+    // Kick off pre-fetching of adjacent time frames now that we have a
+    // stable spatial region + resolution level.
+    if (this._timeAxisInfo && this._timeAxisInfo.count > 1) {
+      this._prefetchAdjacentFrames(this._timeIndex)
+    }
   }
 
   /**
@@ -593,11 +677,14 @@ export class OMEZarrNVImage extends NVImage {
    *
    * @param levelIndex - Resolution level index
    * @param requesterId - ID for request coalescing
+   * @param timeIndex - Time point index to fetch (defaults to `this._timeIndex`)
    */
   private async loadResolutionLevel(
     levelIndex: number,
     requesterId: string,
+    timeIndex?: number,
   ): Promise<void> {
+    const effectiveTimeIndex = timeIndex ?? this._timeIndex
     // Emit loadingStart event
     this._emitEvent("loadingStart", {
       levelIndex,
@@ -633,6 +720,7 @@ export class OMEZarrNVImage extends NVImage {
       levelIndex,
       fetchRegion,
       requesterId,
+      effectiveTimeIndex,
     )
 
     // Resize buffer to match fetched data exactly (no upsampling!)
@@ -667,6 +755,10 @@ export class OMEZarrNVImage extends NVImage {
 
     // Update NVImage header with correct dimensions and transforms
     this.updateHeaderForRegion(ngffImage, alignedRegion, fetchedShape)
+
+    // Snapshot the loaded region so time frame pre-fetch uses the same
+    // spatial region / resolution level.
+    this._lastLoadedRegion = { region: alignedRegion, levelIndex }
 
     if (this.isLabelImage) {
       // Label images: apply a discrete colormap instead of OMERO windowing
@@ -1094,6 +1186,8 @@ export class OMEZarrNVImage extends NVImage {
     // Visual clipping is handled by NiiVue clip planes (already updated in setClipPlanes)
     if (newTargetLevel !== this.targetLevelIndex) {
       this.targetLevelIndex = newTargetLevel
+      // Spatial region changed — cached time frames are stale
+      this._invalidateTimeFrameCache()
       this.populateVolume(true, "clipPlanesChanged") // Skip preview for clip plane updates
     }
 
@@ -1237,6 +1331,235 @@ export class OMEZarrNVImage extends NVImage {
   }
 
   // ============================================================
+  // Time Navigation
+  // ============================================================
+
+  /**
+   * Time axis metadata, or `null` if the dataset has no `"t"` dimension.
+   *
+   * @example
+   * ```ts
+   * const info = image.timeAxisInfo
+   * if (info) {
+   *   console.log(`${info.count} time points, step=${info.step} ${info.unit}`)
+   * }
+   * ```
+   */
+  get timeAxisInfo(): TimeAxisInfo | null {
+    return this._timeAxisInfo
+  }
+
+  /**
+   * Total number of time points.
+   * Returns 1 for datasets without a `"t"` dimension.
+   */
+  get timeCount(): number {
+    return this._timeAxisInfo?.count ?? 1
+  }
+
+  /**
+   * Current time index (0-based).
+   * Always 0 for datasets without a `"t"` dimension.
+   */
+  get timeIndex(): number {
+    return this._timeIndex
+  }
+
+  /**
+   * Compute the physical time value at a given index.
+   *
+   * @param index - Time index (0-based)
+   * @returns Physical time value (`origin + index * step`)
+   */
+  getTimeValue(index: number): number {
+    if (!this._timeAxisInfo) return 0
+    return this._timeAxisInfo.origin + index * this._timeAxisInfo.step
+  }
+
+  /**
+   * Set the active time index and reload the volume.
+   *
+   * If the requested frame is in the pre-fetch cache, the buffer is
+   * swapped instantly without a network fetch. Otherwise, the frame is
+   * loaded from the zarr store at the current resolution level and
+   * spatial region.
+   *
+   * After the frame is loaded, adjacent frames are pre-fetched in the
+   * background so subsequent scrubbing can serve frames from cache.
+   *
+   * @param index - Time index (0-based)
+   * @throws If `index` is out of range `[0, timeCount)`
+   *
+   * @example
+   * ```ts
+   * await image.setTimeIndex(5)
+   * image.addEventListener('timeChange', (e) => {
+   *   console.log(`Frame ${e.detail.index}, cached=${e.detail.cached}`)
+   * })
+   * ```
+   */
+  async setTimeIndex(index: number): Promise<void> {
+    if (!this._timeAxisInfo) {
+      if (index !== 0) {
+        throw new Error(
+          `Cannot set time index ${index}: dataset has no time dimension`,
+        )
+      }
+      return
+    }
+
+    if (index < 0 || index >= this._timeAxisInfo.count) {
+      throw new Error(
+        `Time index ${index} out of range [0, ${this._timeAxisInfo.count})`,
+      )
+    }
+
+    const previousIndex = this._timeIndex
+    if (index === previousIndex) return
+
+    this._timeIndex = index
+
+    // Try the pre-fetch cache first
+    const cached = this._timeFrameCache.get(index)
+    if (cached && cached.levelIndex === this.currentLevelIndex) {
+      // Cache hit: instant buffer swap
+      const targetData = this.bufferManager.resize(cached.shape)
+      targetData.set(cached.data)
+      this.img = this.bufferManager.getTypedArray() as NVImage["img"]
+      this.updateHeaderForRegion(
+        this.multiscales.images[cached.levelIndex],
+        cached.region,
+        cached.shape,
+      )
+      this.global_min = undefined
+      this.niivue.updateGLVolume()
+
+      this._emitEvent("timeChange", {
+        index,
+        timeValue: this.getTimeValue(index),
+        previousIndex,
+        cached: true,
+      })
+    } else {
+      // Cache miss: full load at current resolution + region
+      await this.populateVolume(true, "initial")
+
+      this._emitEvent("timeChange", {
+        index,
+        timeValue: this.getTimeValue(index),
+        previousIndex,
+        cached: false,
+      })
+    }
+
+    // Pre-fetch adjacent frames in the background
+    this._prefetchAdjacentFrames(index)
+  }
+
+  /**
+   * Clear the pre-fetched time frame cache.
+   *
+   * Called internally when the spatial region or resolution changes
+   * (clip planes, viewport, resolution level), since cached frames
+   * were fetched for the previous region and are no longer valid.
+   */
+  private _invalidateTimeFrameCache(): void {
+    this._timeFrameCache.clear()
+    this._lastLoadedRegion = null
+    // Cancel any in-flight pre-fetches
+    if (this._prefetchAbortController) {
+      this._prefetchAbortController.abort()
+      this._prefetchAbortController = null
+    }
+    this._prefetchingTimeIndices.clear()
+  }
+
+  /**
+   * Pre-fetch adjacent time frames in the background.
+   *
+   * Fetches frames `[index - N, index + N]` (clamped to valid range)
+   * at the current resolution level and spatial region. Already-cached
+   * and currently-in-flight indices are skipped.
+   *
+   * @param centerIndex - The time index to pre-fetch around
+   */
+  private _prefetchAdjacentFrames(centerIndex: number): void {
+    if (!this._timeAxisInfo || this._timePrefetchCount <= 0) return
+    if (!this._lastLoadedRegion) return
+
+    // Cancel any previous pre-fetch batch
+    if (this._prefetchAbortController) {
+      this._prefetchAbortController.abort()
+    }
+    const abortController = new AbortController()
+    this._prefetchAbortController = abortController
+
+    const { region, levelIndex } = this._lastLoadedRegion
+    const ngffImage = this.multiscales.images[levelIndex]
+
+    // Collect indices to pre-fetch
+    const indices: number[] = []
+    for (let delta = 1; delta <= this._timePrefetchCount; delta++) {
+      const before = centerIndex - delta
+      const after = centerIndex + delta
+      if (before >= 0) indices.push(before)
+      if (after < this._timeAxisInfo.count) indices.push(after)
+    }
+
+    // Filter out already cached and in-flight indices
+    const toFetch = indices.filter(
+      (i) =>
+        !this._timeFrameCache.has(i) && !this._prefetchingTimeIndices.has(i),
+    )
+
+    if (toFetch.length === 0) return
+
+    const fetchRegion: PixelRegion = {
+      start: region.chunkAlignedStart,
+      end: region.chunkAlignedEnd,
+    }
+
+    // Fire-and-forget pre-fetches
+    for (const timeIdx of toFetch) {
+      if (abortController.signal.aborted) break
+
+      this._prefetchingTimeIndices.add(timeIdx)
+
+      void this.coalescer
+        .fetchRegion(
+          ngffImage,
+          levelIndex,
+          fetchRegion,
+          `prefetch-t${timeIdx}`,
+          timeIdx,
+        )
+        .then((result) => {
+          if (abortController.signal.aborted) return
+
+          const shape: [number, number, number] = [
+            region.chunkAlignedEnd[0] - region.chunkAlignedStart[0],
+            region.chunkAlignedEnd[1] - region.chunkAlignedStart[1],
+            region.chunkAlignedEnd[2] - region.chunkAlignedStart[2],
+          ]
+
+          // Store a copy so the original fetch result can be GC'd
+          this._timeFrameCache.set(timeIdx, {
+            data: result.data.slice() as TypedArray,
+            shape,
+            levelIndex,
+            region,
+          })
+        })
+        .catch(() => {
+          // Silently ignore pre-fetch failures (non-critical)
+        })
+        .finally(() => {
+          this._prefetchingTimeIndices.delete(timeIdx)
+        })
+    }
+  }
+
+  // ============================================================
   // Viewport-Aware Resolution
   // ============================================================
 
@@ -1281,6 +1604,8 @@ export class OMEZarrNVImage extends NVImage {
       )
       if (selection.levelIndex !== this.targetLevelIndex) {
         this.targetLevelIndex = selection.levelIndex
+        // Spatial region changed — cached time frames are stale
+        this._invalidateTimeFrameCache()
         this.populateVolume(true, "viewportChanged")
       }
       // Also reload slabs without viewport constraint
@@ -1559,6 +1884,8 @@ export class OMEZarrNVImage extends NVImage {
 
       if (selection.levelIndex !== this.targetLevelIndex) {
         this.targetLevelIndex = selection.levelIndex
+        // Spatial region changed — cached time frames are stale
+        this._invalidateTimeFrameCache()
         this.populateVolume(true, "viewportChanged")
       }
     }
@@ -2391,6 +2718,7 @@ export class OMEZarrNVImage extends NVImage {
       levelIndex,
       fetchRegion,
       `slab-${SLICE_TYPE[sliceType]}-${levelIndex}`,
+      this._timeIndex,
     )
 
     // Resize buffer and copy data
