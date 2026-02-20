@@ -1,5 +1,17 @@
 # @fideus-labs/fidnii
 
+## 0.5.1
+
+### Patch Changes
+
+- [#58](https://github.com/fideus-labs/fidnii/pull/58) [`172a07d`](https://github.com/fideus-labs/fidnii/commit/172a07d9410d89d8197799e1f4a93bf5d00a829e) Thanks [@thewtex](https://github.com/thewtex)! - Fix `waitForIdle()` to wait for all async work — debounced clip plane refetch, viewport update, and slab reload timers, the main `populateVolume` pipeline, per-slice-type slab loads, and in-flight coalescer fetches — not just the coalescer. The method now polls in a convergence loop, only resolving once every source of async work is idle simultaneously. Also scale Playwright worker count dynamically based on CPU cores to prevent S3 bandwidth saturation on high-core-count machines.
+
+- [#57](https://github.com/fideus-labs/fidnii/pull/57) [`5770229`](https://github.com/fideus-labs/fidnii/commit/577022951e33ee2e4b55101d22133e395057f0d7) Thanks [@thewtex](https://github.com/thewtex)! - Fix incorrect slab and 3D region rendering for datasets with permuted axis orientations (e.g. NGFF y mapping to physical S/I). The world-to-pixel conversion now uses the full oriented affine instead of naive scale+translation, and region offsets are transformed through the 3x3 rotation matrix so they land on the correct world axis. The slab orthogonal axis selection now uses orientation metadata to find the correct NGFF axis for each anatomical plane, fixing gray bars and clipped anatomy in axial/coronal views of permuted datasets. Also fix a black-canvas bug where the crosshair world position was captured after the slab volume swap instead of before.
+
+- [#59](https://github.com/fideus-labs/fidnii/pull/59) [`be27c2e`](https://github.com/fideus-labs/fidnii/commit/be27c2eface8543205fe4e02fc06d1f1a154216d) Thanks [@thewtex](https://github.com/thewtex)! - Fix slab (2D slice) buffers losing the active colormap when switching slice types. The `colormap` setter on `OMEZarrNVImage` now propagates to all existing slab NVImages, and newly created slabs inherit the main image's colormap instead of hard-coding `"gray"`.
+
+- [#43](https://github.com/fideus-labs/fidnii/pull/43) [`78a28b5`](https://github.com/fideus-labs/fidnii/commit/78a28b513e9d66e7fc497e9d9af919ea7ab0014f) Thanks [@thewtex](https://github.com/thewtex)! - Fix "Worker error" during OME-Zarr conversion by upgrading `@fideus-labs/ngff-zarr` to 0.12.3. The 0.12.1/0.12.2 builds had a broken inline worker blob caused by `$&` in the Emscripten-generated bundle being interpreted as a `String.replace()` back-reference, injecting the original `new Worker(new URL(...))` expression into the blob source as a syntax error. Also pass chunk size through to `itkImageToNgffImage` so user-selected chunk dimensions are respected during conversion.
+
 ## 0.5.0
 
 ### Minor Changes
