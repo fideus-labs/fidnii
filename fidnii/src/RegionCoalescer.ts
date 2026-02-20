@@ -44,15 +44,17 @@ const SPATIAL_DIM_MAP: Record<string, 0 | 1 | 2> = {
  * each zarr dimension to the correct slice:
  * - `"z"`, `"y"`, `"x"` → sliced by the corresponding PixelRegion axis
  * - `"c"` (channel) → `null` (select all components)
- * - `"t"` (time) → `0` (first timepoint)
+ * - `"t"` (time) → `timeIndex` (selects a single time point)
  *
  * @param dims - Dimension names from NgffImage (e.g. `["y", "x", "c"]`)
  * @param region - The pixel region in `[z, y, x]` order
+ * @param timeIndex - Time point index to select (default: 0)
  * @returns Selection array matching the zarr dim order
  */
 export function buildSelection(
   dims: string[],
   region: PixelRegion,
+  timeIndex: number = 0,
 ): (zarr.Slice | number | null)[] {
   return dims.map((dim) => {
     const spatialIdx = SPATIAL_DIM_MAP[dim]
@@ -60,7 +62,7 @@ export function buildSelection(
       return zarr.slice(region.start[spatialIdx], region.end[spatialIdx])
     }
     if (dim === "c") return null // select all channels
-    if (dim === "t") return 0 // first timepoint
+    if (dim === "t") return timeIndex // select specified time point
     // Unknown dimension — select all to avoid data loss
     return null
   })
@@ -96,16 +98,18 @@ export class RegionCoalescer {
   }
 
   /**
-   * Generate a unique key for a request based on image path, level index, and region.
+   * Generate a unique key for a request based on image path, level index,
+   * region, and time index.
    */
   private makeKey(
     imagePath: string,
     levelIndex: number,
     region: PixelRegion,
+    timeIndex: number,
   ): string {
     const start = region.start.join(",")
     const end = region.end.join(",")
-    return `${imagePath}:${levelIndex}:${start}:${end}`
+    return `${imagePath}:${levelIndex}:${start}:${end}:t${timeIndex}`
   }
 
   /**
@@ -115,6 +119,7 @@ export class RegionCoalescer {
    * @param levelIndex - The resolution level index
    * @param region - The pixel region to fetch
    * @param requesterId - ID of the requester (e.g., 'zoom', 'crop-change', 'progressive-load')
+   * @param timeIndex - Time point index to fetch (default: 0)
    * @returns The fetched region data
    */
   async fetchRegion(
@@ -122,8 +127,9 @@ export class RegionCoalescer {
     levelIndex: number,
     region: PixelRegion,
     requesterId: string = "default",
+    timeIndex: number = 0,
   ): Promise<RegionFetchResult> {
-    const key = this.makeKey(ngffImage.data.path, levelIndex, region)
+    const key = this.makeKey(ngffImage.data.path, levelIndex, region, timeIndex)
 
     // Check if there's already a pending request for this data
     const existing = this.pending.get(key)
@@ -156,8 +162,8 @@ export class RegionCoalescer {
       // Build a dim-aware selection that maps the [z, y, x] PixelRegion
       // to the actual zarr dimension order. Non-spatial dims are handled:
       //   "c" (channel) → null (fetch all components)
-      //   "t" (time)    → 0 (first timepoint, reduces dimension)
-      const selection = buildSelection(ngffImage.dims, region)
+      //   "t" (time)    → timeIndex (selects single time point)
+      const selection = buildSelection(ngffImage.dims, region, timeIndex)
       // Pass the chunk cache to fizarrita's getWorker via zarrGet.
       // The `cache` option is available in @fideus-labs/fizarrita >=1.2.0.
       const zarrOpts = this._cache
@@ -190,6 +196,7 @@ export class RegionCoalescer {
    * @param levelIndex - The resolution level index
    * @param regions - Array of pixel regions to fetch
    * @param requesterId - ID of the requester
+   * @param timeIndex - Time point index to fetch (default: 0)
    * @returns Array of fetched region data
    */
   async fetchRegions(
@@ -197,10 +204,11 @@ export class RegionCoalescer {
     levelIndex: number,
     regions: PixelRegion[],
     requesterId: string = "default",
+    timeIndex: number = 0,
   ): Promise<RegionFetchResult[]> {
     return Promise.all(
       regions.map((region) =>
-        this.fetchRegion(ngffImage, levelIndex, region, requesterId),
+        this.fetchRegion(ngffImage, levelIndex, region, requesterId, timeIndex),
       ),
     )
   }
@@ -212,8 +220,9 @@ export class RegionCoalescer {
     ngffImage: NgffImage,
     levelIndex: number,
     region: PixelRegion,
+    timeIndex: number = 0,
   ): boolean {
-    const key = this.makeKey(ngffImage.data.path, levelIndex, region)
+    const key = this.makeKey(ngffImage.data.path, levelIndex, region, timeIndex)
     return this.pending.has(key)
   }
 
@@ -225,8 +234,9 @@ export class RegionCoalescer {
     ngffImage: NgffImage,
     levelIndex: number,
     region: PixelRegion,
+    timeIndex: number = 0,
   ): Set<string> | undefined {
-    const key = this.makeKey(ngffImage.data.path, levelIndex, region)
+    const key = this.makeKey(ngffImage.data.path, levelIndex, region, timeIndex)
     return this.pending.get(key)?.requesters
   }
 
