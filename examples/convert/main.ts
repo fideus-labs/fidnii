@@ -748,14 +748,14 @@ downloadBtn.addEventListener("click", () => {
 // Settings change handlers for live preview updates
 colormapSelect.addEventListener("change", () => {
   const ms = lastResult?.multiscales ?? loadedMultiscales
-  if (ms && nv && nv.volumes.length > 0) {
+  if (ms && nv && currentImage) {
     // Label images use discrete colormaps managed by the library
     if (ms.method === Methods.ITKWASM_LABEL_IMAGE) {
       return
     }
     const colormap =
       (colormapSelect as unknown as { value: string }).value || "fast"
-    nv.volumes[0].colormap = colormap
+    currentImage.colormap = colormap
     nv.updateGLVolume()
   }
 })

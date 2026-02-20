@@ -107,6 +107,32 @@ export class OMEZarrNVImage extends NVImage {
    */
   readonly isLabelImage: boolean
 
+  // ============================================================
+  // Colormap Override
+  // ============================================================
+
+  /**
+   * The continuous colormap name used for rendering.
+   *
+   * Overrides the NVImage setter so that changing the colormap on this
+   * image automatically propagates to all slab (2D slice) NVImages.
+   * Label images are unaffected — they use `setColormapLabel()` instead.
+   */
+  override get colormap(): string {
+    return this._colormap
+  }
+
+  override set colormap(cm: string) {
+    // Use NVImage's setter (calls calMinMax + onColormapChange)
+    super.colormap = cm
+    // Propagate to all existing slab NVImages
+    if (!this.isLabelImage) {
+      for (const slab of this._slabBuffers.values()) {
+        slab.nvImage.colormap = cm
+      }
+    }
+  }
+
   /** Reference to NiiVue instance */
   private readonly niivue: Niivue
 
@@ -2096,7 +2122,7 @@ export class OMEZarrNVImage extends NVImage {
     nvImage.name = `${this.name ?? "OME-Zarr"} [${SLICE_TYPE[sliceType]}]`
     nvImage.img = bufferManager.resize([1, 1, 1]) as NVImage["img"]
     if (!this.isLabelImage) {
-      nvImage._colormap = "gray"
+      nvImage._colormap = this._colormap || "gray"
     }
     nvImage._opacity = 1.0
 
