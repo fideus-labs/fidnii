@@ -160,6 +160,14 @@ function isRGBOrRGBA(multiscales: Multiscales): boolean {
   return info !== null && (info.components === 3 || info.components === 4)
 }
 
+/** Check whether the image is single-component (no "c" axis or exactly 1 component). */
+function isSingleComponent(multiscales: Multiscales): boolean {
+  const firstImage = multiscales.images[0]
+  if (!firstImage) return false
+  const info = getChannelInfo(firstImage)
+  return info === null || info.components === 1
+}
+
 /** Read both sliders and push gradient settings into NiiVue. */
 async function updateGradientSettings(): Promise<void> {
   if (!nv) return
@@ -493,9 +501,10 @@ async function showPreview(
 
   const volumeIs3D = is3DVolume(result.multiscales)
   const imageIsRGB = isRGBOrRGBA(result.multiscales)
+  const singleComponent = isSingleComponent(result.multiscales)
 
-  // Disable colormap for RGB/RGBA images (NiiVue renders them directly)
-  if (imageIsRGB) {
+  // Disable colormap for RGB/RGBA and multi-component images
+  if (imageIsRGB || !singleComponent) {
     colormapSelect.setAttribute("disabled", "")
   } else {
     colormapSelect.removeAttribute("disabled")
@@ -528,9 +537,10 @@ async function showPreview(
 
   // Apply colormap AFTER data is loaded to avoid calMinMax() on placeholder data.
   // Label images get a discrete colormap automatically from the library,
-  // and RGB/RGBA images render their native colors directly — skip both.
+  // RGB/RGBA images render their native colors directly, and multi-component
+  // images are not suited for a single scalar colormap — skip all three.
   const isLabel = result.multiscales.method === Methods.ITKWASM_LABEL_IMAGE
-  if (!isLabel && !imageIsRGB) {
+  if (!isLabel && !imageIsRGB && singleComponent) {
     image.colormap = colormap
   }
 
@@ -749,8 +759,9 @@ downloadBtn.addEventListener("click", () => {
 colormapSelect.addEventListener("change", () => {
   const ms = lastResult?.multiscales ?? loadedMultiscales
   if (ms && nv && currentImage) {
-    // Label images use discrete colormaps managed by the library
-    if (ms.method === Methods.ITKWASM_LABEL_IMAGE) {
+    // Label images use discrete colormaps managed by the library,
+    // and multi-component images are not suited for a single scalar colormap.
+    if (ms.method === Methods.ITKWASM_LABEL_IMAGE || !isSingleComponent(ms)) {
       return
     }
     const colormap =
