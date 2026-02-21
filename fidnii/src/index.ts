@@ -99,6 +99,7 @@ export {
 // Types
 export type {
   AttachedNiivueState,
+  CachedTimeFrame,
   ChannelInfo,
   ChunkAlignedRegion,
   ChunkCache,
@@ -110,6 +111,8 @@ export type {
   ResolutionSelection,
   SlabBufferState,
   SlabSliceType,
+  TimeAxisInfo,
+  TimeUnit,
   TypedArray,
   VolumeBounds,
   ZarrDtype,
