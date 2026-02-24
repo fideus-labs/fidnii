@@ -43,7 +43,6 @@ jobs:
           version: pnpm changeset version
           title: "chore: version packages"
           commit: "chore: version packages"
-          createGithubReleases: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -52,3 +51,12 @@ jobs:
         run: pnpm changeset publish
         env:
           NPM_CONFIG_PROVENANCE: true
+
+      - name: Create GitHub releases
+        if: steps.changesets.outputs.hasChangesets == 'false'
+        run: |
+          for tag in $(git tag --points-at HEAD); do
+            gh release create "$tag" --generate-notes || true
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
