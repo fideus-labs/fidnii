@@ -36,16 +36,19 @@ jobs:
 
       - run: pnpm build
 
-      - name: Create release PR or publish
+      - name: Create release PR
         id: changesets
         uses: changesets/action@v1
         with:
           version: pnpm changeset version
-          publish: pnpm changeset publish
           title: "chore: version packages"
           commit: "chore: version packages"
           createGithubReleases: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ''
+
+      - name: Publish to npm
+        if: steps.changesets.outputs.hasChangesets == 'false'
+        run: pnpm changeset publish
+        env:
           NPM_CONFIG_PROVENANCE: true
