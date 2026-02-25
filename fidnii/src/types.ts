@@ -296,18 +296,8 @@ export interface AttachedNiivueState {
   nv: Niivue
   /** The current slice type of this NV instance */
   currentSliceType: SLICE_TYPE
-  /** Previous onLocationChange callback (to chain) */
-  previousOnLocationChange?: (location: unknown) => void
-  /** Previous onOptsChange callback (to chain) */
-  previousOnOptsChange?: (
-    propertyName: string,
-    newValue: unknown,
-    oldValue: unknown,
-  ) => void
-  /** Previous onMouseUp callback (to chain, for viewport-aware mode) */
-  previousOnMouseUp?: (data: unknown) => void
-  /** Previous onZoom3DChange callback (to chain, for viewport-aware mode) */
-  previousOnZoom3DChange?: (zoom: number) => void
+  /** AbortController for niivue addEventListener listeners (sliceTypeChange, locationChange) */
+  eventAbortController: AbortController
   /** AbortController for viewport-aware event listeners (wheel, etc.) */
   viewportAbortController?: AbortController
   /** AbortController for the 3D zoom override wheel listener */
