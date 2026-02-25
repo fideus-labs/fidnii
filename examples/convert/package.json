@@ -16,7 +16,7 @@
     "@fideus-labs/worker-pool": "^1.0.0",
     "@itk-wasm/downsample": "^1.8.1",
     "@itk-wasm/image-io": "^1.6.0",
-    "@niivue/niivue": "^0.67.0",
+    "@niivue/niivue": "^0.68.1",
     "itk-wasm": "1.0.0-b.196"
   },
   "devDependencies": {
