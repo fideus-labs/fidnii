@@ -26,7 +26,11 @@ import {
   worldToNormalized,
 } from "@fideus-labs/fidnii"
 import { buildTiff, makeImageTags } from "@fideus-labs/fiff"
-import { fromNgffZarr } from "@fideus-labs/ngff-zarr/browser"
+import {
+  config,
+  fromNgffZarr,
+  setWorkerPoolSize,
+} from "@fideus-labs/ngff-zarr/browser"
 import { DRAG_MODE, Niivue, SLICE_TYPE } from "@niivue/niivue"
 
 declare global {
@@ -107,6 +111,8 @@ const boundsZEl = document.getElementById("bounds-z")!
 const clipPlaneCountEl = document.getElementById("clip-plane-count")!
 
 // DOM elements — controls
+const workersSlider = document.getElementById("workers") as HTMLInputElement
+const workersValueEl = document.getElementById("workers-value")!
 const maxpixelsSlider = document.getElementById("maxpixels") as HTMLInputElement
 const maxpixelsValueEl = document.getElementById("maxpixels-value")!
 const reloadBtn = document.getElementById("reload")!
@@ -342,6 +348,15 @@ async function loadImage(
 // Event listeners
 // ---------------------------------------------------------------------------
 
+// --- Slider: worker pool size ---
+workersSlider.addEventListener("input", () => {
+  workersValueEl.textContent = workersSlider.value
+})
+workersSlider.addEventListener("change", () => {
+  const size = parseInt(workersSlider.value, 10)
+  void setWorkerPoolSize(size)
+})
+
 // --- Slider: maxpixels ---
 maxpixelsSlider.addEventListener("input", () => {
   maxpixelsValueEl.textContent = maxpixelsSlider.value
@@ -444,6 +459,10 @@ async function main() {
 
   window.nv = nv
   window.nv2 = nv2
+
+  // Initialize worker pool size slider from the runtime default
+  workersSlider.value = String(config.workerPoolSize)
+  workersValueEl.textContent = String(config.workerPoolSize)
 
   const image = await loadImage(nv, nv2, 50_000_000)
   window.image = image

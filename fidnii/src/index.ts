@@ -38,8 +38,10 @@ export type { DeflatePool, TiffStoreOptions } from "@fideus-labs/fiff"
 export { TiffStore } from "@fideus-labs/fiff"
 // Re-export Methods enum so consumers can check isLabelImage or compare method values
 export { Methods } from "@fideus-labs/ngff-zarr"
-// Worker pool lifecycle (re-exported from ngff-zarr)
+// Worker pool lifecycle & configuration (re-exported from ngff-zarr)
 export {
+  config as ngffZarrConfig,
+  setWorkerPoolSize,
   terminateOmeroWorkerPool,
   terminateWorkerPool,
 } from "@fideus-labs/ngff-zarr/browser"
