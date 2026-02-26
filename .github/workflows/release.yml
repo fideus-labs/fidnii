@@ -16,6 +16,9 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
+    environment:
+      name: publish
+      url: https://www.npmjs.com/package/@fideus-labs/fidnii
     steps:
       - uses: actions/checkout@v4
 
