@@ -2122,9 +2122,10 @@ export class OMEZarrNVImage extends NVImage {
   /**
    * Attach a Niivue instance for slice-type-aware rendering.
    *
-   * The image auto-detects the NV's current slice type and hooks into
-   * `onOptsChange` to track mode changes and `onLocationChange` to track
-   * crosshair/slice position changes.
+   * The image auto-detects the NV's current slice type and uses
+   * `addEventListener('sliceTypeChange', ...)` to track mode changes and
+   * `addEventListener('locationChange', ...)` to track crosshair/slice
+   * position changes via Niivue's browser-native EventTarget API.
    *
    * When the NV is in a 2D slice mode (Axial, Coronal, Sagittal), the image
    * loads a slab (one chunk thick in the orthogonal direction) at the current
