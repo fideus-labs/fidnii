@@ -2180,7 +2180,9 @@ export class OMEZarrNVImage extends NVImage {
   }
 
   /**
-   * Detach a Niivue instance, restoring its original callbacks.
+   * Detach a Niivue instance, removing all event listeners registered by this
+   * image (viewport, zoom-override, slice-type, location, and clip-plane
+   * listeners are all torn down via their respective `AbortController`s).
    *
    * @param nv - The Niivue instance to detach
    */
