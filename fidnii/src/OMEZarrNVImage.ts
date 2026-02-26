@@ -187,8 +187,8 @@ export class OMEZarrNVImage extends NVImage {
   /** Current buffer bounds in world space (may differ from full volume when clipped) */
   private _currentBufferBounds: VolumeBounds
 
-  /** Previous clip plane change handler (to restore later) */
-  private previousOnClipPlaneChange?: (clipPlane: number[]) => void
+  /** AbortController for the clip plane event listener on the primary NV */
+  private _clipPlaneAbortController?: AbortController
 
   /** Debounce delay for clip plane updates (ms) */
   private readonly clipPlaneDebounceMs: number
@@ -469,16 +469,16 @@ export class OMEZarrNVImage extends NVImage {
   static async create(options: OMEZarrNVImageOptions): Promise<OMEZarrNVImage> {
     const image = new OMEZarrNVImage(options)
 
-    // Store and replace the clip plane change handler
-    image.previousOnClipPlaneChange = image.niivue.onClipPlaneChange
-    image.niivue.onClipPlaneChange = (clipPlane: number[]) => {
-      // Call original handler if it exists
-      if (image.previousOnClipPlaneChange) {
-        image.previousOnClipPlaneChange(clipPlane)
-      }
-      // Handle clip plane change
-      image.onNiivueClipPlaneChange(clipPlane)
-    }
+    // Listen for clip plane changes via the browser-native event API
+    const clipPlaneController = new AbortController()
+    image._clipPlaneAbortController = clipPlaneController
+    image.niivue.addEventListener(
+      "clipPlaneChange",
+      (e) => {
+        image.onNiivueClipPlaneChange(e.detail.clipPlane)
+      },
+      { signal: clipPlaneController.signal },
+    )
 
     // Auto-attach the primary NV instance for slice type / location tracking
     image.attachNiivue(image.niivue)
@@ -1663,37 +1663,41 @@ export class OMEZarrNVImage extends NVImage {
   }
 
   /**
-   * Hook viewport events (onMouseUp, onZoom3DChange, wheel) on a NV instance.
+   * Hook viewport events (mouseUp, zoom3DChange, wheel) on a NV instance.
+   * All listeners share a single AbortController so they can be torn down
+   * together via {@link _unhookViewportEvents}.
    */
   private _hookViewportEvents(nv: Niivue, state: AttachedNiivueState): void {
-    // Save and chain onMouseUp (fires at end of any mouse/touch interaction)
-    state.previousOnMouseUp = nv.onMouseUp as (data: unknown) => void
-    nv.onMouseUp = (data: unknown) => {
-      if (state.previousOnMouseUp) {
-        state.previousOnMouseUp(data)
-      }
-      this._handleViewportInteractionEnd(nv)
-    }
-
-    // Save and chain onZoom3DChange (fires when volScaleMultiplier changes)
-    state.previousOnZoom3DChange = nv.onZoom3DChange
-    nv.onZoom3DChange = (zoom: number) => {
-      if (state.previousOnZoom3DChange) {
-        state.previousOnZoom3DChange(zoom)
-      }
-      this._handleViewportInteractionEnd(nv)
-    }
-
-    // Add wheel event listener on the canvas for scroll-wheel zoom detection
     const controller = new AbortController()
     state.viewportAbortController = controller
+    const signal = controller.signal
+
+    // Detect end of mouse/touch interaction
+    nv.addEventListener(
+      "mouseUp",
+      () => {
+        this._handleViewportInteractionEnd(nv)
+      },
+      { signal },
+    )
+
+    // Detect 3D zoom level changes
+    nv.addEventListener(
+      "zoom3DChange",
+      () => {
+        this._handleViewportInteractionEnd(nv)
+      },
+      { signal },
+    )
+
+    // Detect scroll-wheel zoom on the canvas
     if (nv.canvas) {
       nv.canvas.addEventListener(
         "wheel",
         () => {
           this._handleViewportInteractionEnd(nv)
         },
-        { signal: controller.signal, passive: true },
+        { signal, passive: true },
       )
     }
   }
@@ -1701,20 +1705,7 @@ export class OMEZarrNVImage extends NVImage {
   /**
    * Unhook viewport events from a NV instance.
    */
-  private _unhookViewportEvents(nv: Niivue, state: AttachedNiivueState): void {
-    // Restore onMouseUp
-    if (state.previousOnMouseUp !== undefined) {
-      nv.onMouseUp = state.previousOnMouseUp as typeof nv.onMouseUp
-      state.previousOnMouseUp = undefined
-    }
-
-    // Restore onZoom3DChange
-    if (state.previousOnZoom3DChange !== undefined) {
-      nv.onZoom3DChange = state.previousOnZoom3DChange
-      state.previousOnZoom3DChange = undefined
-    }
-
-    // Remove wheel event listener
+  private _unhookViewportEvents(_nv: Niivue, state: AttachedNiivueState): void {
     if (state.viewportAbortController) {
       state.viewportAbortController.abort()
       state.viewportAbortController = undefined
@@ -2131,9 +2122,10 @@ export class OMEZarrNVImage extends NVImage {
   /**
    * Attach a Niivue instance for slice-type-aware rendering.
    *
-   * The image auto-detects the NV's current slice type and hooks into
-   * `onOptsChange` to track mode changes and `onLocationChange` to track
-   * crosshair/slice position changes.
+   * The image auto-detects the NV's current slice type and uses
+   * `addEventListener('sliceTypeChange', ...)` to track mode changes and
+   * `addEventListener('locationChange', ...)` to track crosshair/slice
+   * position changes via Niivue's browser-native EventTarget API.
    *
    * When the NV is in a 2D slice mode (Axial, Coronal, Sagittal), the image
    * loads a slab (one chunk thick in the orthogonal direction) at the current
@@ -2144,37 +2136,32 @@ export class OMEZarrNVImage extends NVImage {
   attachNiivue(nv: Niivue): void {
     if (this._attachedNiivues.has(nv)) return // Already attached
 
+    const eventAbortController = new AbortController()
     const state: AttachedNiivueState = {
       nv,
       currentSliceType: this._detectSliceType(nv),
-      previousOnLocationChange: nv.onLocationChange,
-      previousOnOptsChange:
-        nv.onOptsChange as AttachedNiivueState["previousOnOptsChange"],
+      eventAbortController,
     }
 
-    // Hook onOptsChange to detect slice type changes
-    nv.onOptsChange = (
-      propertyName: string,
-      newValue: unknown,
-      oldValue: unknown,
-    ) => {
-      // Chain to previous handler
-      if (state.previousOnOptsChange) {
-        state.previousOnOptsChange(propertyName, newValue, oldValue)
-      }
-      if (propertyName === "sliceType") {
-        this._handleSliceTypeChange(nv, newValue as SLICE_TYPE)
-      }
-    }
+    const signal = eventAbortController.signal
 
-    // Hook onLocationChange to detect slice position changes
-    nv.onLocationChange = (location: unknown) => {
-      // Chain to previous handler
-      if (state.previousOnLocationChange) {
-        state.previousOnLocationChange(location)
-      }
-      this._handleLocationChange(nv, location)
-    }
+    // Listen for slice type changes via the browser-native event API
+    nv.addEventListener(
+      "sliceTypeChange",
+      (e) => {
+        this._handleSliceTypeChange(nv, e.detail.sliceType)
+      },
+      { signal },
+    )
+
+    // Listen for crosshair/slice position changes
+    nv.addEventListener(
+      "locationChange",
+      (e) => {
+        this._handleLocationChange(nv, e.detail)
+      },
+      { signal },
+    )
 
     this._attachedNiivues.set(nv, state)
 
@@ -2194,7 +2181,9 @@ export class OMEZarrNVImage extends NVImage {
   }
 
   /**
-   * Detach a Niivue instance, restoring its original callbacks.
+   * Detach a Niivue instance, removing all event listeners registered by this
+   * image (viewport, zoom-override, slice-type, location, and clip-plane
+   * listeners are all torn down via their respective `AbortController`s).
    *
    * @param nv - The Niivue instance to detach
    */
@@ -2208,10 +2197,14 @@ export class OMEZarrNVImage extends NVImage {
     // Unhook 3D zoom override
     this._unhookZoomOverride(nv, state)
 
-    // Restore original callbacks
-    nv.onLocationChange = state.previousOnLocationChange ?? (() => {})
-    nv.onOptsChange = (state.previousOnOptsChange ??
-      (() => {})) as typeof nv.onOptsChange
+    // Remove niivue event listeners (sliceTypeChange, locationChange)
+    state.eventAbortController.abort()
+
+    // If detaching the primary NV, also remove the clip plane listener
+    if (nv === this.niivue && this._clipPlaneAbortController) {
+      this._clipPlaneAbortController.abort()
+      this._clipPlaneAbortController = undefined
+    }
 
     this._attachedNiivues.delete(nv)
   }
