@@ -1,5 +1,26 @@
 # @fideus-labs/fidnii
 
+## 0.7.0
+
+### Minor Changes
+
+- [#70](https://github.com/fideus-labs/fidnii/pull/70) [`ca3b3d8`](https://github.com/fideus-labs/fidnii/commit/ca3b3d8cc2fc8a0abc01fe878da7a1e99e00407b) Thanks [@thewtex](https://github.com/thewtex)! - Re-export `ngffZarrConfig` and `setWorkerPoolSize` from `@fideus-labs/ngff-zarr/browser`, allowing consumers to configure the number of Web Workers used by ngff-zarr's codec, write, and omero pools. Added a Worker Pool Size slider (1–16) to the dev/test page UI.
+
+- [#71](https://github.com/fideus-labs/fidnii/pull/71) [`543dc94`](https://github.com/fideus-labs/fidnii/commit/543dc944e2019711c21bc529dbb7f638124f4cec) Thanks [@thewtex](https://github.com/thewtex)! - Upgrade niivue to 0.68.1 and migrate to browser-native events
+
+  Replace the fragile save-and-chain callback pattern (`nv.onClipPlaneChange`,
+  `nv.onOptsChange`, `nv.onLocationChange`, `nv.onMouseUp`, `nv.onZoom3DChange`)
+  with niivue's new `EventTarget`-based event system (`addEventListener`).
+
+  This eliminates the need to save/restore previous callback handlers, supports
+  multiple listeners per event, and uses `AbortController` for clean teardown.
+
+  - `onClipPlaneChange` → `addEventListener("clipPlaneChange", ...)`
+  - `onOptsChange` (sliceType filter) → `addEventListener("sliceTypeChange", ...)`
+  - `onLocationChange` → `addEventListener("locationChange", ...)`
+  - `onMouseUp` → `addEventListener("mouseUp", ...)`
+  - `onZoom3DChange` → `addEventListener("zoom3DChange", ...)`
+
 ## 0.6.0
 
 ### Minor Changes
