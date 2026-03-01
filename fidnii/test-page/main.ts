@@ -39,6 +39,7 @@ declare global {
     nv: Niivue
     nv2: Niivue
     fidnii: {
+      OMEZarrNVImage: typeof OMEZarrNVImage
       getChannelInfo: typeof getChannelInfo
       isRGBImage: typeof isRGBImage
       needsRGBNormalization: typeof needsRGBNormalization
@@ -68,6 +69,7 @@ declare global {
 
 // Expose utility functions for unit testing
 window.fidnii = {
+  OMEZarrNVImage,
   getChannelInfo,
   isRGBImage,
   needsRGBNormalization,
