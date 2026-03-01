@@ -486,6 +486,10 @@ export class OMEZarrNVImage extends NVImage {
     // Auto-load by default (add to NiiVue + start progressive loading)
     const autoLoad = options.autoLoad ?? true
     if (autoLoad) {
+      // Remove any existing volumes so the new image replaces the old one
+      while (image.niivue.volumes.length > 0) {
+        image.niivue.removeVolume(image.niivue.volumes[0])
+      }
       image.niivue.addVolume(image)
       void image.populateVolume() // Fire-and-forget, returns immediately
     }
