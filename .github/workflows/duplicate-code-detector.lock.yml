@@ -27,7 +27,7 @@
 #
 # Resolved workflow manifest:
 #   Imports:
-#     - shared/mcp/serena-go.md
+#     - shared/mcp/serena-ts.md
 #
 # gh-aw-metadata: {"schema_version":"v1","frontmatter_hash":"1241374cb1d7cd962846a25ca1628c7da1cf4ec50142a632ee19310026a86172","compiler_version":"v0.51.6"}
 
@@ -166,7 +166,7 @@ jobs:
           </system>
           GH_AW_PROMPT_EOF
           cat << 'GH_AW_PROMPT_EOF'
-          {{#runtime-import .github/workflows/shared/mcp/serena-go.md}}
+          {{#runtime-import .github/workflows/shared/mcp/serena-ts.md}}
           GH_AW_PROMPT_EOF
           cat << 'GH_AW_PROMPT_EOF'
           {{#runtime-import .github/workflows/duplicate-code-detector.md}}

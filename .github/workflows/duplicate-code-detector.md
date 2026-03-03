@@ -11,7 +11,7 @@ permissions:
   pull-requests: read
 engine: copilot
 imports:
-  - shared/mcp/serena-go.md
+  - shared/mcp/serena-ts.md
 safe-outputs:
   create-issue:
     expires: 2d
@@ -19,7 +19,7 @@ safe-outputs:
     labels: [code-quality, automated-analysis, cookie]
     assignees: copilot
     group: true
-    max: 3
+    max: 1
 timeout-minutes: 15
 strict: true
 source: github/gh-aw/.github/workflows/duplicate-code-detector.md@33cd6c7f1fee588654ef19def2e6a4174be66197
@@ -55,9 +55,8 @@ Activate the project in Serena:
 
 Identify and analyze modified files:
 - Determine files changed in the recent commits
-- **ONLY analyze .go and .cjs files** - exclude all other file types
-- **Exclude JavaScript files except .cjs** from analysis (files matching patterns: `*.js`, `*.mjs`, `*.jsx`, `*.ts`, `*.tsx`)
-- **Exclude test files** from analysis (files matching patterns: `*_test.go`, `*.test.js`, `*.test.cjs`, `*.spec.js`, `*.spec.cjs`, `*.test.ts`, `*.spec.ts`, `*_test.py`, `test_*.py`, or located in directories named `test`, `tests`, `__tests__`, or `spec`)
+- **Analyze application source files** written in the primary repository languages (TypeScript/JavaScript: `*.ts`, `*.tsx`, `*.js`, `*.jsx`, `*.mjs`, `*.cjs`)
+- **Exclude test files** from analysis (files matching patterns: `*.test.js`, `*.test.cjs`, `*.spec.js`, `*.spec.cjs`, `*.test.ts`, `*.spec.ts`, or located in directories named `test`, `tests`, `__tests__`, or `spec`)
 - **Exclude workflow files** from analysis (files under `.github/workflows/*`)
 - Use `get_symbols_overview` to understand file structure
 - Use `read_file` to examine modified file contents
@@ -101,13 +100,13 @@ Assess findings to identify true code duplication:
 
 ### 5. Issue Reporting
 
-Create separate issues for each distinct duplication pattern found (maximum 3 patterns per run). Each pattern should get its own issue to enable focused remediation.
+Create at most one issue per run. If multiple distinct duplication patterns are found, summarize the most significant ones in a single issue so remediation remains focused.
 
 **When to Create Issues**:
 - Only create issues if significant duplication is found (threshold: >10 lines of duplicated code OR 3+ instances of similar patterns)
-- **Create one issue per distinct pattern** - do NOT bundle multiple patterns in a single issue
-- Limit to the top 3 most significant patterns if more are found
-- Use the `create_issue` tool from safe-outputs MCP **once for each pattern**
+- **Create at most one issue per run** — if multiple patterns qualify, describe them clearly as separate sections within the same issue
+- Within that single issue, limit detailed reporting to the top 3 most significant patterns if more are found
+- Use the `create_issue` tool from safe-outputs MCP **at most once per run**
 
 **When No Issues Are Found**:
 
@@ -144,8 +143,7 @@ Create separate issues for each distinct duplication pattern found (maximum 3 pa
 
 - Standard boilerplate code (imports, exports, etc.)
 - Test setup/teardown code (acceptable duplication in tests)
-- **JavaScript files except .cjs** (files matching: `*.js`, `*.mjs`, `*.jsx`, `*.ts`, `*.tsx`)
-- **All test files** (files matching: `*_test.go`, `*.test.js`, `*.test.cjs`, `*.spec.js`, `*.spec.cjs`, `*.test.ts`, `*.spec.ts`, `*_test.py`, `test_*.py`, or in `test/`, `tests/`, `__tests__/`, `spec/` directories)
+- **All test files** (files matching: `*.test.ts`, `*.spec.ts`, `*.test.js`, `*.spec.js`, `*.test.cjs`, `*.spec.cjs`, or in `test/`, `tests/`, `__tests__/`, `spec/` directories)
 - **All workflow files** (files under `.github/workflows/*`)
 - Configuration files with similar structure
 - Language-specific patterns (constructors, getters/setters)
@@ -153,10 +151,10 @@ Create separate issues for each distinct duplication pattern found (maximum 3 pa
 
 ### Analysis Depth
 
-- **File Type Restriction**: ONLY analyze .go and .cjs files - ignore all other file types
-- **Primary Focus**: All .go and .cjs files changed in the current push (excluding test files and workflow files)
-- **Secondary Analysis**: Check for duplication with existing .go and .cjs codebase (excluding test files and workflow files)
-- **Cross-Reference**: Look for patterns across .go and .cjs files in the repository
+- **File Type Restriction**: Analyze TypeScript/JavaScript files (`*.ts`, `*.tsx`, `*.js`, `*.jsx`, `*.mjs`, `*.cjs`) — ignore all other file types
+- **Primary Focus**: All TypeScript/JavaScript source files changed in the current push (excluding test files and workflow files)
+- **Secondary Analysis**: Check for duplication with existing TypeScript/JavaScript codebase (excluding test files and workflow files)
+- **Cross-Reference**: Look for patterns across TypeScript/JavaScript files in the repository
 - **Historical Context**: Consider if duplication is new or existing
 
 ## Issue Template
@@ -239,8 +237,8 @@ For each distinct duplication pattern found, create a separate issue using this 
 - Provide specific, actionable recommendations
 
 ### Issue Creation
-- Create **one issue per distinct duplication pattern** - do NOT bundle multiple patterns in a single issue
-- Limit to the top 3 most significant patterns if more are found
+- Create **at most one issue per run** — if multiple patterns qualify, describe them as separate sections within the same issue
+- Within a single issue, limit detailed reporting to the top 3 most significant patterns if more are found
 - Only create issues if significant duplication is found
 - Include sufficient detail for SWE agents to understand and act on findings
 - Provide concrete examples with file paths and line numbers
