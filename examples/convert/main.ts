@@ -8,6 +8,8 @@ import "@awesome.me/webawesome/dist/components/drawer/drawer.js"
 import "@awesome.me/webawesome/dist/components/input/input.js"
 import "@awesome.me/webawesome/dist/components/option/option.js"
 import "@awesome.me/webawesome/dist/components/progress-bar/progress-bar.js"
+import "@awesome.me/webawesome/dist/components/radio/radio.js"
+import "@awesome.me/webawesome/dist/components/radio-group/radio-group.js"
 import "@awesome.me/webawesome/dist/components/select/select.js"
 import "@awesome.me/webawesome/dist/components/slider/slider.js"
 
