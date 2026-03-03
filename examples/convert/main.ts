@@ -785,7 +785,7 @@ silhouetteSlider.addEventListener("input", () => {
   }
 })
 
-sliceTypeSelect.addEventListener("wa-change", () => {
+sliceTypeSelect.addEventListener("change", () => {
   const ms = lastResult?.multiscales ?? loadedMultiscales
   if (ms && nv && nv.volumes.length > 0) {
     const sliceTypeStr =
