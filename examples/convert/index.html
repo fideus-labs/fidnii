@@ -327,6 +327,22 @@
       .settings-grid wa-slider {
         width: 100%;
       }
+      .slice-type-fieldset {
+        border: none;
+        margin: 0;
+        padding: 0;
+      }
+      .slice-type-fieldset legend {
+        font-size: var(--wa-input-label-font-size-medium, 0.875rem);
+        color: var(--wa-input-label-color, inherit);
+        margin-bottom: 0.25rem;
+      }
+      .slice-type-fieldset wa-radio-group {
+        display: flex;
+      }
+      .slice-type-fieldset wa-radio img {
+        display: block;
+      }
       .full-width {
         grid-column: 1 / -1;
       }
@@ -617,17 +633,30 @@
               <wa-option value="green">Green</wa-option>
               <wa-option value="blue">Blue</wa-option>
             </wa-select>
-            <wa-select
-              id="slice-type"
-              label="Slice Type"
-              value="multiplanar"
-            >
-              <wa-option value="axial">Axial</wa-option>
-              <wa-option value="coronal">Coronal</wa-option>
-              <wa-option value="sagittal">Sagittal</wa-option>
-              <wa-option value="multiplanar">Multiplanar</wa-option>
-              <wa-option value="render">Render</wa-option>
-            </wa-select>
+            <fieldset class="slice-type-fieldset">
+              <legend>Slice Type</legend>
+              <wa-radio-group
+                id="slice-type"
+                value="multiplanar"
+                orientation="horizontal"
+              >
+                <wa-radio appearance="button" value="axial" title="Axial">
+                  <img src="./icons/greenPlane.svg" alt="Axial" width="24" height="24">
+                </wa-radio>
+                <wa-radio appearance="button" value="coronal" title="Coronal">
+                  <img src="./icons/redPlane.svg" alt="Coronal" width="24" height="24">
+                </wa-radio>
+                <wa-radio appearance="button" value="sagittal" title="Sagittal">
+                  <img src="./icons/yellowPlane.svg" alt="Sagittal" width="24" height="24">
+                </wa-radio>
+                <wa-radio appearance="button" value="multiplanar" title="Multiplanar">
+                  <img src="./icons/multiplanar.svg" alt="Multiplanar" width="24" height="24">
+                </wa-radio>
+                <wa-radio appearance="button" value="render" title="Render">
+                  <img src="./icons/volume.svg" alt="Render" width="24" height="24">
+                </wa-radio>
+              </wa-radio-group>
+            </fieldset>
             <wa-slider
               id="opacity"
               label="Gradient Opacity"

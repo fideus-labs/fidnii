@@ -91,9 +91,7 @@ const outputFormatSelect = document.getElementById(
 const chunkSizeInput = document.getElementById("chunk-size") as HTMLInputElement
 const methodSelect = document.getElementById("method") as HTMLSelectElement
 const colormapSelect = document.getElementById("colormap") as HTMLSelectElement
-const sliceTypeSelect = document.getElementById(
-  "slice-type",
-) as HTMLSelectElement
+const sliceTypeSelect = document.getElementById("slice-type") as HTMLElement
 const opacitySlider = document.getElementById("opacity") as HTMLInputElement
 const silhouetteSlider = document.getElementById(
   "silhouette",
@@ -785,7 +783,7 @@ silhouetteSlider.addEventListener("input", () => {
   }
 })
 
-sliceTypeSelect.addEventListener("change", () => {
+sliceTypeSelect.addEventListener("wa-change", () => {
   const ms = lastResult?.multiscales ?? loadedMultiscales
   if (ms && nv && nv.volumes.length > 0) {
     const sliceTypeStr =
