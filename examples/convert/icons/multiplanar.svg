@@ -21,12 +21,12 @@
       <stop stop-color="#3384c5" offset="100%"/>
     </linearGradient>
 
-    <!-- Green plane strip across the top face (axial) -->
-    <path d="M31.63 39.68L113.94 39.68L119.22 51.51L26.35 51.51Z" id="greenStrip"/>
-    <!-- Red plane strip on the left face (coronal) -->
-    <path d="M18.24 68.85L72.79 96.10L72.79 106.66L18.24 79.62Z" id="redStrip"/>
-    <!-- Yellow plane strip on the right face (sagittal) -->
-    <path d="M127.32 69.04L72.78 95.77L72.79 106.44L127.32 79.91Z" id="yellowStrip"/>
+    <!-- Red plane strip across the top face (axial) -->
+    <path d="M31.63 39.68L113.94 39.68L119.22 51.51L26.35 51.51Z" id="redStrip"/>
+    <!-- Yellow plane strip on the left face (coronal) -->
+    <path d="M18.24 68.85L72.79 96.10L72.79 106.66L18.24 79.62Z" id="yellowStrip"/>
+    <!-- Green plane strip on the right face (sagittal) -->
+    <path d="M127.32 69.04L72.78 95.77L72.79 106.44L127.32 79.91Z" id="greenStrip"/>
   </defs>
 
   <g>
@@ -38,8 +38,8 @@
     <use xlink:href="#rightFace" opacity="0.7" fill-opacity="0" stroke="#ffffff" stroke-width="1" stroke-opacity="1"/>
 
     <!-- Colored slice plane overlays -->
-    <use xlink:href="#greenStrip" opacity="0.85" fill="#59d87d"/>
     <use xlink:href="#redStrip" opacity="0.85" fill="#ff7b7b"/>
     <use xlink:href="#yellowStrip" opacity="0.85" fill="#ffff72"/>
+    <use xlink:href="#greenStrip" opacity="0.85" fill="#59d87d"/>
   </g>
 </svg>
