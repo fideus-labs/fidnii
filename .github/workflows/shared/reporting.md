@@ -66,7 +66,7 @@ Reports should:
 [Actionable next steps - keep visible]
 ```
 
-## Workflow Run References
+### Workflow Run References
 
 - Format run IDs as links: `[§12345](https://github.com/owner/repo/actions/runs/12345)`
 - Include up to 3 most relevant run URLs at end under `**References:**`
