@@ -339,7 +339,6 @@ Please verify:
 
 ---
 
-*Automated by Code Simplifier Agent - analyzing code from the last 24 hours*
 ```
 
 ### 4.3 Use Safe Outputs
