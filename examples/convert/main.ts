@@ -470,15 +470,11 @@ const updateChunkProgress: ChunkProgressCallback = (
   chunkProgressText.textContent = `${label}: ${completed} / ${total} chunks`
 }
 
-/** Enable or disable the 3D-only preview controls. */
-function set3DControlsEnabled(enabled: boolean): void {
+/** Show or hide the 3D-only preview controls. */
+function set3DControlsVisible(visible: boolean): void {
   const controls = [opacitySlider, silhouetteSlider, sliceTypeGroup]
   for (const el of controls) {
-    if (enabled) {
-      el.removeAttribute("disabled")
-    } else {
-      el.setAttribute("disabled", "")
-    }
+    el.classList.toggle("hidden", !visible)
   }
 }
 
@@ -545,7 +541,7 @@ async function showPreview(
   }
 
   if (volumeIs3D) {
-    set3DControlsEnabled(true)
+    set3DControlsVisible(true)
 
     // Default to multiplanar for 3D volumes
     const sliceTypeStr =
@@ -558,7 +554,7 @@ async function showPreview(
     await updateGradientSettings()
     nv.updateGLVolume()
   } else {
-    set3DControlsEnabled(false)
+    set3DControlsVisible(false)
 
     // 2D images: axial view, no gradient effects
     nv.opts.heroImageFraction = 0
