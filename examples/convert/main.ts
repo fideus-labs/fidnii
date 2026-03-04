@@ -8,6 +8,8 @@ import "@awesome.me/webawesome/dist/components/drawer/drawer.js"
 import "@awesome.me/webawesome/dist/components/input/input.js"
 import "@awesome.me/webawesome/dist/components/option/option.js"
 import "@awesome.me/webawesome/dist/components/progress-bar/progress-bar.js"
+import "@awesome.me/webawesome/dist/components/radio/radio.js"
+import "@awesome.me/webawesome/dist/components/radio-group/radio-group.js"
 import "@awesome.me/webawesome/dist/components/select/select.js"
 import "@awesome.me/webawesome/dist/components/slider/slider.js"
 
@@ -91,9 +93,7 @@ const outputFormatSelect = document.getElementById(
 const chunkSizeInput = document.getElementById("chunk-size") as HTMLInputElement
 const methodSelect = document.getElementById("method") as HTMLSelectElement
 const colormapSelect = document.getElementById("colormap") as HTMLSelectElement
-const sliceTypeSelect = document.getElementById(
-  "slice-type",
-) as HTMLSelectElement
+const sliceTypeGroup = document.getElementById("slice-type") as HTMLElement
 const opacitySlider = document.getElementById("opacity") as HTMLInputElement
 const silhouetteSlider = document.getElementById(
   "silhouette",
@@ -472,7 +472,7 @@ const updateChunkProgress: ChunkProgressCallback = (
 
 /** Enable or disable the 3D-only preview controls. */
 function set3DControlsEnabled(enabled: boolean): void {
-  const controls = [opacitySlider, silhouetteSlider, sliceTypeSelect]
+  const controls = [opacitySlider, silhouetteSlider, sliceTypeGroup]
   for (const el of controls) {
     if (enabled) {
       el.removeAttribute("disabled")
@@ -549,7 +549,7 @@ async function showPreview(
 
     // Default to multiplanar for 3D volumes
     const sliceTypeStr =
-      (sliceTypeSelect as unknown as { value: string }).value || "multiplanar"
+      (sliceTypeGroup as unknown as { value: string }).value || "multiplanar"
     const sliceType = SLICE_TYPE_MAP[sliceTypeStr] ?? SLICE_TYPE.MULTIPLANAR
 
     // Set hero fraction BEFORE setSliceType so it takes effect on first draw
@@ -785,11 +785,11 @@ silhouetteSlider.addEventListener("input", () => {
   }
 })
 
-sliceTypeSelect.addEventListener("change", () => {
+sliceTypeGroup.addEventListener("change", () => {
   const ms = lastResult?.multiscales ?? loadedMultiscales
   if (ms && nv && nv.volumes.length > 0) {
     const sliceTypeStr =
-      (sliceTypeSelect as unknown as { value: string }).value || "multiplanar"
+      (sliceTypeGroup as unknown as { value: string }).value || "multiplanar"
     const sliceType = SLICE_TYPE_MAP[sliceTypeStr] ?? SLICE_TYPE.MULTIPLANAR
     nv.setSliceType(sliceType)
     nv.opts.heroImageFraction = sliceType === SLICE_TYPE.MULTIPLANAR ? 0.6 : 0
