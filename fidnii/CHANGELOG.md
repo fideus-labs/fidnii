@@ -1,5 +1,11 @@
 # @fideus-labs/fidnii
 
+## 0.7.1
+
+### Patch Changes
+
+- [#77](https://github.com/fideus-labs/fidnii/pull/77) [`940a5a9`](https://github.com/fideus-labs/fidnii/commit/940a5a9e03aefcf1a028d2e598469b42c304ec17) Thanks [@thewtex](https://github.com/thewtex)! - Remove existing volumes from NiiVue before adding a new image in the `autoLoad` path. Previously, calling `OMEZarrNVImage.create()` multiple times on the same NiiVue instance would accumulate stale volumes. Now the old volumes are automatically cleaned up via `nv.removeVolume()` before the new image is added.
+
 ## 0.7.0
 
 ### Minor Changes
