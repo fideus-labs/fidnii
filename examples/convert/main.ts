@@ -788,7 +788,7 @@ function set3DControlsVisible(visible: boolean): void {
  */
 async function initMinimapPreview(
   multiscales: Multiscales,
-  opts: { colormap: string | null; sliceType: SLICE_TYPE },
+  opts: { colormap: string | null },
 ): Promise<void> {
   if (!nv) return
 
@@ -826,10 +826,10 @@ async function initMinimapPreview(
     mmImage.colormap = opts.colormap
   }
 
-  // Set the same slice type as the main viewer
-  minimapNv.opts.heroImageFraction =
-    opts.sliceType === SLICE_TYPE.MULTIPLANAR ? 0.6 : 0
-  minimapNv.setSliceType(opts.sliceType)
+  // Always use render-only mode for the minimap so the 3D overview
+  // fills the entire canvas without slice panels.
+  minimapNv.opts.heroImageFraction = 0
+  minimapNv.setSliceType(SLICE_TYPE.RENDER)
 
   // Apply the same gradient settings
   const opacity = parseFloat(
@@ -920,13 +920,6 @@ async function initMinimapPreview(
     { signal },
   )
 
-  // Align minimap camera to the main viewer's current orientation
-  minimapNv.setRenderAzimuthElevation(
-    nv.scene.renderAzimuth,
-    nv.scene.renderElevation,
-  )
-  minimapNv.scene.volScaleMultiplier = nv.scene.volScaleMultiplier
-
   // Initialize the range sliders to match the volume bounds
   initRoiSliders(bounds)
 
@@ -934,6 +927,20 @@ async function initMinimapPreview(
   minimapCard.classList.remove("hidden")
 
   minimapNv.updateGLVolume()
+
+  // Defer camera alignment to the next frame so NiiVue's internal
+  // rendering state (obliqueRAS, toRAS, pivot, etc.) is fully settled
+  // after the volume load and connectome load above.
+  const mainNv = nv
+  const mmNv = minimapNv
+  requestAnimationFrame(() => {
+    if (!mmNv || !mainNv) return
+    mmNv.setRenderAzimuthElevation(
+      mainNv.scene.renderAzimuth,
+      mainNv.scene.renderElevation,
+    )
+    mmNv.scene.volScaleMultiplier = mainNv.scene.volScaleMultiplier
+  })
 }
 
 // Preview with NiiVue
@@ -1013,7 +1020,6 @@ async function showPreview(
     // ---- Set up the minimap ----
     await initMinimapPreview(result.multiscales, {
       colormap: !isLabel && !imageIsRGB && singleComponent ? colormap : null,
-      sliceType,
     })
   } else {
     set3DControlsVisible(false)
@@ -1281,14 +1287,6 @@ sliceTypeGroup.addEventListener("change", () => {
     nv.setSliceType(sliceType)
     nv.opts.heroImageFraction = sliceType === SLICE_TYPE.MULTIPLANAR ? 0.6 : 0
     nv.updateGLVolume()
-
-    // Propagate slice type to minimap
-    if (minimapNv && minimapNv.volumes.length > 0) {
-      minimapNv.opts.heroImageFraction =
-        sliceType === SLICE_TYPE.MULTIPLANAR ? 0.6 : 0
-      minimapNv.setSliceType(sliceType)
-      minimapNv.updateGLVolume()
-    }
   }
 })
 
