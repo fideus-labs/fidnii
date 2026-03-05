@@ -317,6 +317,12 @@
         flex: 1;
         min-width: 0;
       }
+      .settings-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+        align-items: start;
+      }
       .settings-grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -495,6 +501,9 @@
         .container {
           grid-template-columns: 1fr;
         }
+        .settings-row {
+          grid-template-columns: 1fr;
+        }
         .settings-grid {
           grid-template-columns: 1fr;
         }
@@ -639,109 +648,111 @@
           </div>
         </wa-card>
 
-        <wa-card>
-          <div slot="header">Preview Settings</div>
-          <div class="settings-grid">
-            <wa-select id="colormap" label="Colormap" value="fast">
-              <wa-option value="fast">Fast</wa-option>
-              <wa-option value="gray">Gray</wa-option>
-              <wa-option value="hot">Hot</wa-option>
-              <wa-option value="cool">Cool</wa-option>
-              <wa-option value="viridis">Viridis</wa-option>
-              <wa-option value="plasma">Plasma</wa-option>
-              <wa-option value="inferno">Inferno</wa-option>
-            </wa-select>
-            <fieldset class="slice-type-fieldset">
-              <legend>Slice Type</legend>
-              <wa-radio-group
-                id="slice-type"
-                value="multiplanar"
-                orientation="horizontal"
-              >
-                <wa-radio appearance="button" value="axial" title="Axial">
-                  <img src="./icons/redPlane.svg" alt="Axial" width="24" height="24">
-                </wa-radio>
-                <wa-radio appearance="button" value="coronal" title="Coronal">
-                  <img src="./icons/yellowPlane.svg" alt="Coronal" width="24" height="24">
-                </wa-radio>
-                <wa-radio appearance="button" value="sagittal" title="Sagittal">
-                  <img src="./icons/greenPlane.svg" alt="Sagittal" width="24" height="24">
-                </wa-radio>
-                <wa-radio appearance="button" value="multiplanar" title="Multiplanar">
-                  <img src="./icons/multiplanar.svg" alt="Multiplanar" width="24" height="24">
-                </wa-radio>
-                <wa-radio appearance="button" value="render" title="Render">
-                  <img src="./icons/volume.svg" alt="Render" width="24" height="24">
-                </wa-radio>
-              </wa-radio-group>
-            </fieldset>
-            <wa-slider
-              id="opacity"
-              label="Gradient Opacity"
-              min="0"
-              max="1"
-              step="0.05"
-              value="0.5"
-              with-tooltip
-              class="full-width"
-            ></wa-slider>
-            <wa-slider
-              id="silhouette"
-              label="Silhouette Enhancement"
-              min="0"
-              max="1"
-              step="0.05"
-              value="0"
-              with-tooltip
-              class="full-width"
-            ></wa-slider>
-          </div>
-        </wa-card>
+        <div class="settings-row">
+          <wa-card>
+            <div slot="header">Preview Settings</div>
+            <div class="settings-grid">
+              <fieldset class="slice-type-fieldset">
+                <legend>Slice Type</legend>
+                <wa-radio-group
+                  id="slice-type"
+                  value="multiplanar"
+                  orientation="horizontal"
+                >
+                  <wa-radio appearance="button" value="axial" title="Axial">
+                    <img src="./icons/redPlane.svg" alt="Axial" width="24" height="24">
+                  </wa-radio>
+                  <wa-radio appearance="button" value="coronal" title="Coronal">
+                    <img src="./icons/yellowPlane.svg" alt="Coronal" width="24" height="24">
+                  </wa-radio>
+                  <wa-radio appearance="button" value="sagittal" title="Sagittal">
+                    <img src="./icons/greenPlane.svg" alt="Sagittal" width="24" height="24">
+                  </wa-radio>
+                  <wa-radio appearance="button" value="multiplanar" title="Multiplanar">
+                    <img src="./icons/multiplanar.svg" alt="Multiplanar" width="24" height="24">
+                  </wa-radio>
+                  <wa-radio appearance="button" value="render" title="Render">
+                    <img src="./icons/volume.svg" alt="Render" width="24" height="24">
+                  </wa-radio>
+                </wa-radio-group>
+              </fieldset>
+              <wa-select id="colormap" label="Colormap" value="fast">
+                <wa-option value="fast">Fast</wa-option>
+                <wa-option value="gray">Gray</wa-option>
+                <wa-option value="hot">Hot</wa-option>
+                <wa-option value="cool">Cool</wa-option>
+                <wa-option value="viridis">Viridis</wa-option>
+                <wa-option value="plasma">Plasma</wa-option>
+                <wa-option value="inferno">Inferno</wa-option>
+              </wa-select>
+              <wa-slider
+                id="opacity"
+                label="Gradient Opacity"
+                min="0"
+                max="1"
+                step="0.05"
+                value="0.5"
+                with-tooltip
+                class="full-width"
+              ></wa-slider>
+              <wa-slider
+                id="silhouette"
+                label="Silhouette Enhancement"
+                min="0"
+                max="1"
+                step="0.05"
+                value="0"
+                with-tooltip
+                class="full-width"
+              ></wa-slider>
+            </div>
+          </wa-card>
 
-        <wa-card id="minimap-card" class="hidden">
-          <div slot="header">Image Minimap</div>
-          <div id="minimap-container">
-            <canvas id="minimap-gl"></canvas>
-          </div>
-          <div class="minimap-sliders">
-            <wa-slider
-              id="roi-x"
-              label="X Range"
-              range
-              min="0"
-              max="100"
-              min-value="0"
-              max-value="100"
-              step="0.5"
-              with-tooltip
-              size="small"
-            ></wa-slider>
-            <wa-slider
-              id="roi-y"
-              label="Y Range"
-              range
-              min="0"
-              max="100"
-              min-value="0"
-              max-value="100"
-              step="0.5"
-              with-tooltip
-              size="small"
-            ></wa-slider>
-            <wa-slider
-              id="roi-z"
-              label="Z Range"
-              range
-              min="0"
-              max="100"
-              min-value="0"
-              max-value="100"
-              step="0.5"
-              with-tooltip
-              size="small"
-            ></wa-slider>
-          </div>
-        </wa-card>
+          <wa-card id="minimap-card" class="hidden">
+            <div slot="header">Image Minimap</div>
+            <div id="minimap-container">
+              <canvas id="minimap-gl"></canvas>
+            </div>
+            <div class="minimap-sliders">
+              <wa-slider
+                id="roi-x"
+                label="X Range"
+                range
+                min="0"
+                max="100"
+                min-value="0"
+                max-value="100"
+                step="0.5"
+                with-tooltip
+                size="small"
+              ></wa-slider>
+              <wa-slider
+                id="roi-y"
+                label="Y Range"
+                range
+                min="0"
+                max="100"
+                min-value="0"
+                max-value="100"
+                step="0.5"
+                with-tooltip
+                size="small"
+              ></wa-slider>
+              <wa-slider
+                id="roi-z"
+                label="Z Range"
+                range
+                min="0"
+                max="100"
+                min-value="0"
+                max-value="100"
+                step="0.5"
+                with-tooltip
+                size="small"
+              ></wa-slider>
+            </div>
+          </wa-card>
+        </div>
 
         <wa-card id="multiscales-card" class="hidden">
           <div slot="header">Multiscales Info</div>
