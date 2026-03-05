@@ -181,6 +181,17 @@ export class OMEZarrNVImage extends NVImage {
    */
   private readonly _flipY2D: boolean
 
+  /**
+   * Whether the y-flip for 2D images should be applied in the pixel
+   * data rather than the NIfTI affine.
+   *
+   * NiiVue uses a fast Texture2D code path for RGBA 2D images that
+   * bypasses the orient shader entirely, so affine-based y-flips have
+   * no visual effect. For these images we reverse the row order in the
+   * buffer instead.
+   */
+  private readonly _flipY2DInData: boolean
+
   /** Full volume bounds in world space */
   private readonly _volumeBounds: VolumeBounds
 
@@ -381,6 +392,12 @@ export class OMEZarrNVImage extends NVImage {
     this._is2D = highResImage.dims.indexOf("z") === -1
     this._flipY2D = options.flipY2D ?? true
 
+    // NiiVue uses a Texture2D fast path for RGBA 2D images that
+    // bypasses the orient shader. Affine-based y-flips have no
+    // visual effect in that path, so we flip the pixel data instead.
+    this._flipY2DInData =
+      this._flipY2D && this._is2D && this._channelInfo !== null
+
     // Detect time dimension from the zarr axes
     const tDimIndex = highResImage.dims.indexOf("t")
     if (tDimIndex !== -1) {
@@ -544,7 +561,7 @@ export class OMEZarrNVImage extends NVImage {
     ]
     placeholderAffine[mapping.x.physicalRow][0] = mapping.x.sign
     let ySign = mapping.y.sign
-    if (this._flipY2D && this._is2D) {
+    if (this._flipY2D && this._is2D && !this._flipY2DInData) {
       ySign = (ySign * -1) as 1 | -1
     }
     placeholderAffine[mapping.y.physicalRow][1] = ySign
@@ -790,6 +807,20 @@ export class OMEZarrNVImage extends NVImage {
       targetData.set(result.data)
     }
 
+    // For RGBA 2D images, reverse the row order so the top-to-bottom
+    // pixel data matches WebGL's bottom-to-top texture convention.
+    // NiiVue's Texture2D fast path for RGBA 2D images skips the orient
+    // shader, so the affine-based y-flip has no effect on rendering.
+    if (this._flipY2DInData) {
+      const components = this._channelInfo?.components ?? 1
+      this._flipRowsInPlace(
+        targetData,
+        fetchedShape[2], // x dimension (width)
+        fetchedShape[1], // y dimension (height)
+        components * this.bufferManager.getBytesPerPixel(),
+      )
+    }
+
     // Update this.img to point to the (possibly new) buffer
     this.img = this.bufferManager.getTypedArray() as NVImage["img"]
 
@@ -916,7 +947,12 @@ export class OMEZarrNVImage extends NVImage {
     // top-to-bottom pixel storage order. We shift the translation so
     // the last row maps to where the first row was, then negate the
     // y column. This composes correctly with any orientation sign.
-    if (this._flipY2D && this._is2D) {
+    //
+    // Skip the affine flip when _flipY2DInData is set: NiiVue's RGBA
+    // 2D Texture2D fast path ignores the orient shader, so the affine
+    // y-flip has no visual effect. In that case the rows are reversed
+    // in the pixel buffer instead (see _flipRowsInPlace).
+    if (this._flipY2D && this._is2D && !this._flipY2DInData) {
       // Get the y axis orientation mapping to find where the y scale is stored
       const mapping = getOrientationMapping(ngffImage.axesOrientations)
       // The y scale is at affine[4 + physicalRow] (column 1, appropriate row)
@@ -931,6 +967,45 @@ export class OMEZarrNVImage extends NVImage {
 
     // Recalculate RAS orientation
     this.calculateRAS()
+  }
+
+  /**
+   * Reverse the row order of a 2D pixel buffer in place.
+   *
+   * Used for RGBA 2D images where NiiVue's Texture2D fast path
+   * bypasses the orient shader and the affine-based y-flip has no
+   * visual effect. Instead we physically reverse the scanlines so
+   * the top-to-bottom PNG row order becomes bottom-to-top, matching
+   * WebGL's texture coordinate convention.
+   *
+   * @param data - Typed array containing the pixel data
+   * @param width - Number of pixels per row (x dimension)
+   * @param height - Number of rows (y dimension)
+   * @param bytesPerPixel - Bytes per pixel (e.g. 4 for RGBA)
+   */
+  private _flipRowsInPlace(
+    data: ArrayBufferView & { readonly length: number },
+    width: number,
+    height: number,
+    bytesPerPixel: number,
+  ): void {
+    const rowBytes = width * bytesPerPixel
+    const buf = new Uint8Array(
+      data.buffer as ArrayBuffer,
+      data.byteOffset,
+      data.byteLength,
+    )
+    const tmp = new Uint8Array(rowBytes)
+
+    for (let y = 0; y < height >>> 1; y++) {
+      const topOffset = y * rowBytes
+      const botOffset = (height - 1 - y) * rowBytes
+
+      // Swap top row ↔ bottom row via tmp
+      tmp.set(buf.subarray(topOffset, topOffset + rowBytes))
+      buf.copyWithin(topOffset, botOffset, botOffset + rowBytes)
+      buf.set(tmp, botOffset)
+    }
   }
 
   /**
@@ -2775,6 +2850,17 @@ export class OMEZarrNVImage extends NVImage {
       targetData.set(result.data)
     }
 
+    // Reverse row order for RGBA 2D images (see populateVolume).
+    if (this._flipY2DInData) {
+      const components = this._channelInfo?.components ?? 1
+      this._flipRowsInPlace(
+        targetData,
+        fetchedShape[2], // x dimension (width)
+        fetchedShape[1], // y dimension (height)
+        components * targetData.BYTES_PER_ELEMENT,
+      )
+    }
+
     slabState.nvImage.img =
       slabState.bufferManager.getTypedArray() as NVImage["img"]
 
@@ -2917,8 +3003,9 @@ export class OMEZarrNVImage extends NVImage {
     affine[14] +=
       affine[2] * offsetX + affine[6] * offsetY + affine[10] * offsetZ
 
-    // For 2D images, flip y before normalization (composes with orientation)
-    if (this._flipY2D && this._is2D) {
+    // For 2D images, flip y before normalization (composes with orientation).
+    // Skip when _flipY2DInData: rows are already reversed in the buffer.
+    if (this._flipY2D && this._is2D && !this._flipY2DInData) {
       // Get the y axis orientation mapping to find where the y scale is stored
       const mapping = getOrientationMapping(ngffImage.axesOrientations)
       // The y scale is at affine[4 + physicalRow] (column 1, appropriate row)
