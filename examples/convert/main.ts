@@ -147,6 +147,12 @@ let minimapNv: Niivue | null = null
 let minimapImage: OMEZarrNVImage | null = null
 let volumeBounds: VolumeBounds | null = null
 
+/** AbortController for tearing down minimap ↔ main camera sync listeners. */
+let _syncAbort: AbortController | null = null
+
+/** Re-entrancy guard so bidirectional camera sync doesn't loop. */
+let _syncing = false
+
 /** Pixel budget for the minimap (lower resolution for overview). */
 const MINIMAP_MAX_PIXELS = 10_000_000
 
@@ -463,6 +469,12 @@ function initRoiSliders(bounds: VolumeBounds): void {
  * Clean up minimap state when loading a new image.
  */
 function cleanupMinimap(): void {
+  // Tear down camera sync listeners before disposing of instances
+  if (_syncAbort) {
+    _syncAbort.abort()
+    _syncAbort = null
+  }
+
   if (minimapNv) {
     // Remove existing meshes (connectome)
     for (const mesh of minimapNv.meshes) {
@@ -832,9 +844,88 @@ async function initMinimapPreview(
   const connectome = buildRoiConnectome(bounds.min, bounds.max)
   await minimapNv.loadConnectome(connectome)
 
-  // Set up bidirectional camera sync between main and minimap
-  nv.broadcastTo([minimapNv], { "2d": true, "3d": true })
-  minimapNv.broadcastTo([nv], { "2d": true, "3d": true })
+  // --- Bidirectional camera sync via events (not broadcastTo) ---
+  // We avoid broadcastTo because its polling-based 2D sync converts
+  // fractional→mm→fractional across different-resolution volumes,
+  // which causes crosshair positions to land in invalid space.
+  // Instead, we listen for azimuth/elevation and zoom events and
+  // mirror them with a re-entrancy guard to prevent loops.
+
+  _syncAbort?.abort()
+  const abort = new AbortController()
+  _syncAbort = abort
+  const signal = abort.signal
+
+  // Main → Minimap
+  nv.addEventListener(
+    "azimuthElevationChange",
+    (event) => {
+      if (_syncing || !minimapNv) return
+      _syncing = true
+      try {
+        minimapNv.setRenderAzimuthElevation(
+          event.detail.azimuth,
+          event.detail.elevation,
+        )
+      } finally {
+        _syncing = false
+      }
+    },
+    { signal },
+  )
+  nv.addEventListener(
+    "zoom3DChange",
+    (event) => {
+      if (_syncing || !minimapNv) return
+      _syncing = true
+      try {
+        minimapNv.scene.volScaleMultiplier = event.detail.zoom
+        minimapNv.drawScene()
+      } finally {
+        _syncing = false
+      }
+    },
+    { signal },
+  )
+
+  // Minimap → Main
+  minimapNv.addEventListener(
+    "azimuthElevationChange",
+    (event) => {
+      if (_syncing || !nv) return
+      _syncing = true
+      try {
+        nv.setRenderAzimuthElevation(
+          event.detail.azimuth,
+          event.detail.elevation,
+        )
+      } finally {
+        _syncing = false
+      }
+    },
+    { signal },
+  )
+  minimapNv.addEventListener(
+    "zoom3DChange",
+    (event) => {
+      if (_syncing || !nv) return
+      _syncing = true
+      try {
+        nv.scene.volScaleMultiplier = event.detail.zoom
+        nv.drawScene()
+      } finally {
+        _syncing = false
+      }
+    },
+    { signal },
+  )
+
+  // Align minimap camera to the main viewer's current orientation
+  minimapNv.setRenderAzimuthElevation(
+    nv.scene.renderAzimuth,
+    nv.scene.renderElevation,
+  )
+  minimapNv.scene.volScaleMultiplier = nv.scene.volScaleMultiplier
 
   // Initialize the range sliders to match the volume bounds
   initRoiSliders(bounds)
