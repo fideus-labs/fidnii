@@ -472,7 +472,11 @@ const updateChunkProgress: ChunkProgressCallback = (
 
 /** Show or hide the 3D-only preview controls. */
 function set3DControlsVisible(visible: boolean): void {
-  const controls = [opacitySlider, silhouetteSlider, sliceTypeGroup]
+  const controls: Element[] = [
+    opacitySlider,
+    silhouetteSlider,
+    sliceTypeGroup.closest("fieldset")!,
+  ]
   for (const el of controls) {
     el.classList.toggle("hidden", !visible)
   }
