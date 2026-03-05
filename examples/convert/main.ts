@@ -13,8 +13,15 @@ import "@awesome.me/webawesome/dist/components/radio-group/radio-group.js"
 import "@awesome.me/webawesome/dist/components/select/select.js"
 import "@awesome.me/webawesome/dist/components/slider/slider.js"
 
-import { getChannelInfo, OMEZarrNVImage } from "@fideus-labs/fidnii"
+import type { VolumeBounds } from "@fideus-labs/fidnii"
+import {
+  createAxisAlignedClipPlane,
+  getChannelInfo,
+  getVolumeBoundsFromMultiscales,
+  OMEZarrNVImage,
+} from "@fideus-labs/fidnii"
 import type { Multiscales } from "@fideus-labs/ngff-zarr"
+import type { Connectome, NVConnectomeNode } from "@niivue/niivue"
 import { Niivue, SLICE_TYPE } from "@niivue/niivue"
 
 import {
@@ -99,6 +106,13 @@ const silhouetteSlider = document.getElementById(
   "silhouette",
 ) as HTMLInputElement
 
+// Minimap elements
+const minimapCard = document.getElementById("minimap-card") as HTMLElement
+const minimapCanvas = document.getElementById("minimap-gl") as HTMLCanvasElement
+const roiXSlider = document.getElementById("roi-x") as HTMLInputElement
+const roiYSlider = document.getElementById("roi-y") as HTMLInputElement
+const roiZSlider = document.getElementById("roi-z") as HTMLInputElement
+
 /** File extensions that are known to produce 2D (single-slice) images. */
 const IMAGE_2D_EXTENSIONS = new Set([
   ".png",
@@ -127,6 +141,22 @@ let loadedMultiscales: Multiscales | null = null
 let loadedName = ""
 let nv: Niivue | null = null
 let currentImage: OMEZarrNVImage | null = null
+
+// Minimap state
+let minimapNv: Niivue | null = null
+let minimapImage: OMEZarrNVImage | null = null
+let volumeBounds: VolumeBounds | null = null
+
+/** Pixel budget for the minimap (lower resolution for overview). */
+const MINIMAP_MAX_PIXELS = 10_000_000
+
+/** Cobalt blue RGBA for the ROI box: #0047AB */
+const COBALT_RGBA: [number, number, number, number] = [
+  0,
+  71 / 255,
+  171 / 255,
+  1,
+]
 
 // Slice type string-to-enum mapping
 const SLICE_TYPE_MAP: Record<string, SLICE_TYPE> = {
@@ -200,6 +230,256 @@ function initNiivue(): void {
   })
   nv.attachToCanvas(canvas)
   nv.addColormap("fast", FAST_COLORMAP)
+}
+
+// --------------- Minimap helpers ---------------
+
+/** Create a 256-entry single-color LUT for the cobalt blue ROI box. */
+function buildCobaltColormap(): {
+  R: number[]
+  G: number[]
+  B: number[]
+  A: number[]
+  I: number[]
+} {
+  const R = new Array<number>(256).fill(Math.round(COBALT_RGBA[0] * 255))
+  const G = new Array<number>(256).fill(Math.round(COBALT_RGBA[1] * 255))
+  const B = new Array<number>(256).fill(Math.round(COBALT_RGBA[2] * 255))
+  const A = new Array<number>(256).fill(255)
+  const I = new Array<number>(256).fill(0).map((_, i) => i)
+  // First entry transparent so sizeValue=0 nodes are invisible
+  R[0] = 0
+  G[0] = 0
+  B[0] = 0
+  A[0] = 0
+  return { R, G, B, A, I }
+}
+
+/** Initialize the minimap NiiVue instance (lazy, only done once). */
+function initMinimapNiivue(): void {
+  if (minimapNv) return
+
+  minimapNv = new Niivue({
+    show3Dcrosshair: false,
+    crosshairWidth: 0,
+    backColor: [0.384, 0.365, 0.353, 1],
+    isOrientCube: false,
+    isOrientationTextVisible: false,
+  })
+  minimapNv.attachToCanvas(minimapCanvas)
+  minimapNv.addColormap("fast", FAST_COLORMAP)
+  minimapNv.addColormap("cobalt", buildCobaltColormap())
+}
+
+/**
+ * Build a NiiVue connectome representing the ROI bounding box as
+ * 8 corner nodes connected by 12 edges (wireframe cube).
+ *
+ * @param min - ROI min corner in world coordinates [x, y, z]
+ * @param max - ROI max corner in world coordinates [x, y, z]
+ */
+function buildRoiConnectome(
+  min: [number, number, number],
+  max: [number, number, number],
+): Connectome {
+  const nodes: NVConnectomeNode[] = [
+    { name: "0", x: min[0], y: min[1], z: min[2], colorValue: 1, sizeValue: 0 },
+    { name: "1", x: max[0], y: min[1], z: min[2], colorValue: 1, sizeValue: 0 },
+    { name: "2", x: min[0], y: max[1], z: min[2], colorValue: 1, sizeValue: 0 },
+    { name: "3", x: max[0], y: max[1], z: min[2], colorValue: 1, sizeValue: 0 },
+    { name: "4", x: min[0], y: min[1], z: max[2], colorValue: 1, sizeValue: 0 },
+    { name: "5", x: max[0], y: min[1], z: max[2], colorValue: 1, sizeValue: 0 },
+    { name: "6", x: min[0], y: max[1], z: max[2], colorValue: 1, sizeValue: 0 },
+    { name: "7", x: max[0], y: max[1], z: max[2], colorValue: 1, sizeValue: 0 },
+  ]
+  // 12 edges forming a wireframe cube
+  const edges = [
+    // Bottom face (z = min)
+    { first: 0, second: 1, colorValue: 1 },
+    { first: 1, second: 3, colorValue: 1 },
+    { first: 3, second: 2, colorValue: 1 },
+    { first: 2, second: 0, colorValue: 1 },
+    // Top face (z = max)
+    { first: 4, second: 5, colorValue: 1 },
+    { first: 5, second: 7, colorValue: 1 },
+    { first: 7, second: 6, colorValue: 1 },
+    { first: 6, second: 4, colorValue: 1 },
+    // Vertical edges
+    { first: 0, second: 4, colorValue: 1 },
+    { first: 1, second: 5, colorValue: 1 },
+    { first: 2, second: 6, colorValue: 1 },
+    { first: 3, second: 7, colorValue: 1 },
+  ]
+  return {
+    name: "roiBox",
+    nodeColormap: "cobalt",
+    nodeColormapNegative: "cobalt",
+    nodeMinColor: 0,
+    nodeMaxColor: 2,
+    nodeScale: 0,
+    edgeColormap: "cobalt",
+    edgeColormapNegative: "cobalt",
+    edgeMin: 0,
+    edgeMax: 2,
+    edgeScale: 1,
+    nodes,
+    edges,
+  }
+}
+
+/**
+ * Update the ROI wireframe box on the minimap by mutating the
+ * existing connectome node positions.
+ */
+function updateMinimapBox(
+  min: [number, number, number],
+  max: [number, number, number],
+): void {
+  if (!minimapNv || minimapNv.meshes.length === 0) return
+  const mesh = minimapNv.meshes[0]
+  const nodes = mesh.nodes as NVConnectomeNode[] | undefined
+  if (!nodes || nodes.length < 8) return
+
+  const corners: [number, number, number][] = [
+    [min[0], min[1], min[2]],
+    [max[0], min[1], min[2]],
+    [min[0], max[1], min[2]],
+    [max[0], max[1], min[2]],
+    [min[0], min[1], max[2]],
+    [max[0], min[1], max[2]],
+    [min[0], max[1], max[2]],
+    [max[0], max[1], max[2]],
+  ]
+  for (let i = 0; i < 8; i++) {
+    nodes[i].x = corners[i][0]
+    nodes[i].y = corners[i][1]
+    nodes[i].z = corners[i][2]
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const gl = (minimapNv as any)._gl as WebGL2RenderingContext | null
+  if (gl) {
+    ;(mesh as any).updateConnectome(gl)
+  }
+  minimapNv.updateGLVolume()
+}
+
+/** Read the current ROI slider values as world-coordinate bounds. */
+function readRoiSliders(): {
+  min: [number, number, number]
+  max: [number, number, number]
+} {
+  const xSlider = roiXSlider as unknown as {
+    minValue: number
+    maxValue: number
+  }
+  const ySlider = roiYSlider as unknown as {
+    minValue: number
+    maxValue: number
+  }
+  const zSlider = roiZSlider as unknown as {
+    minValue: number
+    maxValue: number
+  }
+  return {
+    min: [xSlider.minValue, ySlider.minValue, zSlider.minValue],
+    max: [xSlider.maxValue, ySlider.maxValue, zSlider.maxValue],
+  }
+}
+
+/**
+ * Apply the current ROI slider values as clip planes on the main
+ * image and update the wireframe box on the minimap.
+ */
+function updateRoi(): void {
+  if (!volumeBounds || !currentImage) return
+
+  const roi = readRoiSliders()
+
+  // Only apply clip planes if the ROI differs from the full volume
+  const isFullVolume =
+    Math.abs(roi.min[0] - volumeBounds.min[0]) < 0.01 &&
+    Math.abs(roi.min[1] - volumeBounds.min[1]) < 0.01 &&
+    Math.abs(roi.min[2] - volumeBounds.min[2]) < 0.01 &&
+    Math.abs(roi.max[0] - volumeBounds.max[0]) < 0.01 &&
+    Math.abs(roi.max[1] - volumeBounds.max[1]) < 0.01 &&
+    Math.abs(roi.max[2] - volumeBounds.max[2]) < 0.01
+
+  if (isFullVolume) {
+    currentImage.clearClipPlanes()
+  } else {
+    const planes = [
+      createAxisAlignedClipPlane("x", roi.min[0], "positive", volumeBounds),
+      createAxisAlignedClipPlane("x", roi.max[0], "negative", volumeBounds),
+      createAxisAlignedClipPlane("y", roi.min[1], "positive", volumeBounds),
+      createAxisAlignedClipPlane("y", roi.max[1], "negative", volumeBounds),
+      createAxisAlignedClipPlane("z", roi.min[2], "positive", volumeBounds),
+      createAxisAlignedClipPlane("z", roi.max[2], "negative", volumeBounds),
+    ]
+    currentImage.setClipPlanes(planes)
+  }
+
+  // Update the wireframe box on the minimap
+  updateMinimapBox(roi.min, roi.max)
+}
+
+/**
+ * Configure the ROI range sliders to match the current volume bounds
+ * and reset them to the full range.
+ */
+function initRoiSliders(bounds: VolumeBounds): void {
+  const axes: { slider: HTMLInputElement; idx: 0 | 1 | 2; label: string }[] = [
+    { slider: roiXSlider, idx: 0, label: "X" },
+    { slider: roiYSlider, idx: 1, label: "Y" },
+    { slider: roiZSlider, idx: 2, label: "Z" },
+  ]
+
+  for (const { slider, idx, label } of axes) {
+    const lo = bounds.min[idx]
+    const hi = bounds.max[idx]
+    const range = hi - lo
+    const step = Math.max(range / 200, 0.01)
+
+    const s = slider as unknown as {
+      min: number
+      max: number
+      step: number
+      minValue: number
+      maxValue: number
+      label: string
+      valueFormatter: (value: number) => string
+    }
+    s.min = lo
+    s.max = hi
+    s.step = parseFloat(step.toFixed(4))
+    s.minValue = lo
+    s.maxValue = hi
+    s.label = `${label} Range`
+    s.valueFormatter = (v: number) => v.toFixed(1)
+  }
+}
+
+/**
+ * Clean up minimap state when loading a new image.
+ */
+function cleanupMinimap(): void {
+  if (minimapNv) {
+    // Remove existing meshes (connectome)
+    for (const mesh of minimapNv.meshes) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const gl = (minimapNv as any)._gl as WebGL2RenderingContext | null
+      if (gl) {
+        mesh.unloadMesh(gl)
+      }
+    }
+    minimapNv.meshes = []
+    minimapNv.volumes = []
+  }
+  if (minimapImage) {
+    minimapImage = null
+  }
+  volumeBounds = null
+  minimapCard.classList.add("hidden")
 }
 
 /**
@@ -489,6 +769,82 @@ function set3DControlsVisible(visible: boolean): void {
   }
 }
 
+/**
+ * Set up the minimap NiiVue instance, load a low-resolution copy of
+ * the image, overlay the ROI wireframe box, configure bidirectional
+ * camera sync with the main viewer, and initialize the range sliders.
+ */
+async function initMinimapPreview(
+  multiscales: Multiscales,
+  opts: { colormap: string | null; sliceType: SLICE_TYPE },
+): Promise<void> {
+  if (!nv) return
+
+  // Clean up any previous minimap state
+  cleanupMinimap()
+
+  initMinimapNiivue()
+  if (!minimapNv) return
+
+  // Compute world-space bounds of the full volume
+  const bounds = getVolumeBoundsFromMultiscales(multiscales)
+  volumeBounds = bounds
+
+  // Copy orientation settings from the main viewer
+  const hasOrientation = multiscales.images[0]?.axesOrientations !== undefined
+  minimapNv.opts.isOrientCube = hasOrientation
+  minimapNv.opts.isOrientationTextVisible = hasOrientation
+
+  // Create a lower-resolution image for the minimap
+  const mmImage = await OMEZarrNVImage.create({
+    multiscales,
+    niivue: minimapNv,
+    autoLoad: false,
+    maxPixels: MINIMAP_MAX_PIXELS,
+  })
+  minimapImage = mmImage
+
+  // Load the minimap image
+  minimapNv.volumes = []
+  minimapNv.addVolume(mmImage)
+  await mmImage.populateVolume()
+
+  // Apply the same colormap as the main image
+  if (opts.colormap) {
+    mmImage.colormap = opts.colormap
+  }
+
+  // Set the same slice type as the main viewer
+  minimapNv.opts.heroImageFraction =
+    opts.sliceType === SLICE_TYPE.MULTIPLANAR ? 0.6 : 0
+  minimapNv.setSliceType(opts.sliceType)
+
+  // Apply the same gradient settings
+  const opacity = parseFloat(
+    (opacitySlider as unknown as { value: string }).value || "0.5",
+  )
+  const silhouette = parseFloat(
+    (silhouetteSlider as unknown as { value: string }).value || "0",
+  )
+  await minimapNv.setGradientOpacity(opacity, silhouette)
+
+  // Load the ROI wireframe box as a connectome
+  const connectome = buildRoiConnectome(bounds.min, bounds.max)
+  await minimapNv.loadConnectome(connectome)
+
+  // Set up bidirectional camera sync between main and minimap
+  nv.broadcastTo([minimapNv], { "2d": true, "3d": true })
+  minimapNv.broadcastTo([nv], { "2d": true, "3d": true })
+
+  // Initialize the range sliders to match the volume bounds
+  initRoiSliders(bounds)
+
+  // Show the minimap card
+  minimapCard.classList.remove("hidden")
+
+  minimapNv.updateGLVolume()
+}
+
 // Preview with NiiVue
 async function showPreview(
   result: Pick<ConvertResult, "multiscales">,
@@ -562,6 +918,12 @@ async function showPreview(
     nv.setSliceType(sliceType)
     await updateGradientSettings()
     nv.updateGLVolume()
+
+    // ---- Set up the minimap ----
+    await initMinimapPreview(result.multiscales, {
+      colormap: !isLabel && !imageIsRGB && singleComponent ? colormap : null,
+      sliceType,
+    })
   } else {
     set3DControlsVisible(false)
 
@@ -570,6 +932,9 @@ async function showPreview(
     nv.setSliceType(SLICE_TYPE.AXIAL)
     await nv.setGradientOpacity(0, 0)
     nv.updateGLVolume()
+
+    // Hide the minimap for 2D images
+    cleanupMinimap()
   }
 }
 
@@ -773,6 +1138,12 @@ colormapSelect.addEventListener("change", () => {
       (colormapSelect as unknown as { value: string }).value || "fast"
     currentImage.colormap = colormap
     nv.updateGLVolume()
+
+    // Propagate colormap to minimap
+    if (minimapImage && minimapNv) {
+      minimapImage.colormap = colormap
+      minimapNv.updateGLVolume()
+    }
   }
 })
 
@@ -780,6 +1151,17 @@ opacitySlider.addEventListener("input", () => {
   const ms = lastResult?.multiscales ?? loadedMultiscales
   if (ms && nv && nv.volumes.length > 0) {
     updateGradientSettings()
+
+    // Propagate gradient settings to minimap
+    if (minimapNv && minimapNv.volumes.length > 0) {
+      const opacity = parseFloat(
+        (opacitySlider as unknown as { value: string }).value || "0.5",
+      )
+      const silhouette = parseFloat(
+        (silhouetteSlider as unknown as { value: string }).value || "0",
+      )
+      void minimapNv.setGradientOpacity(opacity, silhouette)
+    }
   }
 })
 
@@ -787,6 +1169,17 @@ silhouetteSlider.addEventListener("input", () => {
   const ms = lastResult?.multiscales ?? loadedMultiscales
   if (ms && nv && nv.volumes.length > 0) {
     updateGradientSettings()
+
+    // Propagate gradient settings to minimap
+    if (minimapNv && minimapNv.volumes.length > 0) {
+      const opacity = parseFloat(
+        (opacitySlider as unknown as { value: string }).value || "0.5",
+      )
+      const silhouette = parseFloat(
+        (silhouetteSlider as unknown as { value: string }).value || "0",
+      )
+      void minimapNv.setGradientOpacity(opacity, silhouette)
+    }
   }
 })
 
@@ -797,8 +1190,23 @@ sliceTypeGroup.addEventListener("change", () => {
     nv.setSliceType(sliceType)
     nv.opts.heroImageFraction = sliceType === SLICE_TYPE.MULTIPLANAR ? 0.6 : 0
     nv.updateGLVolume()
+
+    // Propagate slice type to minimap
+    if (minimapNv && minimapNv.volumes.length > 0) {
+      minimapNv.opts.heroImageFraction =
+        sliceType === SLICE_TYPE.MULTIPLANAR ? 0.6 : 0
+      minimapNv.setSliceType(sliceType)
+      minimapNv.updateGLVolume()
+    }
   }
 })
+
+// ROI range slider handlers
+for (const slider of [roiXSlider, roiYSlider, roiZSlider]) {
+  slider.addEventListener("input", () => {
+    updateRoi()
+  })
+}
 
 // Auto-load from ?url= query parameter
 const urlParam = new URLSearchParams(window.location.search).get("url")

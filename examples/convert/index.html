@@ -468,6 +468,26 @@
         padding: 0.125rem 0.375rem;
         border-radius: 4px;
       }
+      #minimap-container {
+        background: #625d5a;
+        border-radius: 8px;
+        overflow: hidden;
+        height: 240px;
+        position: relative;
+      }
+      #minimap-container canvas {
+        width: 100%;
+        height: 100%;
+      }
+      .minimap-sliders {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        margin-top: 0.75rem;
+      }
+      .minimap-sliders wa-slider {
+        width: 100%;
+      }
       @media (max-width: 768px) {
         body {
           padding: 0.5rem;
@@ -674,6 +694,51 @@
               value="0"
               with-tooltip
               class="full-width"
+            ></wa-slider>
+          </div>
+        </wa-card>
+
+        <wa-card id="minimap-card" class="hidden">
+          <div slot="header">Image Minimap</div>
+          <div id="minimap-container">
+            <canvas id="minimap-gl"></canvas>
+          </div>
+          <div class="minimap-sliders">
+            <wa-slider
+              id="roi-x"
+              label="X Range"
+              range
+              min="0"
+              max="100"
+              min-value="0"
+              max-value="100"
+              step="0.5"
+              with-tooltip
+              size="small"
+            ></wa-slider>
+            <wa-slider
+              id="roi-y"
+              label="Y Range"
+              range
+              min="0"
+              max="100"
+              min-value="0"
+              max-value="100"
+              step="0.5"
+              with-tooltip
+              size="small"
+            ></wa-slider>
+            <wa-slider
+              id="roi-z"
+              label="Z Range"
+              range
+              min="0"
+              max="100"
+              min-value="0"
+              max-value="100"
+              step="0.5"
+              with-tooltip
+              size="small"
             ></wa-slider>
           </div>
         </wa-card>
