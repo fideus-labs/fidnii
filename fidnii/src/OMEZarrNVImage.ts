@@ -817,7 +817,7 @@ export class OMEZarrNVImage extends NVImage {
         targetData,
         fetchedShape[2], // x dimension (width)
         fetchedShape[1], // y dimension (height)
-        components * getBytesPerPixel(this.dtype),
+        components * this.bufferManager.getBytesPerPixel(),
       )
     }
 
@@ -2857,7 +2857,7 @@ export class OMEZarrNVImage extends NVImage {
         targetData,
         fetchedShape[2], // x dimension (width)
         fetchedShape[1], // y dimension (height)
-        components * getBytesPerPixel(this.dtype),
+        components * targetData.BYTES_PER_ELEMENT,
       )
     }
 
