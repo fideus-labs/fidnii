@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url"
 import { cmapper } from "@niivue/niivue"
 import sharp from "sharp"
 
-import { FAST_COLORMAP } from "./fast-colormap.js"
+import { FAST_COLORMAP } from "./fast-colormap.ts"
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url))
 const OUT_DIR = join(__dirname, "icons", "colormaps")
