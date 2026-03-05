@@ -137,6 +137,13 @@ const SLICE_TYPE_MAP: Record<string, SLICE_TYPE> = {
   render: SLICE_TYPE.RENDER,
 }
 
+/** Read the currently selected slice type from the radio-group element. */
+function getSelectedSliceType(): SLICE_TYPE {
+  const value =
+    (sliceTypeGroup as unknown as { value: string }).value || "multiplanar"
+  return SLICE_TYPE_MAP[value] ?? SLICE_TYPE.MULTIPLANAR
+}
+
 // Populate output format select from the canonical list
 for (const format of OUTPUT_FORMATS) {
   const option = document.createElement("wa-option")
@@ -470,15 +477,15 @@ const updateChunkProgress: ChunkProgressCallback = (
   chunkProgressText.textContent = `${label}: ${completed} / ${total} chunks`
 }
 
-/** Enable or disable the 3D-only preview controls. */
-function set3DControlsEnabled(enabled: boolean): void {
-  const controls = [opacitySlider, silhouetteSlider, sliceTypeGroup]
+/** Show or hide the 3D-only preview controls. */
+function set3DControlsVisible(visible: boolean): void {
+  const controls: Element[] = [
+    opacitySlider,
+    silhouetteSlider,
+    sliceTypeGroup.closest("fieldset")!,
+  ]
   for (const el of controls) {
-    if (enabled) {
-      el.removeAttribute("disabled")
-    } else {
-      el.setAttribute("disabled", "")
-    }
+    el.classList.toggle("hidden", !visible)
   }
 }
 
@@ -545,12 +552,10 @@ async function showPreview(
   }
 
   if (volumeIs3D) {
-    set3DControlsEnabled(true)
+    set3DControlsVisible(true)
 
     // Default to multiplanar for 3D volumes
-    const sliceTypeStr =
-      (sliceTypeGroup as unknown as { value: string }).value || "multiplanar"
-    const sliceType = SLICE_TYPE_MAP[sliceTypeStr] ?? SLICE_TYPE.MULTIPLANAR
+    const sliceType = getSelectedSliceType()
 
     // Set hero fraction BEFORE setSliceType so it takes effect on first draw
     nv.opts.heroImageFraction = sliceType === SLICE_TYPE.MULTIPLANAR ? 0.6 : 0
@@ -558,7 +563,7 @@ async function showPreview(
     await updateGradientSettings()
     nv.updateGLVolume()
   } else {
-    set3DControlsEnabled(false)
+    set3DControlsVisible(false)
 
     // 2D images: axial view, no gradient effects
     nv.opts.heroImageFraction = 0
@@ -788,9 +793,7 @@ silhouetteSlider.addEventListener("input", () => {
 sliceTypeGroup.addEventListener("change", () => {
   const ms = lastResult?.multiscales ?? loadedMultiscales
   if (ms && nv && nv.volumes.length > 0) {
-    const sliceTypeStr =
-      (sliceTypeGroup as unknown as { value: string }).value || "multiplanar"
-    const sliceType = SLICE_TYPE_MAP[sliceTypeStr] ?? SLICE_TYPE.MULTIPLANAR
+    const sliceType = getSelectedSliceType()
     nv.setSliceType(sliceType)
     nv.opts.heroImageFraction = sliceType === SLICE_TYPE.MULTIPLANAR ? 0.6 : 0
     nv.updateGLVolume()
