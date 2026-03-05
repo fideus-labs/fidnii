@@ -273,6 +273,29 @@ export async function isTiffUrl(url: string): Promise<boolean> {
 }
 
 /**
+ * Shared helper that wraps a load function with "reading" / "done" progress
+ * events, eliminating the boilerplate duplicated across the public load
+ * functions.
+ *
+ * @param load - Async factory that performs the actual load
+ * @param startMessage - Progress message emitted before the load begins
+ * @param doneMessage - Progress message emitted after the load completes
+ * @param onProgress - Optional callback for progress updates
+ * @returns The `Multiscales` returned by `load`
+ */
+async function loadWithProgress(
+  load: () => Promise<Multiscales>,
+  startMessage: string,
+  doneMessage: string,
+  onProgress?: ProgressCallback,
+): Promise<Multiscales> {
+  onProgress?.({ stage: "reading", percent: 0, message: startMessage })
+  const multiscales = await load()
+  onProgress?.({ stage: "done", percent: 100, message: doneMessage })
+  return multiscales
+}
+
+/**
  * Load a TIFF file from a remote URL via HTTP range requests.
  *
  * Uses {@link fromTiff} (backed by `TiffStore.fromUrl`) to stream the
@@ -287,21 +310,12 @@ export async function loadTiffUrl(
   url: string,
   onProgress?: ProgressCallback,
 ): Promise<Multiscales> {
-  onProgress?.({
-    stage: "reading",
-    percent: 0,
-    message: "Opening TIFF via range requests...",
-  })
-
-  const multiscales = await fromTiff(url)
-
-  onProgress?.({
-    stage: "done",
-    percent: 100,
-    message: "TIFF loaded",
-  })
-
-  return multiscales
+  return loadWithProgress(
+    () => fromTiff(url),
+    "Opening TIFF via range requests...",
+    "TIFF loaded",
+    onProgress,
+  )
 }
 
 /**
@@ -319,21 +333,12 @@ export async function loadTiffFile(
   file: File,
   onProgress?: ProgressCallback,
 ): Promise<Multiscales> {
-  onProgress?.({
-    stage: "reading",
-    percent: 0,
-    message: "Reading TIFF file...",
-  })
-
-  const multiscales = await fromTiff(file)
-
-  onProgress?.({
-    stage: "done",
-    percent: 100,
-    message: "TIFF loaded",
-  })
-
-  return multiscales
+  return loadWithProgress(
+    () => fromTiff(file),
+    "Reading TIFF file...",
+    "TIFF loaded",
+    onProgress,
+  )
 }
 
 /**
@@ -351,21 +356,12 @@ export async function loadOmeZarrUrl(
   url: string,
   onProgress?: ProgressCallback,
 ): Promise<Multiscales> {
-  onProgress?.({
-    stage: "reading",
-    percent: 0,
-    message: "Loading OME-Zarr metadata...",
-  })
-
-  const multiscales = await fromNgffZarr(url)
-
-  onProgress?.({
-    stage: "done",
-    percent: 100,
-    message: "OME-Zarr loaded",
-  })
-
-  return multiscales
+  return loadWithProgress(
+    () => fromNgffZarr(url),
+    "Loading OME-Zarr metadata...",
+    "OME-Zarr loaded",
+    onProgress,
+  )
 }
 
 /**
@@ -528,6 +524,81 @@ export async function packageOutput(
 }
 
 /**
+ * Shared OMERO + multiscale pipeline used by both {@link convertImage} and
+ * {@link convertMultiscales}.
+ *
+ * Computes OMERO visualization metadata, generates a multiscale pyramid via
+ * {@link toMultiscales}, upgrades the metadata to version 0.5, and returns a
+ * fully-formed {@link ConvertResult}.
+ *
+ * @param sourceImage - Highest-resolution source image to downsample
+ * @param method - Downsampling method to use
+ * @param options - Conversion options (chunk size)
+ * @param report - Pre-bound progress reporter from the calling function
+ * @param onChunkProgress - Optional callback for per-chunk progress
+ * @returns The assembled multiscale pyramid wrapped in a {@link ConvertResult}
+ */
+async function buildMultiscales(
+  sourceImage: NgffImage,
+  method: Methods,
+  options: ConversionOptions,
+  report: (
+    stage: ConversionProgress["stage"],
+    percent: number,
+    message: string,
+  ) => void,
+  onChunkProgress?: ChunkProgressCallback,
+): Promise<ConvertResult> {
+  // Compute OMERO visualization metadata.
+  // A shared chunk cache lets computeOmeroFromNgffImage cache decoded chunks,
+  // which can speed up OMERO computation by reusing chunks across channels.
+  report("converting", 25, "Computing OMERO visualization metadata...")
+  const chunkCache = new Map()
+  const omero = await computeOmeroFromNgffImage(sourceImage, {
+    cache: chunkCache,
+    onProgress: onChunkProgress
+      ? (completed, total) => onChunkProgress("omero", completed, total)
+      : undefined,
+  })
+
+  // Generate multiscale pyramid.
+  // Use uncompressed codecs since the zarr arrays are ephemeral
+  // in-memory data. packageOutput() will re-read and re-encode
+  // the chunks in the final output format (OZX applies its own
+  // blosc/zstd, OME-TIFF applies deflate, ITK-Wasm serializes
+  // directly). Skipping the intermediate compression avoids a
+  // wasteful compress → decompress round-trip.
+  report("downsampling", 30, "Generating multiscale pyramid...")
+  const multiscalesV04 = await toMultiscales(sourceImage, {
+    method,
+    chunks: options.chunkSize,
+    codecs: bytesOnlyCodecs(),
+  })
+  report(
+    "downsampling",
+    70,
+    `Created ${multiscalesV04.images.length} scale levels`,
+  )
+
+  // toMultiscales creates version 0.4 by default, but toNgffZarrOzx requires 0.5.
+  // Create a new Multiscales with version 0.5 metadata and OMERO visualization data.
+  const metadataV05 = createMetadataWithVersion(multiscalesV04.metadata, "0.5")
+  metadataV05.omero = omero
+
+  const multiscales = new MultiscalesClass({
+    images: multiscalesV04.images,
+    metadata: metadataV05,
+    scaleFactors: multiscalesV04.scaleFactors,
+    method: multiscalesV04.method,
+    chunks: multiscalesV04.chunks,
+  })
+
+  report("done", 100, "Conversion complete!")
+
+  return { multiscales }
+}
+
+/**
  * Convert an image file into a multiscale pyramid.
  *
  * Reads the input image, generates a multiscale pyramid with the
@@ -605,55 +676,8 @@ export async function convertImage(
     chunks: options.chunkSize,
   })
 
-  // Stage 2b: Compute OMERO visualization metadata from highest resolution image.
-  // A shared chunk cache lets computeOmeroFromNgffImage cache decoded chunks,
-  // which can speed up OMERO computation by reusing chunks across channels.
-  report("converting", 25, "Computing OMERO visualization metadata...")
-  const chunkCache = new Map()
-  const omero = await computeOmeroFromNgffImage(ngffImage, {
-    cache: chunkCache,
-    onProgress: onChunkProgress
-      ? (completed, total) => onChunkProgress("omero", completed, total)
-      : undefined,
-  })
-
-  // Stage 3: Generate multiscales (downsampling)
-  report("downsampling", 30, "Generating multiscale pyramid...")
-
-  // Use uncompressed codecs since the zarr arrays are ephemeral
-  // in-memory data. packageOutput() will re-read and re-encode
-  // the chunks in the final output format (OZX applies its own
-  // blosc/zstd, OME-TIFF applies deflate, ITK-Wasm serializes
-  // directly). Skipping the intermediate compression avoids a
-  // wasteful compress → decompress round-trip.
-  const multiscalesV04 = await toMultiscales(ngffImage, {
-    method,
-    chunks: options.chunkSize,
-    codecs: bytesOnlyCodecs(),
-  })
-
-  report(
-    "downsampling",
-    70,
-    `Created ${multiscalesV04.images.length} scale levels`,
-  )
-
-  // toMultiscales creates version 0.4 by default, but toNgffZarrOzx requires 0.5
-  // Create a new Multiscales with version 0.5 metadata and OMERO visualization data
-  const metadataV05 = createMetadataWithVersion(multiscalesV04.metadata, "0.5")
-  metadataV05.omero = omero // Attach computed OMERO visualization metadata
-
-  const multiscales = new MultiscalesClass({
-    images: multiscalesV04.images,
-    metadata: metadataV05,
-    scaleFactors: multiscalesV04.scaleFactors,
-    method: multiscalesV04.method,
-    chunks: multiscalesV04.chunks,
-  })
-
-  report("done", 100, "Conversion complete!")
-
-  return { multiscales }
+  // Stage 2b–3: Compute OMERO metadata, downsample, and assemble result.
+  return buildMultiscales(ngffImage, method, options, report, onChunkProgress)
 }
 
 /**
@@ -688,44 +712,13 @@ export async function convertMultiscales(
   // Use the highest-resolution image as the source
   const highResImage = source.images[0]
 
-  // Compute OMERO visualization metadata
-  report("converting", 20, "Computing OMERO visualization metadata...")
-  const chunkCache = new Map()
-  const omero = await computeOmeroFromNgffImage(highResImage, {
-    cache: chunkCache,
-    onProgress: onChunkProgress
-      ? (completed, total) => onChunkProgress("omero", completed, total)
-      : undefined,
-  })
-
-  // Generate multiscale pyramid with new settings
-  report("downsampling", 30, "Generating multiscale pyramid...")
-  const multiscalesV04 = await toMultiscales(highResImage, {
-    method: options.method,
-    chunks: options.chunkSize,
-    codecs: bytesOnlyCodecs(),
-  })
-
-  report(
-    "downsampling",
-    70,
-    `Created ${multiscalesV04.images.length} scale levels`,
+  return buildMultiscales(
+    highResImage,
+    options.method,
+    options,
+    report,
+    onChunkProgress,
   )
-
-  const metadataV05 = createMetadataWithVersion(multiscalesV04.metadata, "0.5")
-  metadataV05.omero = omero
-
-  const multiscales = new MultiscalesClass({
-    images: multiscalesV04.images,
-    metadata: metadataV05,
-    scaleFactors: multiscalesV04.scaleFactors,
-    method: multiscalesV04.method,
-    chunks: multiscalesV04.chunks,
-  })
-
-  report("done", 100, "Conversion complete!")
-
-  return { multiscales }
 }
 
 /**
