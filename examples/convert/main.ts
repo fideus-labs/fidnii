@@ -137,6 +137,13 @@ const SLICE_TYPE_MAP: Record<string, SLICE_TYPE> = {
   render: SLICE_TYPE.RENDER,
 }
 
+/** Read the currently selected slice type from the radio-group element. */
+function getSelectedSliceType(): SLICE_TYPE {
+  const value =
+    (sliceTypeGroup as unknown as { value: string }).value || "multiplanar"
+  return SLICE_TYPE_MAP[value] ?? SLICE_TYPE.MULTIPLANAR
+}
+
 // Populate output format select from the canonical list
 for (const format of OUTPUT_FORMATS) {
   const option = document.createElement("wa-option")
@@ -548,9 +555,7 @@ async function showPreview(
     set3DControlsEnabled(true)
 
     // Default to multiplanar for 3D volumes
-    const sliceTypeStr =
-      (sliceTypeGroup as unknown as { value: string }).value || "multiplanar"
-    const sliceType = SLICE_TYPE_MAP[sliceTypeStr] ?? SLICE_TYPE.MULTIPLANAR
+    const sliceType = getSelectedSliceType()
 
     // Set hero fraction BEFORE setSliceType so it takes effect on first draw
     nv.opts.heroImageFraction = sliceType === SLICE_TYPE.MULTIPLANAR ? 0.6 : 0
@@ -788,9 +793,7 @@ silhouetteSlider.addEventListener("input", () => {
 sliceTypeGroup.addEventListener("change", () => {
   const ms = lastResult?.multiscales ?? loadedMultiscales
   if (ms && nv && nv.volumes.length > 0) {
-    const sliceTypeStr =
-      (sliceTypeGroup as unknown as { value: string }).value || "multiplanar"
-    const sliceType = SLICE_TYPE_MAP[sliceTypeStr] ?? SLICE_TYPE.MULTIPLANAR
+    const sliceType = getSelectedSliceType()
     nv.setSliceType(sliceType)
     nv.opts.heroImageFraction = sliceType === SLICE_TYPE.MULTIPLANAR ? 0.6 : 0
     nv.updateGLVolume()
