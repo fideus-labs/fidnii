@@ -147,6 +147,21 @@ let minimapNv: Niivue | null = null
 let minimapImage: OMEZarrNVImage | null = null
 let volumeBounds: VolumeBounds | null = null
 
+/**
+ * Minimap image's oriented NIfTI affine (4x4, row-major rows stored
+ * as 4 arrays of 4) and OME-Zarr scale/translation.  Used to convert
+ * ROI slider values from OME-Zarr world space to the NiiVue mm-space
+ * the connectome wireframe needs to live in.
+ */
+let _minimapAffineState: {
+  /** Oriented affine as 4 rows of 4 (from NVImage.hdr.affine). */
+  affine: number[][]
+  /** OME-Zarr scale for the minimap resolution level. */
+  scale: { x: number; y: number; z: number }
+  /** OME-Zarr translation for the minimap resolution level. */
+  translation: { x: number; y: number; z: number }
+} | null = null
+
 /** AbortController for tearing down minimap ↔ main camera sync listeners. */
 let _syncAbort: AbortController | null = null
 
@@ -394,6 +409,41 @@ function readRoiSliders(): {
 }
 
 /**
+ * Convert a point from OME-Zarr world space to NiiVue mm-space using
+ * the minimap image's oriented NIfTI affine.
+ *
+ * Steps:
+ * 1. OME-Zarr world → voxel: `voxel_i = (world_i - translation_i) / scale_i`
+ * 2. Voxel → mm: multiply by the oriented affine matrix
+ *
+ * ROI sliders operate in OME-Zarr space, but the connectome wireframe
+ * must be positioned in NiiVue's post-reorientation mm-space so that
+ * the box aligns with the rendered volume.
+ */
+function omeZarrToMM(
+  point: [number, number, number],
+): [number, number, number] {
+  if (!_minimapAffineState) return [...point] as [number, number, number]
+
+  const { affine, scale, translation } = _minimapAffineState
+
+  // OME-Zarr world → voxel
+  const vx = (point[0] - translation.x) / scale.x
+  const vy = (point[1] - translation.y) / scale.y
+  const vz = (point[2] - translation.z) / scale.z
+
+  // Voxel → mm via oriented affine (row-major: affine[row][col])
+  const mx =
+    affine[0][0] * vx + affine[0][1] * vy + affine[0][2] * vz + affine[0][3]
+  const my =
+    affine[1][0] * vx + affine[1][1] * vy + affine[1][2] * vz + affine[1][3]
+  const mz =
+    affine[2][0] * vx + affine[2][1] * vy + affine[2][2] * vz + affine[2][3]
+
+  return [mx, my, mz]
+}
+
+/**
  * Apply the current ROI slider values as clip planes on the main
  * image and update the wireframe box on the minimap.
  */
@@ -425,8 +475,9 @@ function updateRoi(): void {
     currentImage.setClipPlanes(planes)
   }
 
-  // Update the wireframe box on the minimap
-  updateMinimapBox(roi.min, roi.max)
+  // Update the wireframe box on the minimap (convert to mm-space
+  // so the box aligns with the rendered volume orientation)
+  updateMinimapBox(omeZarrToMM(roi.min), omeZarrToMM(roi.max))
 }
 
 /**
@@ -491,6 +542,7 @@ function cleanupMinimap(): void {
     minimapImage = null
   }
   volumeBounds = null
+  _minimapAffineState = null
   minimapCard.classList.add("hidden")
 }
 
@@ -821,6 +873,29 @@ async function initMinimapPreview(
   minimapNv.addVolume(mmImage)
   await mmImage.populateVolume()
 
+  // Capture the minimap image's oriented affine and OME-Zarr
+  // scale/translation so omeZarrToMM() can transform ROI slider
+  // values (OME-Zarr world space) to NiiVue mm-space for the
+  // connectome wireframe.  The affine is available after
+  // populateVolume() updates the NVImage header.
+  const mmLevel = multiscales.images[mmImage.getCurrentLevelIndex()]
+  const hdrAffine = mmImage.hdr?.affine
+  if (hdrAffine && mmLevel) {
+    _minimapAffineState = {
+      affine: hdrAffine.map((row: number[]) => [...row]),
+      scale: {
+        x: mmLevel.scale.x ?? mmLevel.scale.X ?? 1,
+        y: mmLevel.scale.y ?? mmLevel.scale.Y ?? 1,
+        z: mmLevel.scale.z ?? mmLevel.scale.Z ?? 1,
+      },
+      translation: {
+        x: mmLevel.translation.x ?? mmLevel.translation.X ?? 0,
+        y: mmLevel.translation.y ?? mmLevel.translation.Y ?? 0,
+        z: mmLevel.translation.z ?? mmLevel.translation.Z ?? 0,
+      },
+    }
+  }
+
   // Apply the same colormap as the main image
   if (opts.colormap) {
     mmImage.colormap = opts.colormap
@@ -840,8 +915,13 @@ async function initMinimapPreview(
   )
   await minimapNv.setGradientOpacity(opacity, silhouette)
 
-  // Load the ROI wireframe box as a connectome
-  const connectome = buildRoiConnectome(bounds.min, bounds.max)
+  // Load the ROI wireframe box as a connectome.
+  // Convert full-volume bounds from OME-Zarr world space to NiiVue
+  // mm-space so the wireframe aligns with the oriented volume.
+  const connectome = buildRoiConnectome(
+    omeZarrToMM(bounds.min),
+    omeZarrToMM(bounds.max),
+  )
   await minimapNv.loadConnectome(connectome)
 
   // --- Bidirectional camera sync via events (not broadcastTo) ---
