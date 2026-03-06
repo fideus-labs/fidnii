@@ -72,7 +72,7 @@ import {
   calculateWorldBounds,
   createAffineFromOMEZarr,
 } from "./utils/affine.js"
-import { worldToPixelAffine } from "./utils/coordinates.js"
+import { pixelToWorldAffine, worldToPixelAffine } from "./utils/coordinates.js"
 import {
   applyOrientationToAffine,
   getOrientationMapping,
@@ -1374,6 +1374,11 @@ export class OMEZarrNVImage extends NVImage {
       this.populateVolume(true, "clipPlanesChanged") // Skip preview for clip plane updates
     }
 
+    // Reload active slabs so 2D views respect the updated clip planes.
+    // Slab loading already uses _clipPlanes to compute the fetch region,
+    // so reloading constrains the visible 2D data to the ROI.
+    this._reloadAllSlabs("clipPlanesChanged")
+
     // Emit clipPlanesChange event (after debounce)
     this._emitEvent("clipPlanesChange", {
       clipPlanes: this.copyClipPlanes(this._clipPlanes),
@@ -2507,6 +2512,43 @@ export class OMEZarrNVImage extends NVImage {
     const orthAxis = this._getOrthogonalAxis(sliceType)
     const pixelPos = pixelCoord[orthAxis]
 
+    // Clamp crosshair to clip plane bounds on the orthogonal axis so the
+    // user cannot scroll past the ROI boundary in 2D slice views.
+    if (this._clipPlanes.length > 0) {
+      const pixelRegion = clipPlanesToPixelRegion(
+        this._clipPlanes,
+        this._volumeBounds,
+        ngffImage,
+      )
+      const orthMin = pixelRegion.start[orthAxis]
+      const orthMax = pixelRegion.end[orthAxis]
+
+      if (pixelPos < orthMin || pixelPos >= orthMax) {
+        // Clamp to the nearest edge of the clip plane region
+        const clampedPixel = [...pixelCoord] as [number, number, number]
+        clampedPixel[orthAxis] = Math.max(
+          orthMin,
+          Math.min(orthMax - 1, pixelPos),
+        )
+
+        // Convert clamped pixel back to world → normalized mm → frac
+        const clampedWorld = pixelToWorldAffine(clampedPixel, orientedAffine)
+        const ns = slabState.normalizationScale
+        const normalizedMM: [number, number, number] = [
+          clampedWorld[0] * ns,
+          clampedWorld[1] * ns,
+          clampedWorld[2] * ns,
+        ]
+        const frac = nv.mm2frac(normalizedMM)
+        frac[0] = Math.max(0, Math.min(1, frac[0]))
+        frac[1] = Math.max(0, Math.min(1, frac[1]))
+        frac[2] = Math.max(0, Math.min(1, frac[2]))
+        nv.scene.crosshairPos = frac
+        nv.drawScene()
+        return // Repositioning fires a new locationChange event
+      }
+    }
+
     // Is the pixel position outside the currently loaded slab?
     if (pixelPos < slabState.slabStart || pixelPos >= slabState.slabEnd) {
       // Need to reload the slab for the new position
@@ -2852,8 +2894,8 @@ export class OMEZarrNVImage extends NVImage {
 
     // Find the chunk-aligned slab in the orthogonal axis
     const chunkSize = chunkShape[orthAxis]
-    const slabStart = Math.max(0, Math.floor(orthPixel / chunkSize) * chunkSize)
-    const slabEnd = Math.min(slabStart + chunkSize, volumeShape[orthAxis])
+    let slabStart = Math.max(0, Math.floor(orthPixel / chunkSize) * chunkSize)
+    let slabEnd = Math.min(slabStart + chunkSize, volumeShape[orthAxis])
 
     // Get the full in-plane region (respecting clip planes only).
     // Viewport bounds are intentionally NOT passed here — they are used only
@@ -2867,7 +2909,23 @@ export class OMEZarrNVImage extends NVImage {
     )
     const alignedRegion = alignToChunks(pixelRegion, ngffImage)
 
-    // Override the orthogonal axis with our slab extent
+    // Clamp the orthogonal slab extent to clip plane bounds so 2D views
+    // never fetch data outside the ROI on the perpendicular axis.
+    if (this._clipPlanes.length > 0) {
+      slabStart = Math.max(slabStart, alignedRegion.chunkAlignedStart[orthAxis])
+      slabEnd = Math.min(slabEnd, alignedRegion.chunkAlignedEnd[orthAxis])
+      if (slabEnd <= slabStart) {
+        // Crosshair is entirely outside the clip plane region on this
+        // axis — snap to the first chunk of the clipped region.
+        slabStart = alignedRegion.chunkAlignedStart[orthAxis]
+        slabEnd = Math.min(
+          slabStart + chunkSize,
+          alignedRegion.chunkAlignedEnd[orthAxis],
+        )
+      }
+    }
+
+    // Override the orthogonal axis with our (clamped) slab extent
     const fetchStart: [number, number, number] = [
       alignedRegion.chunkAlignedStart[0],
       alignedRegion.chunkAlignedStart[1],

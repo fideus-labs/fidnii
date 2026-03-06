@@ -254,6 +254,7 @@ function initNiivue(): void {
     backColor: [0.384, 0.365, 0.353, 1],
     isOrientCube: false,
     isOrientationTextVisible: false,
+    clipPlaneHotKey: "",
   })
   nv.attachToCanvas(canvas)
   nv.addColormap("fast", FAST_COLORMAP)
@@ -292,6 +293,7 @@ function initMinimapNiivue(): void {
     backColor: [0.384, 0.365, 0.353, 1],
     isOrientCube: false,
     isOrientationTextVisible: false,
+    clipPlaneHotKey: "",
   })
   minimapNv.attachToCanvas(minimapCanvas)
   minimapNv.addColormap("fast", FAST_COLORMAP)
@@ -545,6 +547,11 @@ function cleanupMinimap(): void {
     _syncAbort = null
   }
 
+  if (minimapImage && minimapNv) {
+    minimapImage.detachNiivue(minimapNv)
+    minimapNv.removeVolume(minimapImage)
+  }
+  minimapImage = null
   if (minimapNv) {
     // Remove existing meshes (connectome)
     for (const mesh of minimapNv.meshes) {
@@ -555,10 +562,6 @@ function cleanupMinimap(): void {
       }
     }
     minimapNv.meshes = []
-    minimapNv.volumes = []
-  }
-  if (minimapImage) {
-    minimapImage = null
   }
   volumeBounds = null
   _minimapAffineState = null
@@ -920,10 +923,15 @@ async function initMinimapPreview(
     mmImage.colormap = opts.colormap
   }
 
-  // Always use render-only mode for the minimap so the 3D overview
-  // fills the entire canvas without slice panels.
+  // Match the minimap slice type to the current preview selection.
+  // Multiplanar maps to Render so the 3D overview fills the canvas.
   minimapNv.opts.heroImageFraction = 0
-  minimapNv.setSliceType(SLICE_TYPE.RENDER)
+  const currentSliceType = getSelectedSliceType()
+  minimapNv.setSliceType(
+    currentSliceType === SLICE_TYPE.MULTIPLANAR
+      ? SLICE_TYPE.RENDER
+      : currentSliceType,
+  )
 
   // Apply the same gradient settings
   const opacity = parseFloat(
@@ -1387,6 +1395,13 @@ sliceTypeGroup.addEventListener("change", () => {
     nv.setSliceType(sliceType)
     nv.opts.heroImageFraction = sliceType === SLICE_TYPE.MULTIPLANAR ? 0.6 : 0
     nv.updateGLVolume()
+
+    // Mirror slice type to minimap: Multiplanar → Render, otherwise match
+    if (minimapNv && minimapImage) {
+      minimapNv.setSliceType(
+        sliceType === SLICE_TYPE.MULTIPLANAR ? SLICE_TYPE.RENDER : sliceType,
+      )
+    }
   }
 })
 
