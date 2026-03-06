@@ -171,13 +171,8 @@ let _syncing = false
 /** Pixel budget for the minimap (lower resolution for overview). */
 const MINIMAP_MAX_PIXELS = 5_000_000
 
-/** Cobalt blue RGBA for the ROI box: #0047AB */
-const COBALT_RGBA: [number, number, number, number] = [
-  0,
-  71 / 255,
-  171 / 255,
-  1,
-]
+/** Warm orange RGBA for the ROI box: #E87400 */
+const ROI_RGBA: [number, number, number, number] = [232 / 255, 116 / 255, 0, 1]
 
 // Slice type string-to-enum mapping
 const SLICE_TYPE_MAP: Record<string, SLICE_TYPE> = {
@@ -255,17 +250,17 @@ function initNiivue(): void {
 
 // --------------- Minimap helpers ---------------
 
-/** Create a 256-entry single-color LUT for the cobalt blue ROI box. */
-function buildCobaltColormap(): {
+/** Create a 256-entry single-color LUT for the ROI box wireframe. */
+function buildRoiColormap(): {
   R: number[]
   G: number[]
   B: number[]
   A: number[]
   I: number[]
 } {
-  const R = new Array<number>(256).fill(Math.round(COBALT_RGBA[0] * 255))
-  const G = new Array<number>(256).fill(Math.round(COBALT_RGBA[1] * 255))
-  const B = new Array<number>(256).fill(Math.round(COBALT_RGBA[2] * 255))
+  const R = new Array<number>(256).fill(Math.round(ROI_RGBA[0] * 255))
+  const G = new Array<number>(256).fill(Math.round(ROI_RGBA[1] * 255))
+  const B = new Array<number>(256).fill(Math.round(ROI_RGBA[2] * 255))
   const A = new Array<number>(256).fill(255)
   const I = new Array<number>(256).fill(0).map((_, i) => i)
   // First entry transparent so sizeValue=0 nodes are invisible
@@ -289,7 +284,7 @@ function initMinimapNiivue(): void {
   })
   minimapNv.attachToCanvas(minimapCanvas)
   minimapNv.addColormap("fast", FAST_COLORMAP)
-  minimapNv.addColormap("cobalt", buildCobaltColormap())
+  minimapNv.addColormap("roi", buildRoiColormap())
 }
 
 /**
@@ -333,16 +328,16 @@ function buildRoiConnectome(
   ]
   return {
     name: "roiBox",
-    nodeColormap: "cobalt",
-    nodeColormapNegative: "cobalt",
+    nodeColormap: "roi",
+    nodeColormapNegative: "roi",
     nodeMinColor: 0,
     nodeMaxColor: 2,
     nodeScale: 0,
-    edgeColormap: "cobalt",
-    edgeColormapNegative: "cobalt",
+    edgeColormap: "roi",
+    edgeColormapNegative: "roi",
     edgeMin: 0,
     edgeMax: 2,
-    edgeScale: 1,
+    edgeScale: 3,
     nodes,
     edges,
   }
