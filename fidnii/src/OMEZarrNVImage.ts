@@ -961,17 +961,60 @@ export class OMEZarrNVImage extends NVImage {
   /**
    * Update NiiVue clip planes from current _clipPlanes.
    *
+   * Clip planes are stored in OME-Zarr world space, but NiiVue's
+   * shader evaluates clip planes in RAS-reoriented texture space.
+   * When the OME-Zarr axes are permuted (e.g. y encodes S/I instead
+   * of A/P), we must permute the clip plane normals, points, and
+   * buffer bounds through the orientation mapping so the clipping
+   * direction matches the rendered anatomy.
+   *
    * Clip planes are converted relative to the CURRENT BUFFER bounds,
-   * not the full volume bounds. This is because NiiVue's shader works
-   * in texture coordinates of the currently loaded data.
+   * not the full volume bounds, because NiiVue's shader works in
+   * texture coordinates of the currently loaded data.
    */
   private updateNiivueClipPlanes(): void {
-    // Use current buffer bounds for clip plane conversion
-    // This ensures clip planes are relative to the currently loaded data
-    const niivueClipPlanes = clipPlanesToNiivue(
-      this._clipPlanes,
-      this._currentBufferBounds,
+    const orientations = this.multiscales.images[0]?.axesOrientations
+    const mapping = getOrientationMapping(orientations)
+
+    // Permute a 3-vector from OME-Zarr axis order to RAS physical
+    // row order, applying sign flips.
+    const permuteVec = (
+      v: [number, number, number],
+    ): [number, number, number] => {
+      const out: [number, number, number] = [0, 0, 0]
+      out[mapping.x.physicalRow] = mapping.x.sign * v[0]
+      out[mapping.y.physicalRow] = mapping.y.sign * v[1]
+      out[mapping.z.physicalRow] = mapping.z.sign * v[2]
+      return out
+    }
+
+    // Transform clip planes from OME-Zarr space to oriented space
+    const orientedPlanes: ClipPlanes = this._clipPlanes.map((p) => ({
+      point: permuteVec(p.point),
+      normal: permuteVec(p.normal),
+    }))
+
+    // Transform buffer bounds to oriented space
+    const bMin = permuteVec(
+      this._currentBufferBounds.min as [number, number, number],
     )
+    const bMax = permuteVec(
+      this._currentBufferBounds.max as [number, number, number],
+    )
+    const orientedBounds: VolumeBounds = {
+      min: [
+        Math.min(bMin[0], bMax[0]),
+        Math.min(bMin[1], bMax[1]),
+        Math.min(bMin[2], bMax[2]),
+      ],
+      max: [
+        Math.max(bMin[0], bMax[0]),
+        Math.max(bMin[1], bMax[1]),
+        Math.max(bMin[2], bMax[2]),
+      ],
+    }
+
+    const niivueClipPlanes = clipPlanesToNiivue(orientedPlanes, orientedBounds)
 
     if (niivueClipPlanes.length > 0) {
       this.niivue.scene.clipPlaneDepthAziElevs = niivueClipPlanes

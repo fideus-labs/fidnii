@@ -918,7 +918,7 @@ async function initMinimapPreview(
     omeZarrToMM(bounds.max),
   )
   await minimapNv.loadConnectome(connectome)
-  minimapNv.opts.meshXRay = 0.25
+  minimapNv.opts.meshXRay = 0.15
 
   // --- Bidirectional camera sync via events (not broadcastTo) ---
   // We avoid broadcastTo because its polling-based 2D sync converts
