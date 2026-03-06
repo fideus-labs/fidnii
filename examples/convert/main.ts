@@ -169,7 +169,7 @@ let _syncAbort: AbortController | null = null
 let _syncing = false
 
 /** Pixel budget for the minimap (lower resolution for overview). */
-const MINIMAP_MAX_PIXELS = 10_000_000
+const MINIMAP_MAX_PIXELS = 5_000_000
 
 /** Cobalt blue RGBA for the ROI box: #0047AB */
 const COBALT_RGBA: [number, number, number, number] = [
