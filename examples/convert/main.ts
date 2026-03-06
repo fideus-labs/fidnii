@@ -337,7 +337,7 @@ function buildRoiConnectome(
     edgeColormapNegative: "roi",
     edgeMin: 0,
     edgeMax: 2,
-    edgeScale: 3,
+    edgeScale: 2,
     nodes,
     edges,
   }
@@ -918,7 +918,7 @@ async function initMinimapPreview(
     omeZarrToMM(bounds.max),
   )
   await minimapNv.loadConnectome(connectome)
-  minimapNv.opts.meshXRay = 0.4
+  minimapNv.opts.meshXRay = 0.25
 
   // --- Bidirectional camera sync via events (not broadcastTo) ---
   // We avoid broadcastTo because its polling-based 2D sync converts
