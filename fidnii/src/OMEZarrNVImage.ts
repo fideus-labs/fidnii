@@ -70,11 +70,13 @@ import {
 import {
   affineToNiftiSrows,
   calculateWorldBounds,
-  createAffineFromNgffImage,
   createAffineFromOMEZarr,
 } from "./utils/affine.js"
 import { worldToPixelAffine } from "./utils/coordinates.js"
-import { getOrientationMapping } from "./utils/orientation.js"
+import {
+  applyOrientationToAffine,
+  getOrientationMapping,
+} from "./utils/orientation.js"
 import {
   boundsApproxEqual,
   computeViewportBounds2D,
@@ -839,6 +841,26 @@ export class OMEZarrNVImage extends NVImage {
   }
 
   /**
+   * Build an oriented affine for any resolution level, falling back
+   * to the base level's `axesOrientations` when the current level
+   * lacks orientation metadata.
+   *
+   * The `@fideus-labs/ngff-zarr` downsampling code currently omits
+   * `axesOrientations` on generated levels, so only level 0 carries
+   * orientation. Since orientation is a property of the physical
+   * space (not the resolution), it is correct to propagate it.
+   */
+  private _createOrientedAffine(ngffImage: NgffImage) {
+    const affine = createAffineFromOMEZarr(
+      ngffImage.scale,
+      ngffImage.translation,
+    )
+    const orientations =
+      ngffImage.axesOrientations ?? this.multiscales.images[0]?.axesOrientations
+    return applyOrientationToAffine(affine, orientations)
+  }
+
+  /**
    * Update NVImage header for a loaded region.
    *
    * With dynamic buffer sizing, the buffer dimensions equal the fetched dimensions.
@@ -899,7 +921,7 @@ export class OMEZarrNVImage extends NVImage {
     // and sign flips), then apply the region offset in world space.
     // The offset goes through the oriented 3x3 rotation matrix so it
     // lands on the correct world axis even when NGFF axes are permuted.
-    const affine = createAffineFromNgffImage(ngffImage)
+    const affine = this._createOrientedAffine(ngffImage)
 
     // regionStart is [z, y, x]; affine columns map NIfTI [i=x, j=y, k=z]
     const offsetX = regionStart[2] // NIfTI i = NGFF x
@@ -918,7 +940,10 @@ export class OMEZarrNVImage extends NVImage {
     // y column. This composes correctly with any orientation sign.
     if (this._flipY2D && this._is2D) {
       // Get the y axis orientation mapping to find where the y scale is stored
-      const mapping = getOrientationMapping(ngffImage.axesOrientations)
+      const orientations =
+        ngffImage.axesOrientations ??
+        this.multiscales.images[0]?.axesOrientations
+      const mapping = getOrientationMapping(orientations)
       // The y scale is at affine[4 + physicalRow] (column 1, appropriate row)
       const yScaleIndex = 4 + mapping.y.physicalRow
       affine[13] += affine[yScaleIndex] * (fetchedShape[1] - 1)
@@ -2357,7 +2382,7 @@ export class OMEZarrNVImage extends NVImage {
     // Must use the full oriented affine (not the naive scale+translation)
     // because worldCoord is in oriented (NIfTI RAS) space.
     const ngffImage = this.multiscales.images[slabState.levelIndex]
-    const orientedAffine = createAffineFromNgffImage(ngffImage)
+    const orientedAffine = this._createOrientedAffine(ngffImage)
     const pixelCoord = worldToPixelAffine(worldCoord, orientedAffine)
 
     // Check the orthogonal axis
@@ -2703,7 +2728,7 @@ export class OMEZarrNVImage extends NVImage {
     // Convert world position to pixel position at this level.
     // Must use the full oriented affine because worldCoord is in oriented
     // (NIfTI RAS) space, not raw NGFF scale+translation space.
-    const orientedAffine = createAffineFromNgffImage(ngffImage)
+    const orientedAffine = this._createOrientedAffine(ngffImage)
     const pixelCoord = worldToPixelAffine(worldCoord, orientedAffine)
     const orthPixel = pixelCoord[orthAxis]
 
@@ -2901,7 +2926,7 @@ export class OMEZarrNVImage extends NVImage {
     // matrix is needed to transform that voxel offset into world coordinates.
     // Previously, the offset was applied before orientation which broke when
     // NGFF axes were permuted (e.g. NGFF z → physical A/P axis).
-    const affine = createAffineFromNgffImage(ngffImage)
+    const affine = this._createOrientedAffine(ngffImage)
 
     // Transform the NGFF voxel offset through the oriented 3x3 rotation.
     // fetchStart is [z, y, x]; affine columns map NIfTI [i=x, j=y, k=z]
