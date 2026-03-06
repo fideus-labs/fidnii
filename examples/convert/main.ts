@@ -17,6 +17,7 @@ import type { VolumeBounds } from "@fideus-labs/fidnii"
 import {
   createAxisAlignedClipPlane,
   getChannelInfo,
+  getOrientationMapping,
   getVolumeBoundsFromMultiscales,
   OMEZarrNVImage,
 } from "@fideus-labs/fidnii"
@@ -173,6 +174,16 @@ const MINIMAP_MAX_PIXELS = 5_000_000
 
 /** Warm orange RGBA for the ROI box: #E87400 */
 const ROI_RGBA: [number, number, number, number] = [232 / 255, 116 / 255, 0, 1]
+
+/**
+ * Map from RAS physical row index to anatomical plane name.
+ * Row 0 = R/L (Sagittal), Row 1 = A/P (Coronal), Row 2 = S/I (Axial).
+ */
+const PLANE_NAMES: Record<number, string> = {
+  0: "Sagittal",
+  1: "Coronal",
+  2: "Axial",
+}
 
 // Slice type string-to-enum mapping
 const SLICE_TYPE_MAP: Record<string, SLICE_TYPE> = {
@@ -478,12 +489,25 @@ function updateRoi(): void {
 /**
  * Configure the ROI range sliders to match the current volume bounds
  * and reset them to the full range.
+ *
+ * When orientation metadata is available, slider labels use anatomical
+ * plane names (Sagittal, Coronal, Axial) instead of generic X/Y/Z.
  */
-function initRoiSliders(bounds: VolumeBounds): void {
+function initRoiSliders(
+  bounds: VolumeBounds,
+  axesOrientations?: Record<string, unknown>,
+): void {
+  const mapping = getOrientationMapping(
+    axesOrientations as Parameters<typeof getOrientationMapping>[0],
+  )
+  const xLabel = axesOrientations ? PLANE_NAMES[mapping.x.physicalRow] : "X"
+  const yLabel = axesOrientations ? PLANE_NAMES[mapping.y.physicalRow] : "Y"
+  const zLabel = axesOrientations ? PLANE_NAMES[mapping.z.physicalRow] : "Z"
+
   const axes: { slider: HTMLInputElement; idx: 0 | 1 | 2; label: string }[] = [
-    { slider: roiXSlider, idx: 0, label: "X" },
-    { slider: roiYSlider, idx: 1, label: "Y" },
-    { slider: roiZSlider, idx: 2, label: "Z" },
+    { slider: roiXSlider, idx: 0, label: xLabel },
+    { slider: roiYSlider, idx: 1, label: yLabel },
+    { slider: roiZSlider, idx: 2, label: zLabel },
   ]
 
   for (const { slider, idx, label } of axes) {
@@ -997,7 +1021,7 @@ async function initMinimapPreview(
   )
 
   // Initialize the range sliders to match the volume bounds
-  initRoiSliders(bounds)
+  initRoiSliders(bounds, multiscales.images[0]?.axesOrientations)
 
   // Show the minimap card
   minimapCard.classList.remove("hidden")
