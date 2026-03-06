@@ -1299,6 +1299,11 @@ export class OMEZarrNVImage extends NVImage {
       this.populateVolume(true, "clipPlanesChanged") // Skip preview for clip plane updates
     }
 
+    // Reload active slabs so 2D views respect the updated clip planes.
+    // Slab loading already uses _clipPlanes to compute the fetch region,
+    // so reloading constrains the visible 2D data to the ROI.
+    this._reloadAllSlabs("clipPlanesChanged")
+
     // Emit clipPlanesChange event (after debounce)
     this._emitEvent("clipPlanesChange", {
       clipPlanes: this.copyClipPlanes(this._clipPlanes),
