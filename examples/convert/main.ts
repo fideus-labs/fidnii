@@ -540,6 +540,11 @@ function cleanupMinimap(): void {
     _syncAbort = null
   }
 
+  if (minimapImage && minimapNv) {
+    minimapImage.detachNiivue(minimapNv)
+    minimapNv.removeVolume(minimapImage)
+  }
+  minimapImage = null
   if (minimapNv) {
     // Remove existing meshes (connectome)
     for (const mesh of minimapNv.meshes) {
@@ -550,10 +555,6 @@ function cleanupMinimap(): void {
       }
     }
     minimapNv.meshes = []
-    minimapNv.volumes = []
-  }
-  if (minimapImage) {
-    minimapImage = null
   }
   volumeBounds = null
   _minimapAffineState = null
