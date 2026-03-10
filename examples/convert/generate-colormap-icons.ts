@@ -25,16 +25,6 @@ const OUT_DIR = join(__dirname, "icons", "colormaps")
 const WIDTH = 128
 const HEIGHT = 16
 
-// Register the custom "Fast" colormap so it appears alongside the built-ins.
-cmapper.addColormap("fast", FAST_COLORMAP)
-
-// Collect all colormap names (built-in + custom).
-const names = cmapper.colormaps()
-
-if (!existsSync(OUT_DIR)) {
-  mkdirSync(OUT_DIR, { recursive: true })
-}
-
 /**
  * Render a single colormap to a 128x16 raw RGBA buffer.
  *
@@ -64,6 +54,16 @@ function renderColormapBuffer(name: string): Buffer {
 }
 
 async function main() {
+  // Register the custom "Fast" colormap so it appears alongside the built-ins.
+  cmapper.addColormap("fast", FAST_COLORMAP)
+
+  // Collect all colormap names (built-in + custom).
+  const names = cmapper.colormaps()
+
+  if (!existsSync(OUT_DIR)) {
+    mkdirSync(OUT_DIR, { recursive: true })
+  }
+
   console.log(
     `Generating ${names.length} colormap icons (${WIDTH}x${HEIGHT} WebP)…`,
   )
