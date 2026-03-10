@@ -485,6 +485,14 @@
         width: 100%;
         height: 100%;
       }
+      #minimap-roi-overlay {
+        position: absolute;
+        border: 2px solid #e87400;
+        box-sizing: border-box;
+        pointer-events: none;
+        display: none;
+        z-index: 1;
+      }
       .minimap-sliders {
         display: flex;
         flex-direction: column;
@@ -733,6 +741,7 @@
             <div slot="header">Image Minimap</div>
             <div id="minimap-container">
               <canvas id="minimap-gl"></canvas>
+              <div id="minimap-roi-overlay"></div>
             </div>
             <div class="minimap-sliders">
               <wa-slider
