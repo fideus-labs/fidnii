@@ -383,11 +383,6 @@ function updateMinimapBox(
     nodes[i].z = corners[i][2]
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const gl = (minimapNv as any)._gl as WebGL2RenderingContext | null
-  if (gl) {
-    ;(mesh as any).updateConnectome(gl)
-  }
   minimapNv.updateGLVolume()
 }
 
