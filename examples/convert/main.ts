@@ -31,10 +31,12 @@ import {
   type ConvertResult,
   convertImage,
   convertMultiscales,
+  cropMultiscales,
   downloadFile,
   fetchImageFile,
   formatFileSize,
   getMultiscalesInfo,
+  isFullVolume,
   isOmeZarrUrl,
   isTiffFilename,
   isTiffUrl,
@@ -1398,6 +1400,23 @@ async function startConversion(): Promise<void> {
 
     if (!lastResult) return
 
+    // If the ROI sliders define a sub-region, crop the result before
+    // showing the preview or enabling download.  The crop is applied
+    // to the highest-resolution image and the pyramid is rebuilt.
+    if (volumeBounds) {
+      const roi = readRoiSliders()
+      const roiBounds = { min: roi.min, max: roi.max }
+      if (!isFullVolume(roiBounds, volumeBounds)) {
+        lastResult = await cropMultiscales(
+          lastResult.multiscales,
+          roiBounds,
+          options,
+          updateProgress,
+          updateChunkProgress,
+        )
+      }
+    }
+
     // Sync the method dropdown if auto-detection changed it
     // (e.g. label image detected while default Gaussian was selected)
     const actualMethod = lastResult.multiscales.method
@@ -1434,7 +1453,7 @@ async function startConversion(): Promise<void> {
  * URLs — whichever produced the available multiscales.
  */
 async function startDownload(): Promise<void> {
-  const multiscales = lastResult?.multiscales ?? loadedMultiscales
+  let multiscales = lastResult?.multiscales ?? loadedMultiscales
   const name = selectedFile?.name ?? loadedName
   if (!multiscales || !name) return
 
@@ -1445,6 +1464,32 @@ async function startDownload(): Promise<void> {
   chunkProgressText.textContent = ""
 
   try {
+    // If the ROI sliders define a sub-region, crop the multiscales
+    // before packaging.  This handles both converted results and
+    // directly-loaded OME-Zarr sources (including remote stores).
+    if (volumeBounds) {
+      const roi = readRoiSliders()
+      const roiBounds = { min: roi.min, max: roi.max }
+      if (!isFullVolume(roiBounds, volumeBounds)) {
+        const options = {
+          chunkSize: parseInt(
+            (chunkSizeInput as unknown as { value: string }).value || "96",
+            10,
+          ),
+          method: ((methodSelect as unknown as { value: string }).value ||
+            "itkwasm_gaussian") as Methods,
+        }
+        const cropped = await cropMultiscales(
+          multiscales,
+          roiBounds,
+          options,
+          updateProgress,
+          updateChunkProgress,
+        )
+        multiscales = cropped.multiscales
+      }
+    }
+
     const format = getSelectedFormat()
     updateProgress({
       stage: "packaging",

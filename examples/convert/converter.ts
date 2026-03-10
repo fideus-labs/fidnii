@@ -2,7 +2,13 @@
  * Image conversion pipeline with multiple output format support
  */
 
-import { fromTiff } from "@fideus-labs/fidnii"
+import type { VolumeBounds } from "@fideus-labs/fidnii"
+import {
+  fromTiff,
+  getVolumeShape,
+  pixelToWorld,
+  worldToPixel,
+} from "@fideus-labs/fidnii"
 import type { WriteOptions as FiffWriteOptions } from "@fideus-labs/fiff"
 import { toOmeTiff } from "@fideus-labs/fiff"
 import {
@@ -818,4 +824,273 @@ function getBytesPerElement(dtype: string): number {
     float64: 8,
   }
   return dtypeBytes[dtype] || 4
+}
+
+// -------- ROI Cropping --------
+
+/**
+ * Spatial dimension name → PixelRegion axis index.
+ * PixelRegion stores values in [z, y, x] order.
+ */
+const SPATIAL_DIM_INDEX: Record<string, 0 | 1 | 2> = { z: 0, y: 1, x: 2 }
+
+/**
+ * Check whether a set of ROI bounds covers the full volume.
+ *
+ * @param roi - ROI bounds in world coordinates
+ * @param volumeBounds - Full volume bounds in world coordinates
+ * @returns `true` when the ROI is (approximately) equal to the full volume
+ */
+export function isFullVolume(
+  roi: VolumeBounds,
+  volumeBounds: VolumeBounds,
+): boolean {
+  const tol = 0.01
+  return (
+    Math.abs(roi.min[0] - volumeBounds.min[0]) < tol &&
+    Math.abs(roi.min[1] - volumeBounds.min[1]) < tol &&
+    Math.abs(roi.min[2] - volumeBounds.min[2]) < tol &&
+    Math.abs(roi.max[0] - volumeBounds.max[0]) < tol &&
+    Math.abs(roi.max[1] - volumeBounds.max[1]) < tol &&
+    Math.abs(roi.max[2] - volumeBounds.max[2]) < tol
+  )
+}
+
+/**
+ * Crop the highest-resolution image in a `Multiscales` to an ROI,
+ * rebuild the downsampled pyramid, and return a new `ConvertResult`.
+ *
+ * The ROI is specified in OME-Zarr world coordinates (the same space
+ * as `VolumeBounds`). The crop region is aligned to chunk boundaries
+ * so that only whole chunks are fetched from the source zarr array.
+ *
+ * @param source - The multiscale pyramid to crop
+ * @param roi - Bounding box in world coordinates [x, y, z]
+ * @param options - Conversion options (chunk size, downsampling method)
+ * @param onProgress - Optional callback for progress updates
+ * @param onChunkProgress - Optional callback for per-chunk progress
+ * @returns A new multiscale pyramid containing only the cropped region
+ */
+export async function cropMultiscales(
+  source: Multiscales,
+  roi: VolumeBounds,
+  options: ConversionOptions,
+  onProgress?: ProgressCallback,
+  onChunkProgress?: ChunkProgressCallback,
+): Promise<ConvertResult> {
+  const report = (
+    stage: ConversionProgress["stage"],
+    percent: number,
+    message: string,
+  ) => {
+    onProgress?.({ stage, percent, message })
+  }
+
+  report("reading", 0, "Cropping to ROI...")
+
+  const sourceImage = source.images[0]
+  const shape = getVolumeShape(sourceImage)
+  const dims = sourceImage.dims
+
+  // --- Convert world ROI to pixel coordinates ---
+  // worldToPixel returns [z, y, x]
+  const minPixelRaw = worldToPixel(roi.min, sourceImage)
+  const maxPixelRaw = worldToPixel(roi.max, sourceImage)
+
+  // Ensure proper ordering (min ≤ max) and clamp to valid range
+  const minPixel: [number, number, number] = [
+    Math.max(0, Math.floor(Math.min(minPixelRaw[0], maxPixelRaw[0]))),
+    Math.max(0, Math.floor(Math.min(minPixelRaw[1], maxPixelRaw[1]))),
+    Math.max(0, Math.floor(Math.min(minPixelRaw[2], maxPixelRaw[2]))),
+  ]
+  const maxPixel: [number, number, number] = [
+    Math.min(shape[0], Math.ceil(Math.max(minPixelRaw[0], maxPixelRaw[0]))),
+    Math.min(shape[1], Math.ceil(Math.max(minPixelRaw[1], maxPixelRaw[1]))),
+    Math.min(shape[2], Math.ceil(Math.max(minPixelRaw[2], maxPixelRaw[2]))),
+  ]
+
+  // --- Align to chunk boundaries ---
+  // Chunk shape from the source zarr array, mapped to [z, y, x]
+  const rawChunks = sourceImage.data.chunks ?? sourceImage.data.shape
+  const chunkZ =
+    dims.indexOf("z") !== -1 ? rawChunks[dims.indexOf("z")] : shape[0]
+  const chunkY = rawChunks[dims.indexOf("y")]
+  const chunkX = rawChunks[dims.indexOf("x")]
+
+  const alignedMin: [number, number, number] = [
+    Math.floor(minPixel[0] / chunkZ) * chunkZ,
+    Math.floor(minPixel[1] / chunkY) * chunkY,
+    Math.floor(minPixel[2] / chunkX) * chunkX,
+  ]
+  const alignedMax: [number, number, number] = [
+    Math.min(Math.ceil(maxPixel[0] / chunkZ) * chunkZ, shape[0]),
+    Math.min(Math.ceil(maxPixel[1] / chunkY) * chunkY, shape[1]),
+    Math.min(Math.ceil(maxPixel[2] / chunkX) * chunkX, shape[2]),
+  ]
+
+  report("reading", 5, "Fetching cropped region from source...")
+
+  // --- Build zarrGet selection from aligned pixel region ---
+  // The selection array must match the dims order of the source image.
+  // Spatial dims get slice ranges; non-spatial dims (c, t) get null.
+  const selection = dims.map((dim) => {
+    const spatialIdx = SPATIAL_DIM_INDEX[dim]
+    if (spatialIdx !== undefined) {
+      return {
+        start: alignedMin[spatialIdx],
+        stop: alignedMax[spatialIdx],
+        step: null,
+      }
+    }
+    // Non-spatial dims: select all (c) or first frame (t)
+    if (dim === "t") return 0
+    return null
+  })
+
+  // Read the cropped region from the source zarr array
+  const cropped = await zarrGet(
+    sourceImage.data,
+    selection as Parameters<typeof zarrGet>[1],
+  )
+
+  report("reading", 15, "Building cropped image...")
+
+  // --- Compute new translation for the cropped region ---
+  // The crop's origin in world space is the aligned pixel start
+  const croppedTranslation = pixelToWorld(alignedMin, sourceImage)
+
+  // --- Compute the cropped shape in array dim order ---
+  const croppedSpatialShape: Record<string, number> = {
+    z: alignedMax[0] - alignedMin[0],
+    y: alignedMax[1] - alignedMin[1],
+    x: alignedMax[2] - alignedMin[2],
+  }
+
+  // Build ITK-Wasm Image from cropped data
+  // ITK-Wasm stores size in physical order [x, y, z] (reversed from
+  // the OME-Zarr array order [z, y, x]).
+  const spatialDims = dims.filter((d) => d === "x" || d === "y" || d === "z")
+  const hasChannel = dims.includes("c")
+  const cIdx = dims.indexOf("c")
+  const components = hasChannel ? sourceImage.data.shape[cIdx] : 1
+
+  // ITK size is [x, y, z] or [x, y] for 2D
+  const itkSize = spatialDims.includes("z")
+    ? [croppedSpatialShape.x, croppedSpatialShape.y, croppedSpatialShape.z]
+    : [croppedSpatialShape.x, croppedSpatialShape.y]
+
+  // ITK spacing is [x, y, z] (world units per pixel)
+  const sx = sourceImage.scale.x ?? sourceImage.scale.X ?? 1
+  const sy = sourceImage.scale.y ?? sourceImage.scale.Y ?? 1
+  const sz = sourceImage.scale.z ?? sourceImage.scale.Z ?? 1
+  const itkSpacing = spatialDims.includes("z") ? [sx, sy, sz] : [sx, sy]
+
+  // ITK origin = world coordinate of the cropped region's first pixel
+  // croppedTranslation is [x, y, z] from pixelToWorld
+  const itkOrigin = spatialDims.includes("z")
+    ? [croppedTranslation[0], croppedTranslation[1], croppedTranslation[2]]
+    : [croppedTranslation[0], croppedTranslation[1]]
+
+  // Map zarr dtype to ITK componentType
+  const componentType = sourceImage.data.dtype as
+    | "int8"
+    | "uint8"
+    | "int16"
+    | "uint16"
+    | "int32"
+    | "uint32"
+    | "int64"
+    | "uint64"
+    | "float32"
+    | "float64"
+
+  // Build the ITK direction matrix (identity — we preserve orientation
+  // from the source, and since we only do axis-aligned crops the
+  // direction doesn't change).
+  const dimension = itkSize.length
+  const direction = new Float64Array(dimension * dimension)
+  for (let i = 0; i < dimension; i++) {
+    direction[i * dimension + i] = 1.0
+  }
+
+  // Copy the direction from the source if axesOrientations are present.
+  // The ITK direction matrix encodes the mapping from voxel axes to
+  // physical axes.  For axis-aligned crops the direction is preserved.
+  // We pass addAnatomicalOrientation=false to itkImageToNgffImage and
+  // copy axesOrientations from the source manually, which avoids
+  // re-computing orientation from a potentially identity direction matrix.
+
+  // Ensure cropped data is a plain (non-shared) ArrayBuffer view
+  // so itkImageToNgffImage can handle it (SharedArrayBuffer may
+  // cause issues with zarr codec encoders).
+  const croppedData = cropped as {
+    data: ArrayBufferView
+    shape: number[]
+    stride: number[]
+  }
+  let dataView = croppedData.data
+  if (dataView.buffer instanceof SharedArrayBuffer) {
+    const copy = new (
+      dataView.constructor as { new (buffer: ArrayBuffer): ArrayBufferView }
+    )(new ArrayBuffer(dataView.byteLength))
+    new Uint8Array(copy.buffer).set(
+      new Uint8Array(dataView.buffer, dataView.byteOffset, dataView.byteLength),
+    )
+    dataView = copy
+  }
+
+  const itkImage: Image = {
+    imageType: {
+      dimension,
+      componentType,
+      pixelType: components > 1 ? "VariableLengthVector" : "Scalar",
+      components,
+    },
+    name: sourceImage.name || "cropped",
+    origin: itkOrigin,
+    spacing: itkSpacing,
+    direction,
+    size: itkSize,
+    data: dataView as unknown as Image["data"],
+    metadata: new Map(),
+  }
+
+  const croppedNgff = await itkImageToNgffImage(itkImage, {
+    addAnatomicalOrientation: false,
+    chunks: options.chunkSize,
+  })
+
+  // Preserve axesOrientations from the source image (axis-aligned
+  // crop doesn't change orientation).
+  const croppedWithOrientation: NgffImage = croppedNgff
+  if (sourceImage.axesOrientations) {
+    // We need the actual NgffImage class constructor, but we only have
+    // the type import.  Use the same pattern as itkImageToNgffImage:
+    // create a new NgffImage from the existing one's properties, adding
+    // the missing axesOrientations.  Since NgffImage's constructor is
+    // internal to ngff-zarr, we work around it by re-using
+    // itkImageToNgffImage which already produced a valid NgffImage.
+    // For the axesOrientations, we assign them via a thin wrapper.
+    //
+    // The NgffImage class stores axesOrientations as a readonly property
+    // set in the constructor.  Since we can't call the constructor
+    // directly from here, we use Object.defineProperty to attach them.
+    Object.defineProperty(croppedWithOrientation, "axesOrientations", {
+      value: { ...sourceImage.axesOrientations },
+      writable: false,
+      enumerable: true,
+      configurable: true,
+    })
+  }
+
+  report("converting", 20, "Building multiscale pyramid for cropped region...")
+
+  // Re-use the standard buildMultiscales pipeline
+  return buildMultiscales(
+    croppedWithOrientation,
+    options.method,
+    options,
+    report,
+    onChunkProgress,
+  )
 }
