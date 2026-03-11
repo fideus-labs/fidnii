@@ -7,3 +7,4 @@ test-results/
 
 # Ad-hoc screenshots (root level)
 /*.png
+package-lock.json
