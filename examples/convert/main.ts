@@ -4,7 +4,10 @@
 
 import "@awesome.me/webawesome/dist/components/button/button.js"
 import "@awesome.me/webawesome/dist/components/card/card.js"
+import "@awesome.me/webawesome/dist/components/details/details.js"
+import "@awesome.me/webawesome/dist/components/dialog/dialog.js"
 import "@awesome.me/webawesome/dist/components/drawer/drawer.js"
+import "@awesome.me/webawesome/dist/components/icon/icon.js"
 import "@awesome.me/webawesome/dist/components/input/input.js"
 import "@awesome.me/webawesome/dist/components/option/option.js"
 import "@awesome.me/webawesome/dist/components/progress-bar/progress-bar.js"
@@ -117,6 +120,167 @@ const DEFAULT_CHUNK_SIZE_3D = "96"
 
 /** File size threshold (300 MB) above which we suggest Python tooling. */
 const LARGE_FILE_THRESHOLD = 300_000_000
+
+// ---------------------------------------------------------------------------
+// OME-Zarr Open SciVis Datasets
+// @see https://github.com/InsightSoftwareConsortium/OMEZarrOpenSciVisDatasets
+// ---------------------------------------------------------------------------
+
+interface OpenScivisDataset {
+  name: string
+  url: string
+}
+
+type OpenScivisCategory =
+  | OpenScivisDataset[]
+  | Record<string, OpenScivisDataset[]>
+
+const OPEN_SCIVIS_BASE_URL =
+  "https://ome-zarr-scivis.s3.us-east-1.amazonaws.com/v0.5/96x2"
+
+const OPEN_SCIVIS_CATEGORIES: Record<string, OpenScivisCategory> = {
+  "CT Scans": {
+    Human: [
+      { name: "Aneurism", url: `${OPEN_SCIVIS_BASE_URL}/aneurism.ome.zarr` },
+      { name: "Foot", url: `${OPEN_SCIVIS_BASE_URL}/foot.ome.zarr` },
+      { name: "Pancreas", url: `${OPEN_SCIVIS_BASE_URL}/pancreas.ome.zarr` },
+      { name: "Prone", url: `${OPEN_SCIVIS_BASE_URL}/prone.ome.zarr` },
+      { name: "Skull", url: `${OPEN_SCIVIS_BASE_URL}/skull.ome.zarr` },
+      { name: "Stent", url: `${OPEN_SCIVIS_BASE_URL}/stent.ome.zarr` },
+      { name: "Tooth", url: `${OPEN_SCIVIS_BASE_URL}/tooth.ome.zarr` },
+      { name: "Vertebra", url: `${OPEN_SCIVIS_BASE_URL}/vertebra.ome.zarr` },
+      {
+        name: "Visible Human",
+        url: `${OPEN_SCIVIS_BASE_URL}/visible_human.ome.zarr`,
+      },
+    ],
+    Animals: [
+      { name: "Bunny", url: `${OPEN_SCIVIS_BASE_URL}/bunny.ome.zarr` },
+      { name: "Carp", url: `${OPEN_SCIVIS_BASE_URL}/carp.ome.zarr` },
+      {
+        name: "Chameleon",
+        url: `${OPEN_SCIVIS_BASE_URL}/chameleon.ome.zarr`,
+      },
+      {
+        name: "Kingsnake",
+        url: `${OPEN_SCIVIS_BASE_URL}/kingsnake.ome.zarr`,
+      },
+      { name: "Lobster", url: `${OPEN_SCIVIS_BASE_URL}/lobster.ome.zarr` },
+      {
+        name: "Pawpawsaurus",
+        url: `${OPEN_SCIVIS_BASE_URL}/pawpawsaurus.ome.zarr`,
+      },
+      {
+        name: "Pig Heart",
+        url: `${OPEN_SCIVIS_BASE_URL}/pig_heart.ome.zarr`,
+      },
+      {
+        name: "Stag Beetle",
+        url: `${OPEN_SCIVIS_BASE_URL}/stag_beetle.ome.zarr`,
+      },
+      {
+        name: "Zebrafish",
+        url: `${OPEN_SCIVIS_BASE_URL}/zebrafish.ome.zarr`,
+      },
+    ],
+    Objects: [
+      { name: "Backpack", url: `${OPEN_SCIVIS_BASE_URL}/backpack.ome.zarr` },
+      { name: "Beechnut", url: `${OPEN_SCIVIS_BASE_URL}/beechnut.ome.zarr` },
+      { name: "Bonsai", url: `${OPEN_SCIVIS_BASE_URL}/bonsai.ome.zarr` },
+      {
+        name: "Boston Teapot",
+        url: `${OPEN_SCIVIS_BASE_URL}/boston_teapot.ome.zarr`,
+      },
+      {
+        name: "Christmas Tree",
+        url: `${OPEN_SCIVIS_BASE_URL}/christmas_tree.ome.zarr`,
+      },
+      { name: "Engine", url: `${OPEN_SCIVIS_BASE_URL}/engine.ome.zarr` },
+      { name: "Present", url: `${OPEN_SCIVIS_BASE_URL}/present.ome.zarr` },
+      {
+        name: "Synthetic Truss",
+        url: `${OPEN_SCIVIS_BASE_URL}/synthetic_truss.ome.zarr`,
+      },
+      {
+        name: "Woodbranch",
+        url: `${OPEN_SCIVIS_BASE_URL}/woodbranch.ome.zarr`,
+      },
+      { name: "Zeiss", url: `${OPEN_SCIVIS_BASE_URL}/zeiss.ome.zarr` },
+    ],
+  },
+  "MRI Scans": [
+    { name: "Frog", url: `${OPEN_SCIVIS_BASE_URL}/frog.ome.zarr` },
+    {
+      name: "MRI Ventricles",
+      url: `${OPEN_SCIVIS_BASE_URL}/mri_ventricles.ome.zarr`,
+    },
+    {
+      name: "MRI Woman",
+      url: `${OPEN_SCIVIS_BASE_URL}/mri_woman.ome.zarr`,
+    },
+    {
+      name: "MRT Angio",
+      url: `${OPEN_SCIVIS_BASE_URL}/mrt_angio.ome.zarr`,
+    },
+  ],
+  Microscopy: [
+    {
+      name: "Marmoset Neurons",
+      url: `${OPEN_SCIVIS_BASE_URL}/marmoset_neurons.ome.zarr`,
+    },
+    {
+      name: "Neocortical Layer 1 Axons",
+      url: `${OPEN_SCIVIS_BASE_URL}/neocortical_layer_1_axons.ome.zarr`,
+    },
+  ],
+  Simulations: [
+    {
+      name: "Blunt Fin",
+      url: `${OPEN_SCIVIS_BASE_URL}/blunt_fin.ome.zarr`,
+    },
+    {
+      name: "CSAFE Heptane",
+      url: `${OPEN_SCIVIS_BASE_URL}/csafe_heptane.ome.zarr`,
+    },
+    { name: "Duct", url: `${OPEN_SCIVIS_BASE_URL}/duct.ome.zarr` },
+    { name: "Fuel", url: `${OPEN_SCIVIS_BASE_URL}/fuel.ome.zarr` },
+    { name: "HCCI OH", url: `${OPEN_SCIVIS_BASE_URL}/hcci_oh.ome.zarr` },
+    {
+      name: "Hydrogen Atom",
+      url: `${OPEN_SCIVIS_BASE_URL}/hydrogen_atom.ome.zarr`,
+    },
+    { name: "JICF Q", url: `${OPEN_SCIVIS_BASE_URL}/jicf_q.ome.zarr` },
+    {
+      name: "Magnetic Reconnection",
+      url: `${OPEN_SCIVIS_BASE_URL}/magnetic_reconnection.ome.zarr`,
+    },
+    {
+      name: "Marschner-Lobb",
+      url: `${OPEN_SCIVIS_BASE_URL}/marschner_lobb.ome.zarr`,
+    },
+    { name: "Miranda", url: `${OPEN_SCIVIS_BASE_URL}/miranda.ome.zarr` },
+    { name: "Neghip", url: `${OPEN_SCIVIS_BASE_URL}/neghip.ome.zarr` },
+    { name: "Nucleon", url: `${OPEN_SCIVIS_BASE_URL}/nucleon.ome.zarr` },
+    {
+      name: "Richtmyer-Meshkov",
+      url: `${OPEN_SCIVIS_BASE_URL}/richtmyer_meshkov.ome.zarr`,
+    },
+    { name: "Rotstrat", url: `${OPEN_SCIVIS_BASE_URL}/rotstrat.ome.zarr` },
+    {
+      name: "Shockwave",
+      url: `${OPEN_SCIVIS_BASE_URL}/shockwave.ome.zarr`,
+    },
+    { name: "Silicium", url: `${OPEN_SCIVIS_BASE_URL}/silicium.ome.zarr` },
+    {
+      name: "Supernova",
+      url: `${OPEN_SCIVIS_BASE_URL}/supernova.ome.zarr`,
+    },
+    {
+      name: "TACC Turbulence",
+      url: `${OPEN_SCIVIS_BASE_URL}/tacc_turbulence.ome.zarr`,
+    },
+  ],
+}
 
 // State
 let selectedFile: File | null = null
@@ -418,6 +582,168 @@ sampleBtn.addEventListener("click", () => {
       sampleBtn.removeAttribute("disabled")
     }
   })()
+})
+
+// ---------------------------------------------------------------------------
+// More Samples dialog — browse / search OME-Zarr Open SciVis Datasets
+// ---------------------------------------------------------------------------
+
+const moreSamplesBtn = document.getElementById(
+  "more-samples-btn",
+) as HTMLElement
+const scivisDialog = document.getElementById("scivis-dialog") as HTMLElement & {
+  open: boolean
+}
+const scivisSearch = document.getElementById(
+  "scivis-search",
+) as HTMLInputElement
+const scivisDatasetList = document.getElementById(
+  "scivis-dataset-list",
+) as HTMLDivElement
+
+/** Flatten all datasets, optionally filtering by a search query. */
+function getFilteredDatasets(query: string): Array<{
+  name: string
+  url: string
+  category: string
+  subcategory?: string
+}> {
+  const q = query.toLowerCase().trim()
+  const results: Array<{
+    name: string
+    url: string
+    category: string
+    subcategory?: string
+  }> = []
+
+  for (const [categoryName, categoryData] of Object.entries(
+    OPEN_SCIVIS_CATEGORIES,
+  )) {
+    if (Array.isArray(categoryData)) {
+      for (const d of categoryData) {
+        if (!q || d.name.toLowerCase().includes(q)) {
+          results.push({ ...d, category: categoryName })
+        }
+      }
+    } else {
+      for (const [subName, datasets] of Object.entries(categoryData)) {
+        for (const d of datasets) {
+          if (!q || d.name.toLowerCase().includes(q)) {
+            results.push({
+              ...d,
+              category: categoryName,
+              subcategory: subName,
+            })
+          }
+        }
+      }
+    }
+  }
+  return results
+}
+
+/** Create a button element that loads a dataset URL on click. */
+function createDatasetButton(
+  dataset: OpenScivisDataset,
+  breadcrumb?: string,
+): HTMLElement {
+  const btn = document.createElement("wa-button")
+  btn.setAttribute("variant", "text")
+  btn.setAttribute("size", "small")
+  btn.classList.add("scivis-dataset-btn")
+
+  if (breadcrumb) {
+    const span = document.createElement("span")
+    const strong = document.createElement("strong")
+    strong.textContent = dataset.name
+    span.appendChild(strong)
+    span.appendChild(document.createElement("br"))
+    const small = document.createElement("small")
+    small.classList.add("scivis-breadcrumb")
+    small.textContent = breadcrumb
+    span.appendChild(small)
+    btn.appendChild(span)
+  } else {
+    btn.textContent = dataset.name
+  }
+
+  btn.addEventListener("click", () => {
+    scivisDialog.open = false
+    void handleUrl(dataset.url)
+  })
+  return btn
+}
+
+/**
+ * Render the dataset list inside the dialog.
+ *
+ * When a search query is active, shows a flat filtered list with category
+ * breadcrumbs. Otherwise renders hierarchical {@link wa-details} accordions
+ * matching the fideye element's Open SciVis dialog.
+ */
+function renderDatasetList(): void {
+  scivisDatasetList.innerHTML = ""
+  const query = (
+    (scivisSearch as unknown as { value: string }).value || ""
+  ).trim()
+
+  if (query) {
+    const results = getFilteredDatasets(query)
+    if (results.length === 0) {
+      const p = document.createElement("p")
+      p.style.cssText =
+        "color: var(--wa-color-text-muted); text-align: center; padding: 20px;"
+      p.textContent = `No datasets found matching "${query}"`
+      scivisDatasetList.appendChild(p)
+      return
+    }
+    for (const d of results) {
+      const breadcrumb = d.subcategory
+        ? `${d.category} > ${d.subcategory}`
+        : d.category
+      scivisDatasetList.appendChild(createDatasetButton(d, breadcrumb))
+    }
+  } else {
+    for (const [categoryName, categoryData] of Object.entries(
+      OPEN_SCIVIS_CATEGORIES,
+    )) {
+      const details = document.createElement("wa-details")
+      details.setAttribute("summary", categoryName)
+      details.setAttribute("appearance", "plain")
+
+      if (Array.isArray(categoryData)) {
+        for (const d of categoryData) {
+          details.appendChild(createDatasetButton(d))
+        }
+      } else {
+        for (const [subName, datasets] of Object.entries(categoryData)) {
+          const subDetails = document.createElement("wa-details")
+          subDetails.setAttribute("summary", subName)
+          subDetails.setAttribute("appearance", "plain")
+          subDetails.style.marginLeft = "16px"
+          for (const d of datasets) {
+            subDetails.appendChild(createDatasetButton(d))
+          }
+          details.appendChild(subDetails)
+        }
+      }
+      scivisDatasetList.appendChild(details)
+    }
+  }
+}
+
+// Open the More Samples dialog
+moreSamplesBtn.addEventListener("click", () => {
+  ;(scivisSearch as unknown as { value: string }).value = ""
+  renderDatasetList()
+  scivisDialog.open = true
+})
+
+// Re-render the list when the user types in the search input
+scivisSearch.addEventListener("input", () => renderDatasetList())
+scivisSearch.addEventListener("wa-clear", () => {
+  ;(scivisSearch as unknown as { value: string }).value = ""
+  renderDatasetList()
 })
 
 // Drag and drop

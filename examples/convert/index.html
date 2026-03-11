@@ -422,6 +422,24 @@
       .hidden {
         display: none;
       }
+      .sample-btn-row {
+        display: flex;
+        gap: 0.5rem;
+      }
+      .sample-btn-row wa-button {
+        flex: 1;
+      }
+      .scivis-dataset-btn {
+        width: 100%;
+      }
+      .scivis-dataset-btn::part(label) {
+        justify-content: flex-start;
+        text-align: left;
+      }
+      .scivis-breadcrumb {
+        color: var(--wa-color-text-quiet);
+        font-size: 0.75rem;
+      }
       .large-file-tip {
         max-width: 720px;
         margin: 0 auto;
@@ -524,14 +542,14 @@
             </wa-button>
           </div>
           <div class="input-divider">or</div>
-          <wa-button
-            id="sample-btn"
-            variant="neutral"
-            size="small"
-            style="width: 100%"
-          >
-            Load Sample
-          </wa-button>
+          <div class="sample-btn-row">
+            <wa-button id="sample-btn" variant="neutral" size="small">
+              Load Sample
+            </wa-button>
+            <wa-button id="more-samples-btn" variant="neutral" size="small">
+              More Samples
+            </wa-button>
+          </div>
         </wa-card>
 
         <wa-card>
@@ -861,6 +879,28 @@
         >Got it</wa-button
       >
     </wa-drawer>
+
+    <wa-dialog
+      id="scivis-dialog"
+      label="Open SciVis Datasets"
+      style="--width: 500px"
+    >
+      <wa-input
+        id="scivis-search"
+        placeholder="Search datasets..."
+        with-clear
+        autofocus
+      >
+        <wa-icon slot="start" name="magnifying-glass"></wa-icon>
+      </wa-input>
+      <div
+        id="scivis-dataset-list"
+        style="max-height: 400px; overflow-y: auto; margin-top: 16px"
+      ></div>
+      <wa-button slot="footer" variant="text" data-dialog="close">
+        Close
+      </wa-button>
+    </wa-dialog>
 
     <script type="module" src="/main.ts"></script>
   </body>
