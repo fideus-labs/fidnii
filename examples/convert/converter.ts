@@ -18,6 +18,7 @@ import {
   type Multiscales,
   Multiscales as MultiscalesClass,
   type NgffImage,
+  NgffImage as NgffImageClass,
   toMultiscales,
 } from "@fideus-labs/ngff-zarr"
 import {
@@ -27,6 +28,7 @@ import {
   ngffImageToItkImage,
   toNgffZarrOzx,
   zarrGet,
+  zarrSet,
 } from "@fideus-labs/ngff-zarr/browser"
 import { WorkerPool } from "@fideus-labs/worker-pool"
 import { setPipelinesBaseUrl as setPipelinesBaseUrlDownsample } from "@itk-wasm/downsample"
@@ -36,6 +38,7 @@ import {
   writeImage,
 } from "@itk-wasm/image-io"
 import type { Image } from "itk-wasm"
+import * as zarr from "zarrita"
 
 export { Methods } from "@fideus-labs/ngff-zarr"
 
@@ -959,135 +962,63 @@ export async function cropMultiscales(
   // The crop's origin in world space is the aligned pixel start
   const croppedTranslation = pixelToWorld(alignedMin, sourceImage)
 
-  // --- Compute the cropped shape in array dim order ---
+  // --- Build the cropped shape in dims order ---
   const croppedSpatialShape: Record<string, number> = {
     z: alignedMax[0] - alignedMin[0],
     y: alignedMax[1] - alignedMin[1],
     x: alignedMax[2] - alignedMin[2],
   }
-
-  // Build ITK-Wasm Image from cropped data
-  // ITK-Wasm stores size in physical order [x, y, z] (reversed from
-  // the OME-Zarr array order [z, y, x]).
-  const spatialDims = dims.filter((d) => d === "x" || d === "y" || d === "z")
-  const hasChannel = dims.includes("c")
-  const cIdx = dims.indexOf("c")
-  const components = hasChannel ? sourceImage.data.shape[cIdx] : 1
-
-  // ITK size is [x, y, z] or [x, y] for 2D
-  const itkSize = spatialDims.includes("z")
-    ? [croppedSpatialShape.x, croppedSpatialShape.y, croppedSpatialShape.z]
-    : [croppedSpatialShape.x, croppedSpatialShape.y]
-
-  // ITK spacing is [x, y, z] (world units per pixel)
-  const sx = sourceImage.scale.x ?? sourceImage.scale.X ?? 1
-  const sy = sourceImage.scale.y ?? sourceImage.scale.Y ?? 1
-  const sz = sourceImage.scale.z ?? sourceImage.scale.Z ?? 1
-  const itkSpacing = spatialDims.includes("z") ? [sx, sy, sz] : [sx, sy]
-
-  // ITK origin = world coordinate of the cropped region's first pixel
-  // croppedTranslation is [x, y, z] from pixelToWorld
-  const itkOrigin = spatialDims.includes("z")
-    ? [croppedTranslation[0], croppedTranslation[1], croppedTranslation[2]]
-    : [croppedTranslation[0], croppedTranslation[1]]
-
-  // Map zarr dtype to ITK componentType
-  const componentType = sourceImage.data.dtype as
-    | "int8"
-    | "uint8"
-    | "int16"
-    | "uint16"
-    | "int32"
-    | "uint32"
-    | "int64"
-    | "uint64"
-    | "float32"
-    | "float64"
-
-  // Build the ITK direction matrix (identity — we preserve orientation
-  // from the source, and since we only do axis-aligned crops the
-  // direction doesn't change).
-  const dimension = itkSize.length
-  const direction = new Float64Array(dimension * dimension)
-  for (let i = 0; i < dimension; i++) {
-    direction[i * dimension + i] = 1.0
-  }
-
-  // Copy the direction from the source if axesOrientations are present.
-  // The ITK direction matrix encodes the mapping from voxel axes to
-  // physical axes.  For axis-aligned crops the direction is preserved.
-  // We pass addAnatomicalOrientation=false to itkImageToNgffImage and
-  // copy axesOrientations from the source manually, which avoids
-  // re-computing orientation from a potentially identity direction matrix.
-
-  // Ensure cropped data is a plain (non-shared) ArrayBuffer view
-  // so itkImageToNgffImage can handle it (SharedArrayBuffer may
-  // cause issues with zarr codec encoders).
-  const croppedData = cropped as {
-    data: ArrayBufferView
-    shape: number[]
-    stride: number[]
-  }
-  let dataView = croppedData.data
-  if (dataView.buffer instanceof SharedArrayBuffer) {
-    const copy = new (
-      dataView.constructor as { new (buffer: ArrayBuffer): ArrayBufferView }
-    )(new ArrayBuffer(dataView.byteLength))
-    new Uint8Array(copy.buffer).set(
-      new Uint8Array(dataView.buffer, dataView.byteOffset, dataView.byteLength),
-    )
-    dataView = copy
-  }
-
-  const itkImage: Image = {
-    imageType: {
-      dimension,
-      componentType,
-      pixelType: components > 1 ? "VariableLengthVector" : "Scalar",
-      components,
-    },
-    name: sourceImage.name || "cropped",
-    origin: itkOrigin,
-    spacing: itkSpacing,
-    direction,
-    size: itkSize,
-    data: dataView as unknown as Image["data"],
-    metadata: new Map(),
-  }
-
-  const croppedNgff = await itkImageToNgffImage(itkImage, {
-    addAnatomicalOrientation: false,
-    chunks: options.chunkSize,
+  const croppedShape = dims.map((dim) => {
+    if (dim in croppedSpatialShape) return croppedSpatialShape[dim]
+    // Non-spatial dims keep their original size
+    return sourceImage.data.shape[dims.indexOf(dim)]
   })
 
-  // Preserve axesOrientations from the source image (axis-aligned
-  // crop doesn't change orientation).
-  const croppedWithOrientation: NgffImage = croppedNgff
-  if (sourceImage.axesOrientations) {
-    // We need the actual NgffImage class constructor, but we only have
-    // the type import.  Use the same pattern as itkImageToNgffImage:
-    // create a new NgffImage from the existing one's properties, adding
-    // the missing axesOrientations.  Since NgffImage's constructor is
-    // internal to ngff-zarr, we work around it by re-using
-    // itkImageToNgffImage which already produced a valid NgffImage.
-    // For the axesOrientations, we assign them via a thin wrapper.
-    //
-    // The NgffImage class stores axesOrientations as a readonly property
-    // set in the constructor.  Since we can't call the constructor
-    // directly from here, we use Object.defineProperty to attach them.
-    Object.defineProperty(croppedWithOrientation, "axesOrientations", {
-      value: { ...sourceImage.axesOrientations },
-      writable: false,
-      enumerable: true,
-      configurable: true,
-    })
+  // --- Write the cropped data into a new zarr array ---
+  // This avoids the ITK Image round-trip and ensures correct data
+  // layout regardless of the ndarray strides returned by zarrGet.
+  const croppedChunkShape = croppedShape.map((s) =>
+    Math.min(s, options.chunkSize),
+  )
+  const croppedStore = new Map()
+  const croppedRoot = zarr.root(croppedStore)
+  const croppedArray = await zarr.create(croppedRoot.resolve("image"), {
+    shape: croppedShape,
+    chunk_shape: croppedChunkShape,
+    data_type: sourceImage.data.dtype,
+    fill_value: 0,
+    codecs: bytesOnlyCodecs(),
+  })
+  const fullSelection = new Array(croppedShape.length).fill(null)
+  await zarrSet(croppedArray, fullSelection, cropped)
+
+  // --- Build the cropped NgffImage with updated translation ---
+  // pixelToWorld returns [x, y, z]
+  const croppedTranslationMap: Record<string, number> = {
+    ...sourceImage.translation,
   }
+  croppedTranslationMap.x = croppedTranslation[0]
+  croppedTranslationMap.y = croppedTranslation[1]
+  croppedTranslationMap.z = croppedTranslation[2]
+
+  const croppedNgff = new NgffImageClass({
+    data: croppedArray,
+    dims: [...dims],
+    scale: { ...sourceImage.scale },
+    translation: croppedTranslationMap,
+    name: sourceImage.name || "cropped",
+    axesUnits: sourceImage.axesUnits ? { ...sourceImage.axesUnits } : undefined,
+    axesOrientations: sourceImage.axesOrientations
+      ? { ...sourceImage.axesOrientations }
+      : undefined,
+    computedCallbacks: undefined,
+  })
 
   report("converting", 20, "Building multiscale pyramid for cropped region...")
 
   // Re-use the standard buildMultiscales pipeline
   return buildMultiscales(
-    croppedWithOrientation,
+    croppedNgff,
     options.method,
     options,
     report,

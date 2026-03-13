@@ -72,6 +72,9 @@ importers:
       itk-wasm:
         specifier: 1.0.0-b.196
         version: 1.0.0-b.196
+      zarrita:
+        specifier: ^0.6.1
+        version: 0.6.1
     devDependencies:
       sharp:
         specifier: ^0.34.5
