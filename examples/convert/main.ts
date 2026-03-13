@@ -588,7 +588,9 @@ function updateRoi(): void {
     updateMinimapOverlay2D(roi.min, roi.max)
   } else {
     // 3D: mutate the connectome wireframe node positions (mm-space)
-    updateMinimapBox(omeZarrToMM(roi.min), omeZarrToMM(roi.max))
+    const mmMin = omeZarrToMM(roi.min)
+    const mmMax = omeZarrToMM(roi.max)
+    updateMinimapBox(mmMin, mmMax)
   }
 }
 

@@ -1036,12 +1036,16 @@ export class OMEZarrNVImage extends NVImage {
   /**
    * Update NiiVue clip planes from current _clipPlanes.
    *
-   * Clip planes are stored in OME-Zarr world space, but NiiVue's
-   * shader evaluates clip planes in RAS-reoriented texture space.
-   * When the OME-Zarr axes are permuted (e.g. y encodes S/I instead
-   * of A/P), we must permute the clip plane normals, points, and
-   * buffer bounds through the orientation mapping so the clipping
-   * direction matches the rendered anatomy.
+   * NiiVue's orient shader physically reorders the 3D texture data so
+   * that its axes align with RAS (texture axis 0 = L→R, 1 = P→A,
+   * 2 = I→S). The clip plane shader then evaluates in this
+   * RAS-reoriented texture space.
+   *
+   * Clip planes are stored in OME-Zarr world space, where the axis
+   * order may differ from RAS (e.g. the y axis may encode S/I instead
+   * of A/P). We must permute clip plane normals, points, and buffer
+   * bounds from OME-Zarr axis order to the RAS physical row order that
+   * NiiVue's texture uses.
    *
    * Clip planes are converted relative to the CURRENT BUFFER bounds,
    * not the full volume bounds, because NiiVue's shader works in
@@ -1052,7 +1056,7 @@ export class OMEZarrNVImage extends NVImage {
     const mapping = getOrientationMapping(orientations)
 
     // Permute a 3-vector from OME-Zarr axis order to RAS physical
-    // row order, applying sign flips.
+    // row order, applying sign flips for axis direction.
     const permuteVec = (
       v: [number, number, number],
     ): [number, number, number] => {
@@ -1063,13 +1067,13 @@ export class OMEZarrNVImage extends NVImage {
       return out
     }
 
-    // Transform clip planes from OME-Zarr space to oriented space
+    // Transform clip planes from OME-Zarr space to RAS-oriented space
     const orientedPlanes: ClipPlanes = this._clipPlanes.map((p) => ({
       point: permuteVec(p.point),
       normal: permuteVec(p.normal),
     }))
 
-    // Transform buffer bounds to oriented space
+    // Transform buffer bounds to RAS-oriented space
     const bMin = permuteVec(
       this._currentBufferBounds.min as [number, number, number],
     )
