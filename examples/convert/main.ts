@@ -4,7 +4,10 @@
 
 import "@awesome.me/webawesome/dist/components/button/button.js"
 import "@awesome.me/webawesome/dist/components/card/card.js"
+import "@awesome.me/webawesome/dist/components/details/details.js"
+import "@awesome.me/webawesome/dist/components/dialog/dialog.js"
 import "@awesome.me/webawesome/dist/components/drawer/drawer.js"
+import "@awesome.me/webawesome/dist/components/icon/icon.js"
 import "@awesome.me/webawesome/dist/components/input/input.js"
 import "@awesome.me/webawesome/dist/components/option/option.js"
 import "@awesome.me/webawesome/dist/components/progress-bar/progress-bar.js"
@@ -50,6 +53,8 @@ import {
   packageOutput,
 } from "./converter.ts"
 import { FAST_COLORMAP } from "./fast-colormap.ts"
+import type { OpenScivisDataset } from "./openSciVisDatasets.ts"
+import { OPEN_SCIVIS_CATEGORIES } from "./openSciVisDatasets.ts"
 
 // Color scheme: follow the browser/OS preference
 const darkQuery = window.matchMedia("(prefers-color-scheme: dark)")
@@ -901,6 +906,166 @@ sampleBtn.addEventListener("click", () => {
       sampleBtn.removeAttribute("disabled")
     }
   })()
+})
+
+// ---------------------------------------------------------------------------
+// More Samples dialog — browse / search OME-Zarr Open SciVis Datasets
+// ---------------------------------------------------------------------------
+
+const moreSamplesBtn = document.getElementById(
+  "more-samples-btn",
+) as HTMLElement
+const scivisDialog = document.getElementById("scivis-dialog") as HTMLElement & {
+  open: boolean
+}
+const scivisSearch = document.getElementById("scivis-search") as HTMLElement & {
+  value: string
+}
+const scivisDatasetList = document.getElementById(
+  "scivis-dataset-list",
+) as HTMLDivElement
+
+/** Flatten all datasets, optionally filtering by a search query. */
+function getFilteredDatasets(query: string): Array<{
+  name: string
+  url: string
+  category: string
+  subcategory?: string
+}> {
+  const q = query.toLowerCase().trim()
+  const results: Array<{
+    name: string
+    url: string
+    category: string
+    subcategory?: string
+  }> = []
+
+  for (const [categoryName, categoryData] of Object.entries(
+    OPEN_SCIVIS_CATEGORIES,
+  )) {
+    if (Array.isArray(categoryData)) {
+      for (const d of categoryData) {
+        if (!q || d.name.toLowerCase().includes(q)) {
+          results.push({ ...d, category: categoryName })
+        }
+      }
+    } else {
+      for (const [subName, datasets] of Object.entries(categoryData)) {
+        for (const d of datasets) {
+          if (!q || d.name.toLowerCase().includes(q)) {
+            results.push({
+              ...d,
+              category: categoryName,
+              subcategory: subName,
+            })
+          }
+        }
+      }
+    }
+  }
+  return results
+}
+
+/** Create a button element that loads a dataset URL on click. */
+function createDatasetButton(
+  dataset: OpenScivisDataset,
+  breadcrumb?: string,
+): HTMLElement {
+  const btn = document.createElement("wa-button")
+  btn.setAttribute("variant", "text")
+  btn.setAttribute("size", "small")
+  btn.classList.add("scivis-dataset-btn")
+
+  if (breadcrumb) {
+    const span = document.createElement("span")
+    const strong = document.createElement("strong")
+    strong.textContent = dataset.name
+    span.appendChild(strong)
+    span.appendChild(document.createElement("br"))
+    const small = document.createElement("small")
+    small.classList.add("scivis-breadcrumb")
+    small.textContent = breadcrumb
+    span.appendChild(small)
+    btn.appendChild(span)
+  } else {
+    btn.textContent = dataset.name
+  }
+
+  btn.addEventListener("click", () => {
+    scivisDialog.open = false
+    void handleUrl(dataset.url)
+  })
+  return btn
+}
+
+/**
+ * Render the dataset list inside the dialog.
+ *
+ * When a search query is active, shows a flat filtered list with category
+ * breadcrumbs. Otherwise renders hierarchical {@link wa-details} accordions
+ * matching the fideye element's Open SciVis dialog.
+ */
+function renderDatasetList(): void {
+  scivisDatasetList.innerHTML = ""
+  const query = (scivisSearch.value || "").trim()
+
+  if (query) {
+    const results = getFilteredDatasets(query)
+    if (results.length === 0) {
+      const p = document.createElement("p")
+      p.style.cssText =
+        "color: var(--wa-color-text-muted); text-align: center; padding: 20px;"
+      p.textContent = `No datasets found matching "${query}"`
+      scivisDatasetList.appendChild(p)
+      return
+    }
+    for (const d of results) {
+      const breadcrumb = d.subcategory
+        ? `${d.category} > ${d.subcategory}`
+        : d.category
+      scivisDatasetList.appendChild(createDatasetButton(d, breadcrumb))
+    }
+  } else {
+    for (const [categoryName, categoryData] of Object.entries(
+      OPEN_SCIVIS_CATEGORIES,
+    )) {
+      const details = document.createElement("wa-details")
+      details.setAttribute("summary", categoryName)
+      details.setAttribute("appearance", "plain")
+
+      if (Array.isArray(categoryData)) {
+        for (const d of categoryData) {
+          details.appendChild(createDatasetButton(d))
+        }
+      } else {
+        for (const [subName, datasets] of Object.entries(categoryData)) {
+          const subDetails = document.createElement("wa-details")
+          subDetails.setAttribute("summary", subName)
+          subDetails.setAttribute("appearance", "plain")
+          subDetails.style.marginLeft = "16px"
+          for (const d of datasets) {
+            subDetails.appendChild(createDatasetButton(d))
+          }
+          details.appendChild(subDetails)
+        }
+      }
+      scivisDatasetList.appendChild(details)
+    }
+  }
+}
+
+// Open the More Samples dialog
+moreSamplesBtn.addEventListener("click", () => {
+  scivisSearch.value = ""
+  renderDatasetList()
+  scivisDialog.open = true
+})
+
+// Re-render the list when the user types in the search input
+scivisSearch.addEventListener("input", () => renderDatasetList())
+scivisSearch.addEventListener("wa-clear", () => {
+  scivisSearch.value = ""
+  renderDatasetList()
 })
 
 // Drag and drop
