@@ -116,7 +116,7 @@ export function normalToAzimuthElevation(normal: [number, number, number]): {
 
   // Azimuth: angle in XY plane from +Y axis
   // atan2(x, y) gives angle from +Y, which matches NiiVue's azimuth=0 = posterior (+Y)
-  let azimuth = Math.atan2(x, y) * (180 / Math.PI)
+  let azimuth = Math.atan2(x, -y) * (180 / Math.PI)
   // Normalize to [0, 360)
   azimuth = ((azimuth % 360) + 360) % 360
 
@@ -139,7 +139,7 @@ export function azimuthElevationToNormal(
 
   const cosEl = Math.cos(elRad)
   const x = cosEl * Math.sin(azRad)
-  const y = cosEl * Math.cos(azRad)
+  const y = -cosEl * Math.cos(azRad)
   const z = Math.sin(elRad)
 
   return [x, y, z]
