@@ -575,8 +575,8 @@ export function createAxisAlignedClipPlane(
   let point: [number, number, number]
   let normal: [number, number, number]
 
-  // Normal points toward the visible region
-  const sign = direction === "positive" ? 1 : -1
+  // Normal points toward the clipped region for NiiVue's shader
+  const sign = direction === "positive" ? -1 : 1
 
   switch (axis) {
     case "x":
