@@ -1,5 +1,54 @@
 # @fideus-labs/fidnii
 
+## 0.7.3
+
+### Patch Changes
+
+- [#97](https://github.com/fideus-labs/fidnii/pull/97) [`a0fa1ec`](https://github.com/fideus-labs/fidnii/commit/a0fa1ece4eeba863278d573f72bf1a45ba533341) Thanks [@thewtex](https://github.com/thewtex)! - Constrain 2D slice navigation to clip plane bounds on the orthogonal axis
+
+  Previously, users could scroll past the ROI boundary in 2D slice views (axial,
+  coronal, sagittal) because the orthogonal slab extent was computed solely from
+  the crosshair position, ignoring clip planes on that axis.
+
+  Now `_loadSlabAtLevel()` clamps the orthogonal slab extent to the
+  clip-plane-constrained pixel region, preventing data fetches outside the ROI.
+  Additionally, `_handleLocationChange()` clamps the crosshair position to the
+  nearest ROI edge when the user tries to scroll past the boundary, so navigation
+  is physically constrained to the clipped region.
+
+- [#97](https://github.com/fideus-labs/fidnii/pull/97) [`82572e5`](https://github.com/fideus-labs/fidnii/commit/82572e562b7dd02980889c8ccbac91de350f9839) Thanks [@thewtex](https://github.com/thewtex)! - Fix orientation mismatch on downsampled resolution levels
+
+  The `@fideus-labs/ngff-zarr` downsampling code omits `axesOrientations` on
+  generated levels, so only level 0 carries anatomical orientation metadata.
+  This caused `OMEZarrNVImage` to build an unoriented affine for downsampled
+  levels, producing incorrect `calculateRAS()` results (identity `toRAS`
+  instead of the correct permutation/flip matrix).
+
+  Add `_createOrientedAffine()` helper that falls back to the base level's
+  `axesOrientations` when the current level lacks it, ensuring all resolution
+  levels share the same orientation transform.
+
+- [#97](https://github.com/fideus-labs/fidnii/pull/97) [`a0fa1ec`](https://github.com/fideus-labs/fidnii/commit/a0fa1ece4eeba863278d573f72bf1a45ba533341) Thanks [@thewtex](https://github.com/thewtex)! - Reload 2D slabs when clip planes change so ROI cropping applies to slice views
+
+  Previously, adjusting clip planes (e.g. via ROI sliders) only affected the 3D
+  rendered volume. 2D slice views (axial, coronal, sagittal, multiplanar) were not
+  updated because `handleDebouncedClipPlaneUpdate()` only triggered a 3D
+  `populateVolume()` refetch when the resolution level changed.
+
+  Now `_reloadAllSlabs()` is called after every debounced clip plane update. Since
+  slab loading already uses `_clipPlanes` to compute the in-plane fetch region via
+  `clipPlanesToPixelRegion()`, the refetched slab data is naturally constrained to
+  the ROI bounding box.
+
+- [#97](https://github.com/fideus-labs/fidnii/pull/97) [`c46b2d8`](https://github.com/fideus-labs/fidnii/commit/c46b2d8991ce59ad5753a875fa258163c905aacc) Thanks [@thewtex](https://github.com/thewtex)! - Transform clip plane normals through orientation mapping for NiiVue
+
+  NiiVue's orient shader physically reorders the 3D texture data to align
+  with RAS (texture axis 0 = L→R, 1 = P→A, 2 = I→S). When OME-Zarr axes
+  are permuted relative to RAS (e.g. the y axis encodes S/I instead of
+  A/P), clip plane normals, points, and buffer bounds must be permuted
+  through the orientation mapping so that the clipping direction matches
+  the RAS-reoriented texture coordinates.
+
 ## 0.7.2
 
 ### Patch Changes
