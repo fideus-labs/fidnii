@@ -417,7 +417,7 @@ test.describe("Slice Mode", () => {
     await page.waitForFunction(() => {
       const image = (window as any).image
       const slabState = image.getSlabBufferState(1)
-      return !!(slabState && slabState.nvImage)
+      return !!slabState?.nvImage
     })
 
     const result = await page.evaluate(async () => {
@@ -443,7 +443,7 @@ test.describe("Slice Mode", () => {
     await page.waitForFunction(() => {
       const image = (window as any).image
       const slabState = image.getSlabBufferState(0)
-      return !!(slabState && slabState.nvImage)
+      return !!slabState?.nvImage
     })
 
     // Change the colormap after the slab is already created
