@@ -1,5 +1,11 @@
 # @fideus-labs/fidnii
 
+## 0.7.4
+
+### Patch Changes
+
+- [#110](https://github.com/fideus-labs/fidnii/pull/110) [`3dce7dc`](https://github.com/fideus-labs/fidnii/commit/3dce7dc8481862047eec5a38008893c4fbd42052) Thanks [@thewtex](https://github.com/thewtex)! - build: migrate package manager from pnpm to bun
+
 ## 0.7.3
 
 ### Patch Changes
