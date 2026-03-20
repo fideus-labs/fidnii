@@ -70,11 +70,13 @@ import {
 import {
   affineToNiftiSrows,
   calculateWorldBounds,
-  createAffineFromNgffImage,
   createAffineFromOMEZarr,
 } from "./utils/affine.js"
-import { worldToPixelAffine } from "./utils/coordinates.js"
-import { getOrientationMapping } from "./utils/orientation.js"
+import { pixelToWorldAffine, worldToPixelAffine } from "./utils/coordinates.js"
+import {
+  applyOrientationToAffine,
+  getOrientationMapping,
+} from "./utils/orientation.js"
 import {
   boundsApproxEqual,
   computeViewportBounds2D,
@@ -870,6 +872,26 @@ export class OMEZarrNVImage extends NVImage {
   }
 
   /**
+   * Build an oriented affine for any resolution level, falling back
+   * to the base level's `axesOrientations` when the current level
+   * lacks orientation metadata.
+   *
+   * The `@fideus-labs/ngff-zarr` downsampling code currently omits
+   * `axesOrientations` on generated levels, so only level 0 carries
+   * orientation. Since orientation is a property of the physical
+   * space (not the resolution), it is correct to propagate it.
+   */
+  private _createOrientedAffine(ngffImage: NgffImage) {
+    const affine = createAffineFromOMEZarr(
+      ngffImage.scale,
+      ngffImage.translation,
+    )
+    const orientations =
+      ngffImage.axesOrientations ?? this.multiscales.images[0]?.axesOrientations
+    return applyOrientationToAffine(affine, orientations)
+  }
+
+  /**
    * Update NVImage header for a loaded region.
    *
    * With dynamic buffer sizing, the buffer dimensions equal the fetched dimensions.
@@ -930,7 +952,7 @@ export class OMEZarrNVImage extends NVImage {
     // and sign flips), then apply the region offset in world space.
     // The offset goes through the oriented 3x3 rotation matrix so it
     // lands on the correct world axis even when NGFF axes are permuted.
-    const affine = createAffineFromNgffImage(ngffImage)
+    const affine = this._createOrientedAffine(ngffImage)
 
     // regionStart is [z, y, x]; affine columns map NIfTI [i=x, j=y, k=z]
     const offsetX = regionStart[2] // NIfTI i = NGFF x
@@ -954,7 +976,10 @@ export class OMEZarrNVImage extends NVImage {
     // in the pixel buffer instead (see _flipRowsInPlace).
     if (this._flipY2D && this._is2D && !this._flipY2DInData) {
       // Get the y axis orientation mapping to find where the y scale is stored
-      const mapping = getOrientationMapping(ngffImage.axesOrientations)
+      const orientations =
+        ngffImage.axesOrientations ??
+        this.multiscales.images[0]?.axesOrientations
+      const mapping = getOrientationMapping(orientations)
       // The y scale is at affine[4 + physicalRow] (column 1, appropriate row)
       const yScaleIndex = 4 + mapping.y.physicalRow
       affine[13] += affine[yScaleIndex] * (fetchedShape[1] - 1)
@@ -1011,17 +1036,64 @@ export class OMEZarrNVImage extends NVImage {
   /**
    * Update NiiVue clip planes from current _clipPlanes.
    *
+   * NiiVue's orient shader physically reorders the 3D texture data so
+   * that its axes align with RAS (texture axis 0 = L→R, 1 = P→A,
+   * 2 = I→S). The clip plane shader then evaluates in this
+   * RAS-reoriented texture space.
+   *
+   * Clip planes are stored in OME-Zarr world space, where the axis
+   * order may differ from RAS (e.g. the y axis may encode S/I instead
+   * of A/P). We must permute clip plane normals, points, and buffer
+   * bounds from OME-Zarr axis order to the RAS physical row order that
+   * NiiVue's texture uses.
+   *
    * Clip planes are converted relative to the CURRENT BUFFER bounds,
-   * not the full volume bounds. This is because NiiVue's shader works
-   * in texture coordinates of the currently loaded data.
+   * not the full volume bounds, because NiiVue's shader works in
+   * texture coordinates of the currently loaded data.
    */
   private updateNiivueClipPlanes(): void {
-    // Use current buffer bounds for clip plane conversion
-    // This ensures clip planes are relative to the currently loaded data
-    const niivueClipPlanes = clipPlanesToNiivue(
-      this._clipPlanes,
-      this._currentBufferBounds,
+    const orientations = this.multiscales.images[0]?.axesOrientations
+    const mapping = getOrientationMapping(orientations)
+
+    // Permute a 3-vector from OME-Zarr axis order to RAS physical
+    // row order, applying sign flips for axis direction.
+    const permuteVec = (
+      v: [number, number, number],
+    ): [number, number, number] => {
+      const out: [number, number, number] = [0, 0, 0]
+      out[mapping.x.physicalRow] = mapping.x.sign * v[0]
+      out[mapping.y.physicalRow] = mapping.y.sign * v[1]
+      out[mapping.z.physicalRow] = mapping.z.sign * v[2]
+      return out
+    }
+
+    // Transform clip planes from OME-Zarr space to RAS-oriented space
+    const orientedPlanes: ClipPlanes = this._clipPlanes.map((p) => ({
+      point: permuteVec(p.point),
+      normal: permuteVec(p.normal),
+    }))
+
+    // Transform buffer bounds to RAS-oriented space
+    const bMin = permuteVec(
+      this._currentBufferBounds.min as [number, number, number],
     )
+    const bMax = permuteVec(
+      this._currentBufferBounds.max as [number, number, number],
+    )
+    const orientedBounds: VolumeBounds = {
+      min: [
+        Math.min(bMin[0], bMax[0]),
+        Math.min(bMin[1], bMax[1]),
+        Math.min(bMin[2], bMax[2]),
+      ],
+      max: [
+        Math.max(bMin[0], bMax[0]),
+        Math.max(bMin[1], bMax[1]),
+        Math.max(bMin[2], bMax[2]),
+      ],
+    }
+
+    const niivueClipPlanes = clipPlanesToNiivue(orientedPlanes, orientedBounds)
 
     if (niivueClipPlanes.length > 0) {
       this.niivue.scene.clipPlaneDepthAziElevs = niivueClipPlanes
@@ -1305,6 +1377,11 @@ export class OMEZarrNVImage extends NVImage {
       this._invalidateTimeFrameCache()
       this.populateVolume(true, "clipPlanesChanged") // Skip preview for clip plane updates
     }
+
+    // Reload active slabs so 2D views respect the updated clip planes.
+    // Slab loading already uses _clipPlanes to compute the fetch region,
+    // so reloading constrains the visible 2D data to the ROI.
+    this._reloadAllSlabs("clipPlanesChanged")
 
     // Emit clipPlanesChange event (after debounce)
     this._emitEvent("clipPlanesChange", {
@@ -2432,12 +2509,49 @@ export class OMEZarrNVImage extends NVImage {
     // Must use the full oriented affine (not the naive scale+translation)
     // because worldCoord is in oriented (NIfTI RAS) space.
     const ngffImage = this.multiscales.images[slabState.levelIndex]
-    const orientedAffine = createAffineFromNgffImage(ngffImage)
+    const orientedAffine = this._createOrientedAffine(ngffImage)
     const pixelCoord = worldToPixelAffine(worldCoord, orientedAffine)
 
     // Check the orthogonal axis
     const orthAxis = this._getOrthogonalAxis(sliceType)
     const pixelPos = pixelCoord[orthAxis]
+
+    // Clamp crosshair to clip plane bounds on the orthogonal axis so the
+    // user cannot scroll past the ROI boundary in 2D slice views.
+    if (this._clipPlanes.length > 0) {
+      const pixelRegion = clipPlanesToPixelRegion(
+        this._clipPlanes,
+        this._volumeBounds,
+        ngffImage,
+      )
+      const orthMin = pixelRegion.start[orthAxis]
+      const orthMax = pixelRegion.end[orthAxis]
+
+      if (pixelPos < orthMin || pixelPos >= orthMax) {
+        // Clamp to the nearest edge of the clip plane region
+        const clampedPixel = [...pixelCoord] as [number, number, number]
+        clampedPixel[orthAxis] = Math.max(
+          orthMin,
+          Math.min(orthMax - 1, pixelPos),
+        )
+
+        // Convert clamped pixel back to world → normalized mm → frac
+        const clampedWorld = pixelToWorldAffine(clampedPixel, orientedAffine)
+        const ns = slabState.normalizationScale
+        const normalizedMM: [number, number, number] = [
+          clampedWorld[0] * ns,
+          clampedWorld[1] * ns,
+          clampedWorld[2] * ns,
+        ]
+        const frac = nv.mm2frac(normalizedMM)
+        frac[0] = Math.max(0, Math.min(1, frac[0]))
+        frac[1] = Math.max(0, Math.min(1, frac[1]))
+        frac[2] = Math.max(0, Math.min(1, frac[2]))
+        nv.scene.crosshairPos = frac
+        nv.drawScene()
+        return // Repositioning fires a new locationChange event
+      }
+    }
 
     // Is the pixel position outside the currently loaded slab?
     if (pixelPos < slabState.slabStart || pixelPos >= slabState.slabEnd) {
@@ -2778,14 +2892,14 @@ export class OMEZarrNVImage extends NVImage {
     // Convert world position to pixel position at this level.
     // Must use the full oriented affine because worldCoord is in oriented
     // (NIfTI RAS) space, not raw NGFF scale+translation space.
-    const orientedAffine = createAffineFromNgffImage(ngffImage)
+    const orientedAffine = this._createOrientedAffine(ngffImage)
     const pixelCoord = worldToPixelAffine(worldCoord, orientedAffine)
     const orthPixel = pixelCoord[orthAxis]
 
     // Find the chunk-aligned slab in the orthogonal axis
     const chunkSize = chunkShape[orthAxis]
-    const slabStart = Math.max(0, Math.floor(orthPixel / chunkSize) * chunkSize)
-    const slabEnd = Math.min(slabStart + chunkSize, volumeShape[orthAxis])
+    let slabStart = Math.max(0, Math.floor(orthPixel / chunkSize) * chunkSize)
+    let slabEnd = Math.min(slabStart + chunkSize, volumeShape[orthAxis])
 
     // Get the full in-plane region (respecting clip planes only).
     // Viewport bounds are intentionally NOT passed here — they are used only
@@ -2799,7 +2913,23 @@ export class OMEZarrNVImage extends NVImage {
     )
     const alignedRegion = alignToChunks(pixelRegion, ngffImage)
 
-    // Override the orthogonal axis with our slab extent
+    // Clamp the orthogonal slab extent to clip plane bounds so 2D views
+    // never fetch data outside the ROI on the perpendicular axis.
+    if (this._clipPlanes.length > 0) {
+      slabStart = Math.max(slabStart, alignedRegion.chunkAlignedStart[orthAxis])
+      slabEnd = Math.min(slabEnd, alignedRegion.chunkAlignedEnd[orthAxis])
+      if (slabEnd <= slabStart) {
+        // Crosshair is entirely outside the clip plane region on this
+        // axis — snap to the first chunk of the clipped region.
+        slabStart = alignedRegion.chunkAlignedStart[orthAxis]
+        slabEnd = Math.min(
+          slabStart + chunkSize,
+          alignedRegion.chunkAlignedEnd[orthAxis],
+        )
+      }
+    }
+
+    // Override the orthogonal axis with our (clamped) slab extent
     const fetchStart: [number, number, number] = [
       alignedRegion.chunkAlignedStart[0],
       alignedRegion.chunkAlignedStart[1],
@@ -2987,7 +3117,7 @@ export class OMEZarrNVImage extends NVImage {
     // matrix is needed to transform that voxel offset into world coordinates.
     // Previously, the offset was applied before orientation which broke when
     // NGFF axes were permuted (e.g. NGFF z → physical A/P axis).
-    const affine = createAffineFromNgffImage(ngffImage)
+    const affine = this._createOrientedAffine(ngffImage)
 
     // Transform the NGFF voxel offset through the oriented 3x3 rotation.
     // fetchStart is [z, y, x]; affine columns map NIfTI [i=x, j=y, k=z]

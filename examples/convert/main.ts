@@ -16,8 +16,16 @@ import "@awesome.me/webawesome/dist/components/radio-group/radio-group.js"
 import "@awesome.me/webawesome/dist/components/select/select.js"
 import "@awesome.me/webawesome/dist/components/slider/slider.js"
 
-import { getChannelInfo, OMEZarrNVImage } from "@fideus-labs/fidnii"
+import type { VolumeBounds } from "@fideus-labs/fidnii"
+import {
+  createAxisAlignedClipPlane,
+  getChannelInfo,
+  getOrientationMapping,
+  getVolumeBoundsFromMultiscales,
+  OMEZarrNVImage,
+} from "@fideus-labs/fidnii"
 import type { Multiscales } from "@fideus-labs/ngff-zarr"
+import type { Connectome, NVConnectomeNode } from "@niivue/niivue"
 import { Niivue, SLICE_TYPE } from "@niivue/niivue"
 
 import {
@@ -26,10 +34,12 @@ import {
   type ConvertResult,
   convertImage,
   convertMultiscales,
+  cropMultiscales,
   downloadFile,
   fetchImageFile,
   formatFileSize,
   getMultiscalesInfo,
+  isFullVolume,
   isOmeZarrUrl,
   isTiffFilename,
   isTiffUrl,
@@ -104,6 +114,16 @@ const silhouetteSlider = document.getElementById(
   "silhouette",
 ) as HTMLInputElement
 
+// Minimap elements
+const minimapCard = document.getElementById("minimap-card") as HTMLElement
+const minimapCanvas = document.getElementById("minimap-gl") as HTMLCanvasElement
+const minimapRoiOverlay = document.getElementById(
+  "minimap-roi-overlay",
+) as HTMLDivElement
+const roiXSlider = document.getElementById("roi-x") as HTMLInputElement
+const roiYSlider = document.getElementById("roi-y") as HTMLInputElement
+const roiZSlider = document.getElementById("roi-z") as HTMLInputElement
+
 /** File extensions that are known to produce 2D (single-slice) images. */
 const IMAGE_2D_EXTENSIONS = new Set([
   ".png",
@@ -132,6 +152,51 @@ let loadedMultiscales: Multiscales | null = null
 let loadedName = ""
 let nv: Niivue | null = null
 let currentImage: OMEZarrNVImage | null = null
+
+// Minimap state
+let minimapNv: Niivue | null = null
+let minimapImage: OMEZarrNVImage | null = null
+let volumeBounds: VolumeBounds | null = null
+
+/**
+ * Minimap image's oriented NIfTI affine (4x4, row-major rows stored
+ * as 4 arrays of 4) and OME-Zarr scale/translation.  Used to convert
+ * ROI slider values from OME-Zarr world space to the NiiVue mm-space
+ * the connectome wireframe needs to live in.
+ */
+let _minimapAffineState: {
+  /** Oriented affine as 4 rows of 4 (from NVImage.hdr.affine). */
+  affine: number[][]
+  /** OME-Zarr scale for the minimap resolution level. */
+  scale: { x: number; y: number; z: number }
+  /** OME-Zarr translation for the minimap resolution level. */
+  translation: { x: number; y: number; z: number }
+} | null = null
+
+/** AbortController for tearing down minimap ↔ main camera sync listeners. */
+let _syncAbort: AbortController | null = null
+
+/** Re-entrancy guard so bidirectional camera sync doesn't loop. */
+let _syncing = false
+
+/** Whether the current minimap is for a 2D image (no z axis). */
+let _minimapIs2D = false
+
+/** Pixel budget for the minimap (lower resolution for overview). */
+const MINIMAP_MAX_PIXELS = 5_000_000
+
+/** Warm orange RGBA for the ROI box: #E87400 */
+const ROI_RGBA: [number, number, number, number] = [232 / 255, 116 / 255, 0, 1]
+
+/**
+ * Map from RAS physical row index to anatomical plane name.
+ * Row 0 = R/L (Sagittal), Row 1 = A/P (Coronal), Row 2 = S/I (Axial).
+ */
+const PLANE_NAMES: Record<number, string> = {
+  0: "Sagittal",
+  1: "Coronal",
+  2: "Axial",
+}
 
 // Slice type string-to-enum mapping
 const SLICE_TYPE_MAP: Record<string, SLICE_TYPE> = {
@@ -202,9 +267,427 @@ function initNiivue(): void {
     backColor: [0.384, 0.365, 0.353, 1],
     isOrientCube: false,
     isOrientationTextVisible: false,
+    clipPlaneHotKey: "",
   })
   nv.attachToCanvas(canvas)
   nv.addColormap("fast", FAST_COLORMAP)
+}
+
+// --------------- Minimap helpers ---------------
+
+/** Create a 256-entry single-color LUT for the ROI box wireframe. */
+function buildRoiColormap(): {
+  R: number[]
+  G: number[]
+  B: number[]
+  A: number[]
+  I: number[]
+} {
+  const R = new Array<number>(256).fill(Math.round(ROI_RGBA[0] * 255))
+  const G = new Array<number>(256).fill(Math.round(ROI_RGBA[1] * 255))
+  const B = new Array<number>(256).fill(Math.round(ROI_RGBA[2] * 255))
+  const A = new Array<number>(256).fill(255)
+  const I = new Array<number>(256).fill(0).map((_, i) => i)
+  // First entry transparent so sizeValue=0 nodes are invisible
+  R[0] = 0
+  G[0] = 0
+  B[0] = 0
+  A[0] = 0
+  return { R, G, B, A, I }
+}
+
+/** Initialize the minimap NiiVue instance (lazy, only done once). */
+function initMinimapNiivue(): void {
+  if (minimapNv) return
+
+  minimapNv = new Niivue({
+    show3Dcrosshair: false,
+    crosshairWidth: 0,
+    backColor: [0.384, 0.365, 0.353, 1],
+    isOrientCube: false,
+    isOrientationTextVisible: false,
+    clipPlaneHotKey: "",
+  })
+  minimapNv.attachToCanvas(minimapCanvas)
+  minimapNv.addColormap("fast", FAST_COLORMAP)
+  minimapNv.addColormap("roi", buildRoiColormap())
+}
+
+/**
+ * Build a NiiVue connectome representing the ROI bounding box as
+ * 8 corner nodes connected by 12 edges (wireframe cube).
+ *
+ * @param min - ROI min corner in world coordinates [x, y, z]
+ * @param max - ROI max corner in world coordinates [x, y, z]
+ */
+function buildRoiConnectome(
+  min: [number, number, number],
+  max: [number, number, number],
+): Connectome {
+  const nodes: NVConnectomeNode[] = [
+    { name: "0", x: min[0], y: min[1], z: min[2], colorValue: 1, sizeValue: 0 },
+    { name: "1", x: max[0], y: min[1], z: min[2], colorValue: 1, sizeValue: 0 },
+    { name: "2", x: min[0], y: max[1], z: min[2], colorValue: 1, sizeValue: 0 },
+    { name: "3", x: max[0], y: max[1], z: min[2], colorValue: 1, sizeValue: 0 },
+    { name: "4", x: min[0], y: min[1], z: max[2], colorValue: 1, sizeValue: 0 },
+    { name: "5", x: max[0], y: min[1], z: max[2], colorValue: 1, sizeValue: 0 },
+    { name: "6", x: min[0], y: max[1], z: max[2], colorValue: 1, sizeValue: 0 },
+    { name: "7", x: max[0], y: max[1], z: max[2], colorValue: 1, sizeValue: 0 },
+  ]
+  // 12 edges forming a wireframe cube
+  const edges = [
+    // Bottom face (z = min)
+    { first: 0, second: 1, colorValue: 1 },
+    { first: 1, second: 3, colorValue: 1 },
+    { first: 3, second: 2, colorValue: 1 },
+    { first: 2, second: 0, colorValue: 1 },
+    // Top face (z = max)
+    { first: 4, second: 5, colorValue: 1 },
+    { first: 5, second: 7, colorValue: 1 },
+    { first: 7, second: 6, colorValue: 1 },
+    { first: 6, second: 4, colorValue: 1 },
+    // Vertical edges
+    { first: 0, second: 4, colorValue: 1 },
+    { first: 1, second: 5, colorValue: 1 },
+    { first: 2, second: 6, colorValue: 1 },
+    { first: 3, second: 7, colorValue: 1 },
+  ]
+  return {
+    name: "roiBox",
+    nodeColormap: "roi",
+    nodeColormapNegative: "roi",
+    nodeMinColor: 0,
+    nodeMaxColor: 2,
+    nodeScale: 0,
+    edgeColormap: "roi",
+    edgeColormapNegative: "roi",
+    edgeMin: 0,
+    edgeMax: 2,
+    edgeScale: 2,
+    nodes,
+    edges,
+  }
+}
+
+/**
+ * Update the ROI wireframe box on the minimap by mutating the
+ * existing connectome node positions.
+ */
+function updateMinimapBox(
+  min: [number, number, number],
+  max: [number, number, number],
+): void {
+  if (!minimapNv || minimapNv.meshes.length === 0) return
+  const mesh = minimapNv.meshes[0]
+  const nodes = mesh.nodes as NVConnectomeNode[] | undefined
+  if (!nodes || nodes.length < 8) return
+
+  const corners: [number, number, number][] = [
+    [min[0], min[1], min[2]],
+    [max[0], min[1], min[2]],
+    [min[0], max[1], min[2]],
+    [max[0], max[1], min[2]],
+    [min[0], min[1], max[2]],
+    [max[0], min[1], max[2]],
+    [min[0], max[1], max[2]],
+    [max[0], max[1], max[2]],
+  ]
+  for (let i = 0; i < 8; i++) {
+    nodes[i].x = corners[i][0]
+    nodes[i].y = corners[i][1]
+    nodes[i].z = corners[i][2]
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const gl = (minimapNv as any)._gl as WebGL2RenderingContext | null
+  if (gl) {
+    ;(mesh as any).updateConnectome(gl)
+  }
+  minimapNv.updateGLVolume()
+}
+
+/**
+ * Position the HTML overlay rectangle on the 2D minimap to visualise
+ * the current ROI bounds.  Uses NiiVue's `mm2frac` and
+ * `frac2canvasPos` to map two ROI corners to canvas-pixel
+ * coordinates, then scales to CSS pixels.
+ *
+ * The overlay is hidden when the ROI covers the full volume bounds
+ * (i.e. no cropping) and shown otherwise.
+ */
+function updateMinimapOverlay2D(
+  min: [number, number, number],
+  max: [number, number, number],
+): void {
+  if (!minimapNv || minimapNv.screenSlices.length === 0 || !volumeBounds) {
+    minimapRoiOverlay.style.display = "none"
+    return
+  }
+
+  // If the ROI covers the full volume, hide the overlay
+  if (
+    Math.abs(min[0] - volumeBounds.min[0]) < 0.01 &&
+    Math.abs(min[1] - volumeBounds.min[1]) < 0.01 &&
+    Math.abs(max[0] - volumeBounds.max[0]) < 0.01 &&
+    Math.abs(max[1] - volumeBounds.max[1]) < 0.01
+  ) {
+    minimapRoiOverlay.style.display = "none"
+    return
+  }
+
+  // Compute the ROI as a fraction of the full volume extent.
+  // This avoids NiiVue's mm2frac/frac2canvasPos pipeline which
+  // rejects coordinates outside [0,1] — and the full-volume max
+  // corner maps to frac ~2.0 because NiiVue centres its internal
+  // coordinate space at the volume midpoint.
+  const volExtentX = volumeBounds.max[0] - volumeBounds.min[0] || 1
+  const volExtentY = volumeBounds.max[1] - volumeBounds.min[1] || 1
+  const roiFracMinX = (min[0] - volumeBounds.min[0]) / volExtentX
+  const roiFracMinY = (min[1] - volumeBounds.min[1]) / volExtentY
+  const roiFracMaxX = (max[0] - volumeBounds.min[0]) / volExtentX
+  const roiFracMaxY = (max[1] - volumeBounds.min[1]) / volExtentY
+
+  // Map through screenSlices[0] (the single axial tile for 2D)
+  const slice = minimapNv.screenSlices[0]
+  if (!slice || !slice.fovMM || slice.fovMM.length < 2) {
+    minimapRoiOverlay.style.display = "none"
+    return
+  }
+
+  const ltwh = [...slice.leftTopWidthHeight]
+  let isMirror = false
+  if (ltwh[2] < 0) {
+    isMirror = true
+    ltwh[0] += ltwh[2]
+    ltwh[2] = -ltwh[2]
+  }
+
+  // Screen X: optionally mirrored
+  const sMinX = isMirror ? 1 - roiFracMaxX : roiFracMinX
+  const sMaxX = isMirror ? 1 - roiFracMinX : roiFracMaxX
+  // Screen Y: flipped (screen Y goes down, image Y goes up)
+  const sMinY = 1 - roiFracMaxY
+  const sMaxY = 1 - roiFracMinY
+
+  // Fractional → canvas pixels within the tile
+  const pxLeft = ltwh[0] + sMinX * ltwh[2]
+  const pxTop = ltwh[1] + sMinY * ltwh[3]
+  const pxRight = ltwh[0] + sMaxX * ltwh[2]
+  const pxBottom = ltwh[1] + sMaxY * ltwh[3]
+
+  // Canvas pixels → CSS pixels.  NiiVue may scale the canvas
+  // buffer by devicePixelRatio on resize, so derive the ratio
+  // from the actual canvas dimensions vs its CSS size.
+  const cssW = minimapCanvas.offsetWidth || 1
+  const ratio = minimapCanvas.width / cssW
+
+  minimapRoiOverlay.style.display = "block"
+  minimapRoiOverlay.style.left = `${pxLeft / ratio}px`
+  minimapRoiOverlay.style.top = `${pxTop / ratio}px`
+  minimapRoiOverlay.style.width = `${(pxRight - pxLeft) / ratio}px`
+  minimapRoiOverlay.style.height = `${(pxBottom - pxTop) / ratio}px`
+}
+
+/** Read the current ROI slider values as world-coordinate bounds. */
+function readRoiSliders(): {
+  min: [number, number, number]
+  max: [number, number, number]
+} {
+  const xSlider = roiXSlider as unknown as {
+    minValue: number
+    maxValue: number
+  }
+  const ySlider = roiYSlider as unknown as {
+    minValue: number
+    maxValue: number
+  }
+  const zSlider = roiZSlider as unknown as {
+    minValue: number
+    maxValue: number
+  }
+  return {
+    min: [xSlider.minValue, ySlider.minValue, zSlider.minValue],
+    max: [xSlider.maxValue, ySlider.maxValue, zSlider.maxValue],
+  }
+}
+
+/**
+ * Convert a point from OME-Zarr world space to NiiVue mm-space using
+ * the minimap image's oriented NIfTI affine.
+ *
+ * Steps:
+ * 1. OME-Zarr world → voxel: `voxel_i = (world_i - translation_i) / scale_i`
+ * 2. Voxel → mm: multiply by the oriented affine matrix
+ *
+ * ROI sliders operate in OME-Zarr space, but the connectome wireframe
+ * must be positioned in NiiVue's post-reorientation mm-space so that
+ * the box aligns with the rendered volume.
+ */
+function omeZarrToMM(
+  point: [number, number, number],
+): [number, number, number] {
+  if (!_minimapAffineState) return [...point] as [number, number, number]
+
+  const { affine, scale, translation } = _minimapAffineState
+
+  // OME-Zarr world → voxel
+  const vx = (point[0] - translation.x) / scale.x
+  const vy = (point[1] - translation.y) / scale.y
+  const vz = (point[2] - translation.z) / scale.z
+
+  // Voxel → mm via oriented affine (row-major: affine[row][col])
+  const mx =
+    affine[0][0] * vx + affine[0][1] * vy + affine[0][2] * vz + affine[0][3]
+  const my =
+    affine[1][0] * vx + affine[1][1] * vy + affine[1][2] * vz + affine[1][3]
+  const mz =
+    affine[2][0] * vx + affine[2][1] * vy + affine[2][2] * vz + affine[2][3]
+
+  return [mx, my, mz]
+}
+
+/**
+ * Apply the current ROI slider values as clip planes on the main
+ * image and update the wireframe box on the minimap.
+ */
+function updateRoi(): void {
+  if (!volumeBounds || !currentImage) return
+
+  const roi = readRoiSliders()
+
+  // Only apply clip planes if the ROI differs from the full volume
+  const isFullVolume =
+    Math.abs(roi.min[0] - volumeBounds.min[0]) < 0.01 &&
+    Math.abs(roi.min[1] - volumeBounds.min[1]) < 0.01 &&
+    Math.abs(roi.min[2] - volumeBounds.min[2]) < 0.01 &&
+    Math.abs(roi.max[0] - volumeBounds.max[0]) < 0.01 &&
+    Math.abs(roi.max[1] - volumeBounds.max[1]) < 0.01 &&
+    Math.abs(roi.max[2] - volumeBounds.max[2]) < 0.01
+
+  if (isFullVolume) {
+    currentImage.clearClipPlanes()
+  } else if (_minimapIs2D) {
+    // 2D images: only clip on X and Y (z is degenerate)
+    const planes = [
+      createAxisAlignedClipPlane("x", roi.min[0], "positive", volumeBounds),
+      createAxisAlignedClipPlane("x", roi.max[0], "negative", volumeBounds),
+      createAxisAlignedClipPlane("y", roi.min[1], "positive", volumeBounds),
+      createAxisAlignedClipPlane("y", roi.max[1], "negative", volumeBounds),
+    ]
+    currentImage.setClipPlanes(planes)
+  } else {
+    const planes = [
+      createAxisAlignedClipPlane("x", roi.min[0], "positive", volumeBounds),
+      createAxisAlignedClipPlane("x", roi.max[0], "negative", volumeBounds),
+      createAxisAlignedClipPlane("y", roi.min[1], "positive", volumeBounds),
+      createAxisAlignedClipPlane("y", roi.max[1], "negative", volumeBounds),
+      createAxisAlignedClipPlane("z", roi.min[2], "positive", volumeBounds),
+      createAxisAlignedClipPlane("z", roi.max[2], "negative", volumeBounds),
+    ]
+    currentImage.setClipPlanes(planes)
+  }
+
+  // Update the ROI indicator on the minimap.
+  if (_minimapIs2D) {
+    // 2D: position the HTML overlay rectangle
+    updateMinimapOverlay2D(roi.min, roi.max)
+  } else {
+    // 3D: mutate the connectome wireframe node positions (mm-space)
+    const mmMin = omeZarrToMM(roi.min)
+    const mmMax = omeZarrToMM(roi.max)
+    updateMinimapBox(mmMin, mmMax)
+  }
+}
+
+/**
+ * Configure the ROI range sliders to match the current volume bounds
+ * and reset them to the full range.
+ *
+ * When orientation metadata is available, slider labels use anatomical
+ * plane names (Sagittal, Coronal, Axial) instead of generic X/Y/Z.
+ *
+ * For 2D images the Z slider is hidden and pinned to the full z range.
+ */
+function initRoiSliders(
+  bounds: VolumeBounds,
+  axesOrientations?: Record<string, unknown>,
+  is2D = false,
+): void {
+  const mapping = getOrientationMapping(
+    axesOrientations as Parameters<typeof getOrientationMapping>[0],
+  )
+  const xLabel =
+    !is2D && axesOrientations ? PLANE_NAMES[mapping.x.physicalRow] : "X"
+  const yLabel =
+    !is2D && axesOrientations ? PLANE_NAMES[mapping.y.physicalRow] : "Y"
+  const zLabel =
+    !is2D && axesOrientations ? PLANE_NAMES[mapping.z.physicalRow] : "Z"
+
+  const axes: { slider: HTMLInputElement; idx: 0 | 1 | 2; label: string }[] = [
+    { slider: roiXSlider, idx: 0, label: xLabel },
+    { slider: roiYSlider, idx: 1, label: yLabel },
+    { slider: roiZSlider, idx: 2, label: zLabel },
+  ]
+
+  for (const { slider, idx, label } of axes) {
+    const lo = bounds.min[idx]
+    const hi = bounds.max[idx]
+    const range = hi - lo
+    const step = Math.max(range / 200, 0.01)
+
+    const s = slider as unknown as {
+      min: number
+      max: number
+      step: number
+      minValue: number
+      maxValue: number
+      label: string
+      valueFormatter: (value: number) => string
+    }
+    s.min = lo
+    s.max = hi
+    s.step = parseFloat(step.toFixed(4))
+    s.minValue = lo
+    s.maxValue = hi
+    s.label = `${label} Range`
+    s.valueFormatter = (v: number) => v.toFixed(1)
+  }
+
+  // Hide the Z slider for 2D images (the z extent is degenerate)
+  roiZSlider.classList.toggle("hidden", is2D)
+}
+
+/**
+ * Clean up minimap state when loading a new image.
+ */
+function cleanupMinimap(): void {
+  // Tear down camera sync listeners before disposing of instances
+  if (_syncAbort) {
+    _syncAbort.abort()
+    _syncAbort = null
+  }
+
+  if (minimapImage && minimapNv) {
+    minimapImage.detachNiivue(minimapNv)
+    minimapNv.removeVolume(minimapImage)
+  }
+  minimapImage = null
+  if (minimapNv) {
+    // Remove existing meshes (connectome)
+    for (const mesh of minimapNv.meshes) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const gl = (minimapNv as any)._gl as WebGL2RenderingContext | null
+      if (gl) {
+        mesh.unloadMesh(gl)
+      }
+    }
+    minimapNv.meshes = []
+  }
+  volumeBounds = null
+  _minimapAffineState = null
+  _minimapIs2D = false
+  minimapRoiOverlay.style.display = "none"
+  minimapCard.classList.add("hidden")
 }
 
 /**
@@ -654,6 +1137,241 @@ function set3DControlsVisible(visible: boolean): void {
   }
 }
 
+/**
+ * Set up the minimap NiiVue instance, load a low-resolution copy of
+ * the image, overlay the ROI wireframe box, configure bidirectional
+ * camera sync with the main viewer, and initialize the range sliders.
+ */
+async function initMinimapPreview(
+  multiscales: Multiscales,
+  opts: { colormap: string | null; is2D?: boolean },
+): Promise<void> {
+  if (!nv) return
+
+  // Clean up any previous minimap state
+  cleanupMinimap()
+
+  const is2D = opts.is2D ?? false
+  _minimapIs2D = is2D
+
+  // Show the minimap card early so the canvas has valid dimensions
+  // when NiiVue attaches to it (a 0×0 canvas causes WebGL errors).
+  minimapCard.classList.remove("hidden")
+
+  initMinimapNiivue()
+  if (!minimapNv) return
+
+  // Compute world-space bounds of the full volume
+  const bounds = getVolumeBoundsFromMultiscales(multiscales)
+  volumeBounds = bounds
+
+  // Copy orientation settings from the main viewer (skip for 2D
+  // images which have no meaningful anatomical orientation)
+  if (!is2D) {
+    const hasOrientation = multiscales.images[0]?.axesOrientations !== undefined
+    minimapNv.opts.isOrientCube = hasOrientation
+    minimapNv.opts.isOrientationTextVisible = hasOrientation
+  }
+
+  // Create a lower-resolution image for the minimap
+  const mmImage = await OMEZarrNVImage.create({
+    multiscales,
+    niivue: minimapNv,
+    autoLoad: false,
+    maxPixels: MINIMAP_MAX_PIXELS,
+  })
+  minimapImage = mmImage
+
+  // Load the minimap image
+  minimapNv.volumes = []
+  minimapNv.addVolume(mmImage)
+  await mmImage.populateVolume()
+
+  // Capture the minimap image's oriented affine and OME-Zarr
+  // scale/translation so omeZarrToMM() can transform ROI slider
+  // values (OME-Zarr world space) to NiiVue mm-space for the
+  // connectome wireframe.  The affine is available after
+  // populateVolume() updates the NVImage header.
+  const mmLevel = multiscales.images[mmImage.getCurrentLevelIndex()]
+  const hdrAffine = mmImage.hdr?.affine
+  if (hdrAffine && mmLevel) {
+    _minimapAffineState = {
+      affine: hdrAffine.map((row: number[]) => [...row]),
+      scale: {
+        x: mmLevel.scale.x ?? mmLevel.scale.X ?? 1,
+        y: mmLevel.scale.y ?? mmLevel.scale.Y ?? 1,
+        z: mmLevel.scale.z ?? mmLevel.scale.Z ?? 1,
+      },
+      translation: {
+        x: mmLevel.translation.x ?? mmLevel.translation.X ?? 0,
+        y: mmLevel.translation.y ?? mmLevel.translation.Y ?? 0,
+        z: mmLevel.translation.z ?? mmLevel.translation.Z ?? 0,
+      },
+    }
+  }
+
+  // Apply the same colormap as the main image
+  if (opts.colormap) {
+    mmImage.colormap = opts.colormap
+  }
+
+  minimapNv.opts.heroImageFraction = 0
+  if (is2D) {
+    // 2D images: always axial, no gradient effects
+    minimapNv.setSliceType(SLICE_TYPE.AXIAL)
+  } else {
+    // Match the minimap slice type to the current preview selection.
+    // Multiplanar maps to Render so the 3D overview fills the canvas.
+    const currentSliceType = getSelectedSliceType()
+    minimapNv.setSliceType(
+      currentSliceType === SLICE_TYPE.MULTIPLANAR
+        ? SLICE_TYPE.RENDER
+        : currentSliceType,
+    )
+
+    // Apply the same gradient settings (only meaningful for 3D)
+    const opacity = parseFloat(
+      (opacitySlider as unknown as { value: string }).value || "0.5",
+    )
+    const silhouette = parseFloat(
+      (silhouetteSlider as unknown as { value: string }).value || "0",
+    )
+    await minimapNv.setGradientOpacity(opacity, silhouette)
+  }
+  // For 2D images, NiiVue's mesh rendering shader requires the
+  // obliqueRAS uniform matrix which is not initialised for single-
+  // slice (z=1) volumes.  Any call that draws the scene with a mesh
+  // present will crash with "uniformMatrix4fv: value cannot be
+  // converted to a sequence".  So we skip the connectome wireframe
+  // for 2D and rely on the ROI sliders alone for visual feedback.
+  if (!is2D) {
+    // Force a render pass so NiiVue's internal matrices are settled
+    // before loading the connectome overlay.
+    minimapNv.updateGLVolume()
+
+    // Load the ROI wireframe box as a connectome.
+    // Convert full-volume bounds from OME-Zarr world space to NiiVue
+    // mm-space so the wireframe aligns with the rendered volume.
+    const connectome = buildRoiConnectome(
+      omeZarrToMM(bounds.min),
+      omeZarrToMM(bounds.max),
+    )
+    await minimapNv.loadConnectome(connectome)
+    minimapNv.opts.meshXRay = 0.15
+  }
+
+  if (!is2D) {
+    // --- Bidirectional camera sync via events (not broadcastTo) ---
+    // We avoid broadcastTo because its polling-based 2D sync converts
+    // fractional→mm→fractional across different-resolution volumes,
+    // which causes crosshair positions to land in invalid space.
+    // Instead, we listen for azimuth/elevation and zoom events and
+    // mirror them with a re-entrancy guard to prevent loops.
+
+    _syncAbort?.abort()
+    const abort = new AbortController()
+    _syncAbort = abort
+    const signal = abort.signal
+
+    // Main → Minimap
+    nv.addEventListener(
+      "azimuthElevationChange",
+      (event) => {
+        if (_syncing || !minimapNv) return
+        _syncing = true
+        try {
+          minimapNv.setRenderAzimuthElevation(
+            event.detail.azimuth,
+            event.detail.elevation,
+          )
+        } finally {
+          _syncing = false
+        }
+      },
+      { signal },
+    )
+    nv.addEventListener(
+      "zoom3DChange",
+      (event) => {
+        if (_syncing || !minimapNv) return
+        _syncing = true
+        try {
+          minimapNv.scene.volScaleMultiplier = event.detail.zoom
+          minimapNv.drawScene()
+        } finally {
+          _syncing = false
+        }
+      },
+      { signal },
+    )
+
+    // Minimap → Main
+    minimapNv.addEventListener(
+      "azimuthElevationChange",
+      (event) => {
+        if (_syncing || !nv) return
+        _syncing = true
+        try {
+          nv.setRenderAzimuthElevation(
+            event.detail.azimuth,
+            event.detail.elevation,
+          )
+        } finally {
+          _syncing = false
+        }
+      },
+      { signal },
+    )
+    minimapNv.addEventListener(
+      "zoom3DChange",
+      (event) => {
+        if (_syncing || !nv) return
+        _syncing = true
+        try {
+          nv.scene.volScaleMultiplier = event.detail.zoom
+          nv.drawScene()
+        } finally {
+          _syncing = false
+        }
+      },
+      { signal },
+    )
+  }
+
+  // Initialize the range sliders to match the volume bounds
+  initRoiSliders(bounds, multiscales.images[0]?.axesOrientations, is2D)
+
+  // For 3D volumes, trigger a full GL update (including mesh).
+  // For 2D, drawScene alone is safe (no mesh loaded).
+  if (is2D) {
+    minimapNv.drawScene()
+
+    // The overlay needs screenSlices to be populated (set by
+    // drawScene) so we show it at full-bounds after the first paint.
+    // It will be hidden automatically since the ROI matches the full
+    // volume, and repositioned when sliders are adjusted.
+    updateMinimapOverlay2D(bounds.min, bounds.max)
+  } else {
+    minimapNv.updateGLVolume()
+  }
+
+  if (!is2D) {
+    // Defer camera alignment to the next frame so NiiVue's internal
+    // rendering state (obliqueRAS, toRAS, pivot, etc.) is fully
+    // settled after the volume load and connectome load above.
+    const mainNv = nv
+    const mmNv = minimapNv
+    requestAnimationFrame(() => {
+      if (!mmNv || !mainNv) return
+      mmNv.setRenderAzimuthElevation(
+        mainNv.scene.renderAzimuth,
+        mainNv.scene.renderElevation,
+      )
+      mmNv.scene.volScaleMultiplier = mainNv.scene.volScaleMultiplier
+    })
+  }
+}
+
 // Preview with NiiVue
 async function showPreview(
   result: Pick<ConvertResult, "multiscales">,
@@ -727,6 +1445,11 @@ async function showPreview(
     nv.setSliceType(sliceType)
     await updateGradientSettings()
     nv.updateGLVolume()
+
+    // ---- Set up the minimap ----
+    await initMinimapPreview(result.multiscales, {
+      colormap: !isLabel && !imageIsRGB && singleComponent ? colormap : null,
+    })
   } else {
     set3DControlsVisible(false)
 
@@ -735,6 +1458,13 @@ async function showPreview(
     nv.setSliceType(SLICE_TYPE.AXIAL)
     await nv.setGradientOpacity(0, 0)
     nv.updateGLVolume()
+
+    // Set up the minimap for 2D images (flat rectangle wireframe,
+    // X/Y-only ROI sliders, no camera sync)
+    await initMinimapPreview(result.multiscales, {
+      colormap: !isLabel && !imageIsRGB && singleComponent ? colormap : null,
+      is2D: true,
+    })
   }
 }
 
@@ -837,6 +1567,23 @@ async function startConversion(): Promise<void> {
 
     if (!lastResult) return
 
+    // If the ROI sliders define a sub-region, crop the result before
+    // showing the preview or enabling download.  The crop is applied
+    // to the highest-resolution image and the pyramid is rebuilt.
+    if (volumeBounds) {
+      const roi = readRoiSliders()
+      const roiBounds = { min: roi.min, max: roi.max }
+      if (!isFullVolume(roiBounds, volumeBounds)) {
+        lastResult = await cropMultiscales(
+          lastResult.multiscales,
+          roiBounds,
+          options,
+          updateProgress,
+          updateChunkProgress,
+        )
+      }
+    }
+
     // Sync the method dropdown if auto-detection changed it
     // (e.g. label image detected while default Gaussian was selected)
     const actualMethod = lastResult.multiscales.method
@@ -873,7 +1620,7 @@ async function startConversion(): Promise<void> {
  * URLs — whichever produced the available multiscales.
  */
 async function startDownload(): Promise<void> {
-  const multiscales = lastResult?.multiscales ?? loadedMultiscales
+  let multiscales = lastResult?.multiscales ?? loadedMultiscales
   const name = selectedFile?.name ?? loadedName
   if (!multiscales || !name) return
 
@@ -884,6 +1631,32 @@ async function startDownload(): Promise<void> {
   chunkProgressText.textContent = ""
 
   try {
+    // If the ROI sliders define a sub-region, crop the multiscales
+    // before packaging.  This handles both converted results and
+    // directly-loaded OME-Zarr sources (including remote stores).
+    if (volumeBounds) {
+      const roi = readRoiSliders()
+      const roiBounds = { min: roi.min, max: roi.max }
+      if (!isFullVolume(roiBounds, volumeBounds)) {
+        const options = {
+          chunkSize: parseInt(
+            (chunkSizeInput as unknown as { value: string }).value || "96",
+            10,
+          ),
+          method: ((methodSelect as unknown as { value: string }).value ||
+            "itkwasm_gaussian") as Methods,
+        }
+        const cropped = await cropMultiscales(
+          multiscales,
+          roiBounds,
+          options,
+          updateProgress,
+          updateChunkProgress,
+        )
+        multiscales = cropped.multiscales
+      }
+    }
+
     const format = getSelectedFormat()
     updateProgress({
       stage: "packaging",
@@ -938,6 +1711,12 @@ colormapSelect.addEventListener("change", () => {
       (colormapSelect as unknown as { value: string }).value || "fast"
     currentImage.colormap = colormap
     nv.updateGLVolume()
+
+    // Propagate colormap to minimap
+    if (minimapImage && minimapNv) {
+      minimapImage.colormap = colormap
+      minimapNv.updateGLVolume()
+    }
   }
 })
 
@@ -945,6 +1724,17 @@ opacitySlider.addEventListener("input", () => {
   const ms = lastResult?.multiscales ?? loadedMultiscales
   if (ms && nv && nv.volumes.length > 0) {
     updateGradientSettings()
+
+    // Propagate gradient settings to minimap
+    if (minimapNv && minimapNv.volumes.length > 0) {
+      const opacity = parseFloat(
+        (opacitySlider as unknown as { value: string }).value || "0.5",
+      )
+      const silhouette = parseFloat(
+        (silhouetteSlider as unknown as { value: string }).value || "0",
+      )
+      void minimapNv.setGradientOpacity(opacity, silhouette)
+    }
   }
 })
 
@@ -952,6 +1742,17 @@ silhouetteSlider.addEventListener("input", () => {
   const ms = lastResult?.multiscales ?? loadedMultiscales
   if (ms && nv && nv.volumes.length > 0) {
     updateGradientSettings()
+
+    // Propagate gradient settings to minimap
+    if (minimapNv && minimapNv.volumes.length > 0) {
+      const opacity = parseFloat(
+        (opacitySlider as unknown as { value: string }).value || "0.5",
+      )
+      const silhouette = parseFloat(
+        (silhouetteSlider as unknown as { value: string }).value || "0",
+      )
+      void minimapNv.setGradientOpacity(opacity, silhouette)
+    }
   }
 })
 
@@ -962,8 +1763,22 @@ sliceTypeGroup.addEventListener("change", () => {
     nv.setSliceType(sliceType)
     nv.opts.heroImageFraction = sliceType === SLICE_TYPE.MULTIPLANAR ? 0.6 : 0
     nv.updateGLVolume()
+
+    // Mirror slice type to minimap: Multiplanar → Render, otherwise match
+    if (minimapNv && minimapImage) {
+      minimapNv.setSliceType(
+        sliceType === SLICE_TYPE.MULTIPLANAR ? SLICE_TYPE.RENDER : sliceType,
+      )
+    }
   }
 })
+
+// ROI range slider handlers
+for (const slider of [roiXSlider, roiYSlider, roiZSlider]) {
+  slider.addEventListener("input", () => {
+    updateRoi()
+  })
+}
 
 // Auto-load from ?url= query parameter
 const urlParam = new URLSearchParams(window.location.search).get("url")

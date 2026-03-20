@@ -1,0 +1,124 @@
+From f9c96144e839145ee00ec0fa256bacfb14af1fd3 Mon Sep 17 00:00:00 2001
+From: Matt McCormick <matt@fideus.io>
+Date: Fri, 13 Mar 2026 21:13:25 -0400
+Subject: [PATCH] fix(convert): align minimap wireframe with NiiVue RAS
+ rendering space
+
+The connectome wireframe was positioned using hdr.affine (pre-reorientation
+coordinates), but NiiVue renders the volume in post-reorientation RAS
+mm-space via matRAS.  This caused the wireframe box to appear on the
+wrong axis when the image had permuted orientations (e.g. mri.nii.gz).
+
+Fix by precomputing the combined matrix `matRAS * toRASvox` and using
+it in omeZarrToMM(), so wireframe node coordinates match the rendering
+coordinate system that NiiVue uses for both volumes and meshes.
+---
+ examples/convert/main.ts | 69 ++++++++++++++++++++++++++++------------
+ 1 file changed, 48 insertions(+), 21 deletions(-)
+
+diff --git a/examples/convert/main.ts b/examples/convert/main.ts
+index bff9c41..6971dcb 100644
+--- a/examples/convert/main.ts
++++ b/examples/convert/main.ts
+@@ -154,14 +154,21 @@ let minimapImage: OMEZarrNVImage | null = null
+ let volumeBounds: VolumeBounds | null = null
+ 
+ /**
+- * Minimap image's oriented NIfTI affine (4x4, row-major rows stored
+- * as 4 arrays of 4) and OME-Zarr scale/translation.  Used to convert
+- * ROI slider values from OME-Zarr world space to the NiiVue mm-space
+- * the connectome wireframe needs to live in.
++ * Precomputed state for mapping OME-Zarr world coordinates to NiiVue's
++ * RAS mm-space (the coordinate system connectome nodes live in).
++ *
++ * NiiVue reorients volume data to be axis-aligned with RAS.  This means
++ * the `hdr.affine` maps original voxels → mm, but the **rendered** volume
++ * uses `matRAS` (which maps reoriented voxels → mm).  To position the
++ * connectome wireframe correctly, we must use `matRAS * toRASvox` as the
++ * combined voxel→mm matrix — matching the rendering coordinate system.
++ *
++ * `combinedAffine` = `matRAS * toRASvox` (column-major flat Float32Array[16]),
++ * mapping original OME-Zarr voxels (x, y, z) → NiiVue RAS mm.
+  */
+ let _minimapAffineState: {
+-  /** Oriented affine as 4 rows of 4 (from NVImage.hdr.affine). */
+-  affine: number[][]
++  /** Combined affine (matRAS * toRASvox), column-major flat 16 floats. */
++  combinedAffine: number[]
+   /** OME-Zarr scale for the minimap resolution level. */
+   scale: { x: number; y: number; z: number }
+   /** OME-Zarr translation for the minimap resolution level. */
+@@ -523,20 +530,18 @@ function omeZarrToMM(
+ ): [number, number, number] {
+   if (!_minimapAffineState) return [...point] as [number, number, number]
+ 
+-  const { affine, scale, translation } = _minimapAffineState
++  const { combinedAffine: m, scale, translation } = _minimapAffineState
+ 
+-  // OME-Zarr world → voxel
++  // OME-Zarr world → voxel (x, y, z order)
+   const vx = (point[0] - translation.x) / scale.x
+   const vy = (point[1] - translation.y) / scale.y
+   const vz = (point[2] - translation.z) / scale.z
+ 
+-  // Voxel → mm via oriented affine (row-major: affine[row][col])
+-  const mx =
+-    affine[0][0] * vx + affine[0][1] * vy + affine[0][2] * vz + affine[0][3]
+-  const my =
+-    affine[1][0] * vx + affine[1][1] * vy + affine[1][2] * vz + affine[1][3]
+-  const mz =
+-    affine[2][0] * vx + affine[2][1] * vy + affine[2][2] * vz + affine[2][3]
++  // Voxel → RAS mm via combined affine (matRAS * toRASvox).
++  // Column-major: col0=[m[0..3]], col1=[m[4..7]], col2=[m[8..11]], col3=[m[12..15]]
++  const mx = m[0] * vx + m[4] * vy + m[8] * vz + m[12]
++  const my = m[1] * vx + m[5] * vy + m[9] * vz + m[13]
++  const mz = m[2] * vx + m[6] * vy + m[10] * vz + m[14]
+ 
+   return [mx, my, mz]
+ }
+@@ -1024,14 +1029,36 @@ async function initMinimapPreview(
+ 
+   // Capture the minimap image's oriented affine and OME-Zarr
+   // scale/translation so omeZarrToMM() can transform ROI slider
+-  // values (OME-Zarr world space) to NiiVue mm-space for the
+-  // connectome wireframe.  The affine is available after
+-  // populateVolume() updates the NVImage header.
++  // values (OME-Zarr world space) to NiiVue's rendering RAS mm-space
++  // for the connectome wireframe.  The matRAS and toRASvox matrices
++  // are available after populateVolume() updates the NVImage header.
++  //
++  // NiiVue reorients voxels to RAS, so the rendering coordinate
++  // system uses matRAS (post-reorientation affine).  We pre-compute
++  // `matRAS * toRASvox` so omeZarrToMM can map OME-Zarr (x,y,z)
++  // voxels directly to the rendering mm-space.
+   const mmLevel = multiscales.images[mmImage.getCurrentLevelIndex()]
+-  const hdrAffine = mmImage.hdr?.affine
+-  if (hdrAffine && mmLevel) {
++  const matRAS = mmImage.matRAS
++  const toRASvox = mmImage.toRASvox
++  if (matRAS && toRASvox && mmLevel) {
++    // Column-major 4×4 multiply: combined = matRAS * toRASvox
++    const a = Array.from(
++      matRAS instanceof Float32Array ? matRAS : Object.values(matRAS),
++    ) as number[]
++    const b = Array.from(
++      toRASvox instanceof Float32Array ? toRASvox : Object.values(toRASvox),
++    ) as number[]
++    const combined = new Array<number>(16).fill(0)
++    for (let c = 0; c < 4; c++) {
++      for (let r = 0; r < 4; r++) {
++        for (let k = 0; k < 4; k++) {
++          combined[c * 4 + r] += a[k * 4 + r] * b[c * 4 + k]
++        }
++      }
++    }
++
+     _minimapAffineState = {
+-      affine: hdrAffine.map((row: number[]) => [...row]),
++      combinedAffine: combined,
+       scale: {
+         x: mmLevel.scale.x ?? mmLevel.scale.X ?? 1,
+         y: mmLevel.scale.y ?? mmLevel.scale.Y ?? 1,
+-- 
+2.48.1
+
