@@ -8,13 +8,13 @@
     "examples/*"
   ],
   "scripts": {
-    "build": "bun run --filter '*' build",
+    "build": "bun run --filter '!./' build",
     "check": "biome check .",
-    "dev": "bun run --filter '*' dev",
+    "dev": "bun run --filter '!./' dev",
     "format": "biome format --write .",
     "lint": "biome lint .",
     "prepare": "lefthook install",
-    "test": "bun run --filter '*' test"
+    "test": "bun run --filter '!./' test"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.14",
