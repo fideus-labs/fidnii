@@ -16,15 +16,14 @@ committed to providing a welcoming and inclusive environment for everyone.
 ### Prerequisites
 
 - [Node.js](https://nodejs.org/) >= 18
-- [pnpm](https://pnpm.io/) 10.29.2 (`corepack enable` to use the bundled
-  version)
+- [Bun](https://bun.sh/) >= 1.2
 
 ### ⚙️ Setup
 
 1. Fork and clone the repository
 2. Install dependencies (this also installs git hooks via Lefthook):
    ```bash
-   pnpm install
+    bun install
    ```
 
 ## 🔄 Contributing Workflow
@@ -92,7 +91,7 @@ chore: update dependencies
 ### 🛡️ Pre-commit Validation
 
 [Lefthook](https://github.com/evilmartians/lefthook) manages git hooks
-(installed automatically via `pnpm install`):
+(installed automatically via `bun install`):
 
 - **pre-commit** - Runs `biome check --write` on staged files and re-stages
   fixes
@@ -108,7 +107,7 @@ release management. When your PR includes a user-facing change to
 `@fideus-labs/fidnii`, add a changeset:
 
 ```bash
-pnpm changeset
+bunx changeset
 ```
 
 Follow the prompts to select the package and describe the change. A markdown
@@ -119,7 +118,7 @@ the accumulated changelog and version bump.
 ## 🗂️ Project Overview
 
 fidnii is a TypeScript library for rendering OME-Zarr images in NiiVue with
-progressive multi-resolution loading. It is a pnpm monorepo:
+progressive multi-resolution loading. It is a bun monorepo:
 
 ```
 fidnii/                    # @fideus-labs/fidnii library
@@ -138,16 +137,16 @@ docs/
 
 | Command                               | Description                          |
 | ------------------------------------- | ------------------------------------ |
-| `pnpm build`                          | Build all packages                   |
-| `pnpm dev`                            | Start dev servers for all packages   |
-| `pnpm test`                           | Run all Playwright tests             |
-| `pnpm check`                          | Lint, format, and organize imports   |
-| `pnpm lint`                           | Lint only (Biome)                    |
-| `pnpm format`                         | Auto-format all files (Biome)        |
-| `pnpm exec tsc --noEmit`             | Type-check the library (from `fidnii/`) |
-| `pnpm exec playwright test`          | Run tests in current package         |
-| `pnpm exec playwright test -g "name"`| Run a single test by name            |
-| `pnpm changeset`                      | Add a changeset for release tracking |
+| `bun run build`                          | Build all packages                   |
+| `bun run dev`                            | Start dev servers for all packages   |
+| `bun run test`                           | Run all Playwright tests             |
+| `bun run check`                          | Lint, format, and organize imports   |
+| `bun run lint`                           | Lint only (Biome)                    |
+| `bun run format`                         | Auto-format all files (Biome)        |
+| `bunx tsc --noEmit`                      | Type-check the library (from `fidnii/`) |
+| `bunx playwright test`                   | Run tests in current package         |
+| `bunx playwright test -g "name"`         | Run a single test by name            |
+| `bunx changeset`                         | Add a changeset for release tracking |
 
 The dev server runs on port 5173 with COOP/COEP headers for SharedArrayBuffer
 support.
@@ -158,8 +157,8 @@ Code is linted and formatted with [Biome](https://biomejs.dev/). TypeScript
 strict mode is enforced in CI alongside Biome.
 
 ```bash
-pnpm check                    # Biome lint + format + imports (same as CI)
-pnpm exec tsc --noEmit        # Type-check (from fidnii/)
+bun run check                 # Biome lint + format + imports (same as CI)
+bunx tsc --noEmit             # Type-check (from fidnii/)
 ```
 
 ### Formatting (Biome)
@@ -235,10 +234,10 @@ All tests are Playwright end-to-end browser tests (Chromium only, WebGL via
 EGL). Tests have a 120-second timeout because they load real data from S3.
 
 ```bash
-pnpm test                                        # All tests
-pnpm exec playwright test                        # Tests in current package
-pnpm exec playwright test tests/basic-loading.spec.ts  # Single test file
-pnpm exec playwright test -g "page loads"        # Single test by name
+bun run test                                     # All tests
+bunx playwright test                             # Tests in current package
+bunx playwright test tests/basic-loading.spec.ts # Single test file
+bunx playwright test -g "page loads"             # Single test by name
 ```
 
 Useful flags: `--headed` (visible browser), `--debug` (step-through),

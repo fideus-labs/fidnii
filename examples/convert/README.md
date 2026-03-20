@@ -16,8 +16,8 @@ Browser-based converter from various image formats to OME-Zarr 0.5 (OZX).
 
 ```bash
 # From repository root
-pnpm install
-pnpm --filter @fideus-labs/fidnii-example-convert dev
+bun install
+bun run --filter @fideus-labs/fidnii-example-convert dev
 ```
 
 Then open http://localhost:5173 in your browser.

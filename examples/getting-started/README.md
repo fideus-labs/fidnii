@@ -7,8 +7,8 @@ A minimal example showing how to load and display an OME-Zarr image using
 
 ```bash
 # From the repository root
-pnpm install
-pnpm --filter @fideus-labs/fidnii-getting-started dev
+bun install
+bun run --filter @fideus-labs/fidnii-getting-started dev
 ```
 
 Open http://localhost:5173 in your browser.
