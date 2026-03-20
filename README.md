@@ -133,7 +133,7 @@ Minimal example that loads a remote MRI scan and renders it in 3D with
 progressive loading.
 
 ```bash
-pnpm --filter @fideus-labs/fidnii-getting-started dev
+bun run --filter @fideus-labs/fidnii-getting-started dev
 ```
 
 ### [Convert to OME-Zarr](examples/convert/)
@@ -142,7 +142,7 @@ Browser-based converter from NIFTI, NRRD, DICOM, MRC, TIFF, VTK, and more to
 OME-Zarr 0.5 (OZX) with live preview.
 
 ```bash
-pnpm --filter @fideus-labs/fidnii-example-convert dev
+bun run --filter @fideus-labs/fidnii-example-convert dev
 ```
 
 ## 🛠️ Development
@@ -150,15 +150,14 @@ pnpm --filter @fideus-labs/fidnii-example-convert dev
 ### 📋 Prerequisites
 
 - [Node.js](https://nodejs.org/) >= 18
-- [pnpm](https://pnpm.io/) 10.29.2 (`corepack enable` to use the bundled
-  version)
+- [Bun](https://bun.sh/) >= 1.2
 
 ### 🔧 Setup
 
 ```bash
 git clone https://github.com/fideus-labs/fidnii.git
 cd fidnii
-pnpm install
+bun install
 ```
 
 ### 🏗️ Monorepo Structure
@@ -180,16 +179,16 @@ docs/
 
 | Command                               | Description                          |
 | ------------------------------------- | ------------------------------------ |
-| `pnpm build`                          | Build all packages                   |
-| `pnpm dev`                            | Start dev servers for all packages   |
-| `pnpm test`                           | Run all Playwright tests             |
-| `pnpm check`                          | Lint, format, and organize imports   |
-| `pnpm lint`                           | Lint only (Biome)                    |
-| `pnpm format`                         | Auto-format all files (Biome)        |
-| `pnpm exec tsc --noEmit`             | Type-check the library (from `fidnii/`) |
-| `pnpm exec playwright test`          | Run tests in current package         |
-| `pnpm exec playwright test -g "name"`| Run a single test by name            |
-| `pnpm changeset`                      | Add a changeset for release tracking |
+| `bun run build`                          | Build all packages                   |
+| `bun run dev`                            | Start dev servers for all packages   |
+| `bun run test`                           | Run all Playwright tests             |
+| `bun run check`                          | Lint, format, and organize imports   |
+| `bun run lint`                           | Lint only (Biome)                    |
+| `bun run format`                         | Auto-format all files (Biome)        |
+| `bunx tsc --noEmit`                      | Type-check the library (from `fidnii/`) |
+| `bunx playwright test`                   | Run tests in current package         |
+| `bunx playwright test -g "name"`         | Run a single test by name            |
+| `bunx changeset`                         | Add a changeset for release tracking |
 
 The dev server runs on port 5173 with COOP/COEP headers for SharedArrayBuffer
 support. Tests run against Chromium with WebGL via EGL and have a 120-second

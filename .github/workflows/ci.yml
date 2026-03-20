@@ -21,17 +21,16 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: pnpm/action-setup@v4
+      - uses: oven-sh/setup-bun@v2
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
+      - run: bun install --frozen-lockfile
 
       - name: Check for changeset
-        run: pnpm changeset status --since=origin/main
+        run: bunx changeset status --since=origin/main
 
   lint:
     name: Lint & Format
@@ -39,16 +38,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
+      - uses: oven-sh/setup-bun@v2
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
+      - run: bun install --frozen-lockfile
 
-      - run: pnpm install --frozen-lockfile
-
-      - run: pnpm exec biome ci .
+      - run: bunx biome ci .
 
   build:
     name: Build & Type-check (${{ matrix.os }})
@@ -61,19 +55,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
+      - uses: oven-sh/setup-bun@v2
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
+      - run: bun install --frozen-lockfile
 
-      - run: pnpm build
+      - run: bun run build
 
       - name: Type-check
-        run: pnpm exec tsc --noEmit
+        run: bunx tsc --noEmit
         working-directory: fidnii
 
   test:
@@ -88,26 +81,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
+      - uses: oven-sh/setup-bun@v2
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
+      - run: bun install --frozen-lockfile
 
       - name: Install Playwright browsers (Linux)
         if: runner.os == 'Linux'
-        run: pnpm exec playwright install --with-deps chromium
+        run: bunx playwright install --with-deps chromium
 
       - name: Install Playwright browsers (macOS / Windows)
         if: runner.os != 'Linux'
-        run: pnpm exec playwright install chromium
+        run: bunx playwright install chromium
 
-      - run: pnpm build
+      - run: bun run build
 
-      - run: pnpm test
+      - run: bun run test
 
       - name: Upload Playwright report
         uses: actions/upload-artifact@v4

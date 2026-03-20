@@ -6,14 +6,14 @@ Guidance for AI coding agents operating in this repository.
 
 Fidnii (`@fideus-labs/fidnii`) is a TypeScript library for rendering OME-Zarr
 (NGFF) medical/scientific images inside NiiVue with progressive multi-resolution
-loading. It is a **pnpm monorepo** with three workspace packages: `fidnii/`
+loading. It is a **bun monorepo** with three workspace packages: `fidnii/`
 (the library), `examples/getting-started/`, and `examples/convert/`.
 
 ## Build Commands
 
 ```bash
-pnpm build                # Build all workspace packages
-pnpm dev                  # Start dev servers for all packages
+bun run build             # Build all workspace packages
+bun run dev               # Start dev servers for all packages
 ```
 
 The library (`fidnii/`) builds with plain `tsc` to `fidnii/dist/` (ESM `.js` +
@@ -25,9 +25,9 @@ COOP/COEP headers enabled for SharedArrayBuffer support.
 [Biome](https://biomejs.dev/) handles linting, formatting, and import sorting:
 
 ```bash
-pnpm check                # Lint + format + import sorting (same as CI)
-pnpm lint                 # Lint only
-pnpm format               # Auto-format all files
+bun run check             # Lint + format + import sorting (same as CI)
+bun run lint              # Lint only
+bun run format            # Auto-format all files
 ```
 
 ## Type Checking
@@ -35,7 +35,7 @@ pnpm format               # Auto-format all files
 TypeScript strict mode is enforced. Run from `fidnii/`:
 
 ```bash
-pnpm exec tsc --noEmit    # Type-check without emitting
+bunx tsc --noEmit         # Type-check without emitting
 ```
 
 `tsconfig.json` enables `strict`, `noUnusedLocals`, `noUnusedParameters`, and
@@ -47,11 +47,11 @@ All tests are **Playwright** end-to-end browser tests (Chromium only, WebGL via
 EGL). Tests have a 120-second timeout because they load real data from S3.
 
 ```bash
-pnpm test                                              # All tests (monorepo)
-pnpm exec playwright test                              # All tests (current pkg)
-pnpm exec playwright test tests/basic-loading.spec.ts  # Single test file
-pnpm exec playwright test -g "page loads"              # Single test by grep
-pnpm exec playwright test tests/clip-planes.spec.ts -g "add a clip plane"
+bun run test                                           # All tests (monorepo)
+bunx playwright test                                   # All tests (current pkg)
+bunx playwright test tests/basic-loading.spec.ts       # Single test file
+bunx playwright test -g "page loads"                   # Single test by grep
+bunx playwright test tests/clip-planes.spec.ts -g "add a clip plane"
 ```
 
 Test files live in `fidnii/tests/` and `examples/getting-started/tests/` using
