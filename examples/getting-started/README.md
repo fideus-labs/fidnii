@@ -11,7 +11,7 @@ bun install
 bun run --filter @fideus-labs/fidnii-getting-started dev
 ```
 
-Open http://localhost:5173 in your browser.
+Open http://localhost:5174 in your browser.
 
 ## What This Example Does
 
