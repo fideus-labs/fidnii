@@ -22,7 +22,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: "24"
+          cache: true
 
       - uses: actions/setup-node@v4
         with:
@@ -34,20 +37,20 @@ jobs:
       - name: Show npm version
         run: npm --version
 
-      - run: bun install --frozen-lockfile
+      - run: vp install --frozen-lockfile
 
-      - run: bun run build
+      - run: vp run -r build
 
       - name: Create release PR or publish
         id: changesets
         uses: changesets/action@v1
         with:
-          version: bunx changeset version
-          publish: bunx changeset publish
+          version: pnpm exec changeset version
+          publish: pnpm exec changeset publish
           title: "chore: version packages"
           commit: "chore: version packages"
           createGithubReleases: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ''
+          NPM_TOKEN: ""
           NPM_CONFIG_PROVENANCE: true

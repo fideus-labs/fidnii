@@ -9,7 +9,7 @@ find the full documentation for it [in the repository](https://github.com/change
 Add a changeset when your PR includes a user-facing change to `@fideus-labs/fidnii`:
 
 ```bash
-bunx changeset
+pnpm exec changeset
 ```
 
 Follow the prompts to select the package and describe the change. This creates a

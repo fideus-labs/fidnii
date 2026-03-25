@@ -7,8 +7,8 @@ A minimal example showing how to load and display an OME-Zarr image using
 
 ```bash
 # From the repository root
-bun install
-bun run --filter @fideus-labs/fidnii-getting-started dev
+vp install
+pnpm --filter @fideus-labs/fidnii-getting-started dev
 ```
 
 Open http://localhost:5174 in your browser.
@@ -27,16 +27,16 @@ See `main.ts`. Essentially:
 
 ```ts
 // Initialize NiiVue
-const nv = new Niivue({ backColor: [0, 0, 0, 1] });
-await nv.attachToCanvas(canvas);
+const nv = new Niivue({ backColor: [0, 0, 0, 1] })
+await nv.attachToCanvas(canvas)
 // Add NiiVue configuration as usual
-nv.setSliceType(nv.sliceTypeRender);
+nv.setSliceType(nv.sliceTypeRender)
 
 // Lazily load OME-Zarr data
-const multiscales = await fromNgffZarr(DATA_URL);
+const multiscales = await fromNgffZarr(DATA_URL)
 
 // Create image - automatically added to NiiVue and loads progressively
-await OMEZarrNVImage.create({ multiscales, niivue: nv });
+await OMEZarrNVImage.create({ multiscales, niivue: nv })
 ```
 
 For more details, see the

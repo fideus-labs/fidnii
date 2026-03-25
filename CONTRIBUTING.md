@@ -1,5 +1,6 @@
 <!-- SPDX-FileCopyrightText: Copyright (c) Fideus Labs LLC -->
 <!-- SPDX-License-Identifier: MIT -->
+
 # 🤝 Contributing to fidnii
 
 Welcome! 👋 We're glad you're interested in contributing to fidnii. Whether
@@ -16,14 +17,14 @@ committed to providing a welcoming and inclusive environment for everyone.
 ### Prerequisites
 
 - [Node.js](https://nodejs.org/) >= 18
-- [Bun](https://bun.sh/) >= 1.2
+- [Vite+](https://viteplus.dev/) (installs pnpm automatically)
 
 ### ⚙️ Setup
 
 1. Fork and clone the repository
 2. Install dependencies (this also installs git hooks via Lefthook):
    ```bash
-    bun install
+    vp install
    ```
 
 ## 🔄 Contributing Workflow
@@ -91,9 +92,9 @@ chore: update dependencies
 ### 🛡️ Pre-commit Validation
 
 [Lefthook](https://github.com/evilmartians/lefthook) manages git hooks
-(installed automatically via `bun install`):
+(installed automatically via `vp install`):
 
-- **pre-commit** - Runs `biome check --write` on staged files and re-stages
+- **pre-commit** - Runs `vp check --fix` on staged files and re-stages
   fixes
 - **commit-msg** - Validates the commit message with commitlint
 
@@ -107,7 +108,7 @@ release management. When your PR includes a user-facing change to
 `@fideus-labs/fidnii`, add a changeset:
 
 ```bash
-bunx changeset
+pnpm exec changeset
 ```
 
 Follow the prompts to select the package and describe the change. A markdown
@@ -118,7 +119,7 @@ the accumulated changelog and version bump.
 ## 🗂️ Project Overview
 
 fidnii is a TypeScript library for rendering OME-Zarr images in NiiVue with
-progressive multi-resolution loading. It is a bun monorepo:
+progressive multi-resolution loading. It is a Vite+ monorepo (pnpm workspaces):
 
 ```
 fidnii/                    # @fideus-labs/fidnii library
@@ -135,33 +136,33 @@ docs/
 
 ## 🛠️ Development Commands
 
-| Command                               | Description                          |
-| ------------------------------------- | ------------------------------------ |
-| `bun run build`                          | Build all packages                   |
-| `bun run dev`                            | Start dev servers for all packages   |
-| `bun run test`                           | Run all Playwright tests             |
-| `bun run check`                          | Lint, format, and organize imports   |
-| `bun run lint`                           | Lint only (Biome)                    |
-| `bun run format`                         | Auto-format all files (Biome)        |
-| `bunx tsc --noEmit`                      | Type-check the library (from `fidnii/`) |
-| `bunx playwright test`                   | Run tests in current package         |
-| `bunx playwright test -g "name"`         | Run a single test by name            |
-| `bunx changeset`                         | Add a changeset for release tracking |
+| Command                               | Description                             |
+| ------------------------------------- | --------------------------------------- |
+| `vp run -r build`                     | Build all packages                      |
+| `vp run -r dev`                       | Start dev servers for all packages      |
+| `vp run -r test`                      | Run all Playwright tests                |
+| `vp check`                            | Lint, format, and organize imports      |
+| `vp lint`                             | Lint only (Oxlint)                      |
+| `vp fmt --write`                      | Auto-format all files (Oxfmt)           |
+| `pnpm exec tsc --noEmit`              | Type-check the library (from `fidnii/`) |
+| `pnpm exec playwright test`           | Run tests in current package            |
+| `pnpm exec playwright test -g "name"` | Run a single test by name               |
+| `pnpm exec changeset`                 | Add a changeset for release tracking    |
 
 The dev server runs on port 5173 with COOP/COEP headers for SharedArrayBuffer
 support.
 
 ## 🎨 Code Style
 
-Code is linted and formatted with [Biome](https://biomejs.dev/). TypeScript
-strict mode is enforced in CI alongside Biome.
+Code is linted and formatted with [Vite+](https://viteplus.dev/) (Oxlint +
+Oxfmt). TypeScript strict mode is enforced in CI.
 
 ```bash
-bun run check                 # Biome lint + format + imports (same as CI)
-bunx tsc --noEmit             # Type-check (from fidnii/)
+vp check                      # Lint + format + imports (same as CI)
+pnpm exec tsc --noEmit        # Type-check (from fidnii/)
 ```
 
-### Formatting (Biome)
+### Formatting (Oxfmt)
 
 - 📏 **Indentation**: 2 spaces, no tabs
 - 🚫 **Semicolons**: None
@@ -180,6 +181,7 @@ import type { Niivue } from "@niivue/niivue"
 ```
 
 Group imports in order, separated by blank lines:
+
 1. External / third-party packages
 2. Internal relative imports
 
@@ -203,14 +205,14 @@ export type { ClipPlane, VolumeBounds } from "./types.js"
 
 ### 🏷️ Naming Conventions
 
-| Kind                  | Style              | Example                    |
-|-----------------------|--------------------|----------------------------|
-| Variables, parameters | camelCase          | `levelIndex`, `maxPixels`  |
-| Functions             | camelCase          | `selectResolution`         |
-| Classes               | PascalCase         | `OMEZarrNVImage`           |
-| Interfaces, types     | PascalCase         | `ClipPlane`, `ZarrDtype`   |
-| Module-level constants| SCREAMING_SNAKE    | `MAX_CLIP_PLANES`          |
-| Private members       | `_camelCase`       | `_clipPlanes`, `_emitEvent`|
+| Kind                   | Style           | Example                     |
+| ---------------------- | --------------- | --------------------------- |
+| Variables, parameters  | camelCase       | `levelIndex`, `maxPixels`   |
+| Functions              | camelCase       | `selectResolution`          |
+| Classes                | PascalCase      | `OMEZarrNVImage`            |
+| Interfaces, types      | PascalCase      | `ClipPlane`, `ZarrDtype`    |
+| Module-level constants | SCREAMING_SNAKE | `MAX_CLIP_PLANES`           |
+| Private members        | `_camelCase`    | `_clipPlanes`, `_emitEvent` |
 
 **File names**: PascalCase for files exporting a primary class
 (`BufferManager.ts`), camelCase for utility/type modules (`types.ts`,
@@ -234,10 +236,10 @@ All tests are Playwright end-to-end browser tests (Chromium only, WebGL via
 EGL). Tests have a 120-second timeout because they load real data from S3.
 
 ```bash
-bun run test                                     # All tests
-bunx playwright test                             # Tests in current package
-bunx playwright test tests/basic-loading.spec.ts # Single test file
-bunx playwright test -g "page loads"             # Single test by name
+vp run -r test                                     # All tests
+pnpm exec playwright test                                # Tests in current package
+pnpm exec playwright test tests/basic-loading.spec.ts    # Single test file
+pnpm exec playwright test -g "page loads"                # Single test by name
 ```
 
 Useful flags: `--headed` (visible browser), `--debug` (step-through),

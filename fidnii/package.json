@@ -1,23 +1,35 @@
 {
   "name": "@fideus-labs/fidnii",
-  "packageManager": "bun@1.x",
   "version": "0.7.4",
   "description": "Render OME-Zarr images in NiiVue with progressive multi-resolution loading",
-  "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
-    }
+  "keywords": [
+    "medical-imaging",
+    "ngff",
+    "niivue",
+    "ome-zarr",
+    "webgl"
+  ],
+  "license": "MIT",
+  "author": "Fideus Labs LLC",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fideus-labs/fidnii.git"
   },
   "files": [
     "dist",
     "src"
   ],
+  "type": "module",
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "types": "./dist/index.d.mts"
+    }
+  },
   "scripts": {
-    "build": "tsc",
+    "build": "vp pack",
     "dev": "vite",
     "preview": "vite preview",
     "test": "playwright test",
@@ -41,22 +53,9 @@
     "@types/node": "^20.19.30",
     "fflate": "^0.8.2",
     "typescript": "^5.9.3",
-    "vite": "^5.4.21"
+    "vite": "^8.0.0"
   },
   "peerDependencies": {
     "@niivue/niivue": ">=0.68.1"
-  },
-  "keywords": [
-    "niivue",
-    "ome-zarr",
-    "ngff",
-    "medical-imaging",
-    "webgl"
-  ],
-  "author": "Fideus Labs LLC",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/fideus-labs/fidnii.git"
   }
 }

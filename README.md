@@ -91,16 +91,16 @@ image.addEventListener("populateComplete", (e) => {
 })
 ```
 
-| Event                | Description                                       |
-| -------------------- | ------------------------------------------------- |
-| `loadingStart`       | Loading starts for a resolution level             |
-| `loadingComplete`    | Loading completes for a resolution level          |
-| `resolutionChange`   | Resolution level changes                          |
-| `populateComplete`   | All loading is done                               |
-| `clipPlanesChange`   | Clip planes updated (after debounce)              |
-| `loadingSkipped`     | Loading was skipped (e.g. already at target)      |
-| `slabLoadingStart`   | Slab loading starts for a 2D slice type           |
-| `slabLoadingComplete`| Slab loading completes for a 2D slice type        |
+| Event                 | Description                                  |
+| --------------------- | -------------------------------------------- |
+| `loadingStart`        | Loading starts for a resolution level        |
+| `loadingComplete`     | Loading completes for a resolution level     |
+| `resolutionChange`    | Resolution level changes                     |
+| `populateComplete`    | All loading is done                          |
+| `clipPlanesChange`    | Clip planes updated (after debounce)         |
+| `loadingSkipped`      | Loading was skipped (e.g. already at target) |
+| `slabLoadingStart`    | Slab loading starts for a 2D slice type      |
+| `slabLoadingComplete` | Slab loading completes for a 2D slice type   |
 
 ## ✂️ Clip Planes
 
@@ -108,21 +108,22 @@ Clip planes define visible sub-regions of the volume. Up to 6 can be active at
 once.
 
 ```typescript
-import {
-  createAxisAlignedClipPlane,
-  OMEZarrNVImage,
-} from "@fideus-labs/fidnii"
+import { createAxisAlignedClipPlane, OMEZarrNVImage } from "@fideus-labs/fidnii"
 
 const image = await OMEZarrNVImage.create({ multiscales, niivue: nv })
 
-image.addEventListener("populateComplete", () => {
-  const bounds = image.getVolumeBounds()
-  const midX = (bounds.min[0] + bounds.max[0]) / 2
+image.addEventListener(
+  "populateComplete",
+  () => {
+    const bounds = image.getVolumeBounds()
+    const midX = (bounds.min[0] + bounds.max[0]) / 2
 
-  // Clip at X = midpoint, keeping the +X side visible
-  const clip = createAxisAlignedClipPlane("x", midX, "positive", bounds)
-  image.setClipPlanes([clip])
-}, { once: true })
+    // Clip at X = midpoint, keeping the +X side visible
+    const clip = createAxisAlignedClipPlane("x", midX, "positive", bounds)
+    image.setClipPlanes([clip])
+  },
+  { once: true },
+)
 ```
 
 ## 🧪 Examples
@@ -133,7 +134,7 @@ Minimal example that loads a remote MRI scan and renders it in 3D with
 progressive loading.
 
 ```bash
-bun run --filter @fideus-labs/fidnii-getting-started dev
+pnpm --filter @fideus-labs/fidnii-getting-started dev
 ```
 
 ### [Convert to OME-Zarr](examples/convert/)
@@ -142,7 +143,7 @@ Browser-based converter from NIFTI, NRRD, DICOM, MRC, TIFF, VTK, and more to
 OME-Zarr 0.5 (OZX) with live preview.
 
 ```bash
-bun run --filter @fideus-labs/fidnii-example-convert dev
+pnpm --filter @fideus-labs/fidnii-example-convert dev
 ```
 
 ## 🛠️ Development
@@ -150,14 +151,14 @@ bun run --filter @fideus-labs/fidnii-example-convert dev
 ### 📋 Prerequisites
 
 - [Node.js](https://nodejs.org/) >= 18
-- [Bun](https://bun.sh/) >= 1.2
+- [Vite+](https://viteplus.dev/) (installs pnpm automatically)
 
 ### 🔧 Setup
 
 ```bash
 git clone https://github.com/fideus-labs/fidnii.git
 cd fidnii
-bun install
+vp install
 ```
 
 ### 🏗️ Monorepo Structure
@@ -177,18 +178,18 @@ docs/
 
 ### 📝 Commands
 
-| Command                               | Description                          |
-| ------------------------------------- | ------------------------------------ |
-| `bun run build`                          | Build all packages                   |
-| `bun run dev`                            | Start dev servers for all packages   |
-| `bun run test`                           | Run all Playwright tests             |
-| `bun run check`                          | Lint, format, and organize imports   |
-| `bun run lint`                           | Lint only (Biome)                    |
-| `bun run format`                         | Auto-format all files (Biome)        |
-| `bunx tsc --noEmit`                      | Type-check the library (from `fidnii/`) |
-| `bunx playwright test`                   | Run tests in current package         |
-| `bunx playwright test -g "name"`         | Run a single test by name            |
-| `bunx changeset`                         | Add a changeset for release tracking |
+| Command                               | Description                             |
+| ------------------------------------- | --------------------------------------- |
+| `vp run -r build`                     | Build all packages                      |
+| `vp run -r dev`                       | Start dev servers for all packages      |
+| `vp run -r test`                      | Run all Playwright tests                |
+| `vp check`                            | Lint, format, and organize imports      |
+| `vp lint`                             | Lint only (Oxlint)                      |
+| `vp fmt --write`                      | Auto-format all files (Oxfmt)           |
+| `pnpm exec tsc --noEmit`              | Type-check the library (from `fidnii/`) |
+| `pnpm exec playwright test`           | Run tests in current package            |
+| `pnpm exec playwright test -g "name"` | Run a single test by name               |
+| `pnpm exec changeset`                 | Add a changeset for release tracking    |
 
 The dev server runs on port 5173 with COOP/COEP headers for SharedArrayBuffer
 support. Tests run against Chromium with WebGL via EGL and have a 120-second
