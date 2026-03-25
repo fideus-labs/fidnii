@@ -29,7 +29,7 @@ jobs:
       - run: vp install --frozen-lockfile
 
       - name: Check for changeset
-        run: pnpm exec changeset status --since=origin/main
+        run: vp exec changeset status --since=origin/main
 
   lint:
     name: Lint & Format
@@ -67,7 +67,7 @@ jobs:
       - run: vp run -r build
 
       - name: Type-check
-        run: pnpm exec tsc --noEmit
+        run: vp exec tsc --noEmit
         working-directory: fidnii
 
   test:
@@ -91,11 +91,11 @@ jobs:
 
       - name: Install Playwright browsers (Linux)
         if: runner.os == 'Linux'
-        run: pnpm exec playwright install --with-deps chromium
+        run: vp exec playwright install --with-deps chromium
 
       - name: Install Playwright browsers (macOS / Windows)
         if: runner.os != 'Linux'
-        run: pnpm exec playwright install chromium
+        run: vp exec playwright install chromium
 
       - run: vp run -r build
 
