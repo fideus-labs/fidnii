@@ -23,11 +23,11 @@ port 5173 with COOP/COEP headers enabled for SharedArrayBuffer support.
 
 ## Linting & Formatting
 
-[Vite+](https://viteplus.dev/) handles linting (Oxlint), formatting (Oxfmt),
-and type checking — configured in the root `vite.config.ts`:
+[Vite+](https://viteplus.dev/) handles linting (Oxlint) and formatting (Oxfmt)
+— configured in the root `vite.config.ts`:
 
 ```bash
-vp check                  # Lint + format + type check (same as CI)
+vp check                  # Lint + format (same as CI)
 vp lint                   # Lint only
 vp fmt --write            # Auto-format all files
 ```
