@@ -4,7 +4,7 @@ description: Identifies duplicate code patterns across the codebase and suggests
 on:
   workflow_dispatch:
   schedule:
-  - cron: "54 2 * * 2-4"
+    - cron: "54 2 * * 2-4"
 permissions:
   contents: read
   issues: read
@@ -48,12 +48,14 @@ Detect and report code duplication by:
 ### 1. Project Activation
 
 Activate the project in Serena:
+
 - Use `activate_project` tool with workspace path `${{ github.workspace }}` (mounted repository directory)
 - This sets up the semantic code analysis environment
 
 ### 2. Changed Files Analysis
 
 Identify and analyze modified files:
+
 - Determine files changed in the recent commits
 - **Analyze application source files** written in the primary repository languages (TypeScript/JavaScript: `*.ts`, `*.tsx`, `*.js`, `*.jsx`, `*.mjs`, `*.cjs`)
 - **Exclude test files** from analysis (files matching patterns: `*.test.js`, `*.test.cjs`, `*.spec.js`, `*.spec.cjs`, `*.test.ts`, `*.spec.ts`, or located in directories named `test`, `tests`, `__tests__`, or `spec`)
@@ -66,11 +68,13 @@ Identify and analyze modified files:
 Apply semantic code analysis to find duplicates:
 
 **Symbol-Level Analysis**:
+
 - For significant functions/methods in changed files, use `find_symbol` to search for similarly named symbols
 - Use `find_referencing_symbols` to understand usage patterns
 - Identify functions with similar names in different files (e.g., `processData` across modules)
 
 **Pattern Search**:
+
 - Use `search_for_pattern` to find similar code patterns
 - Search for duplication indicators:
   - Similar function signatures
@@ -79,6 +83,7 @@ Apply semantic code analysis to find duplicates:
   - Near-identical code blocks
 
 **Structural Analysis**:
+
 - Use `list_dir` and `find_file` to identify files with similar names or purposes
 - Compare symbol overviews across files for structural similarities
 
@@ -87,12 +92,14 @@ Apply semantic code analysis to find duplicates:
 Assess findings to identify true code duplication:
 
 **Duplication Types**:
+
 - **Exact Duplication**: Identical code blocks in multiple locations
 - **Structural Duplication**: Same logic with minor variations (different variable names, etc.)
 - **Functional Duplication**: Different implementations of the same functionality
 - **Copy-Paste Programming**: Similar code blocks that could be extracted into shared utilities
 
 **Assessment Criteria**:
+
 - **Severity**: Amount of duplicated code (lines of code, number of occurrences)
 - **Impact**: Where duplication occurs (critical paths, frequently called code)
 - **Maintainability**: How duplication affects code maintainability
@@ -103,6 +110,7 @@ Assess findings to identify true code duplication:
 Create at most one issue per run. If multiple distinct duplication patterns are found, summarize the most significant ones in a single issue so remediation remains focused.
 
 **When to Create Issues**:
+
 - Only create issues if significant duplication is found (threshold: >10 lines of duplicated code OR 3+ instances of similar patterns)
 - **Create at most one issue per run** — if multiple patterns qualify, describe them clearly as separate sections within the same issue
 - Within that single issue, limit detailed reporting to the top 3 most significant patterns if more are found
@@ -123,6 +131,7 @@ Create at most one issue per run. If multiple distinct duplication patterns are 
 **DO NOT just write this message in your output text** - you MUST actually invoke the `noop` tool. The workflow will fail if you don't call either `create_issue` or `noop`.
 
 **Issue Contents for Each Pattern**:
+
 - **Executive Summary**: Brief description of this specific duplication pattern
 - **Duplication Details**: Specific locations and code blocks for this pattern only
 - **Severity Assessment**: Impact and maintainability concerns for this pattern
@@ -161,10 +170,10 @@ Create at most one issue per run. If multiple distinct duplication patterns are 
 
 For each distinct duplication pattern found, create a separate issue using this structure:
 
-```markdown
+````markdown
 # 🔍 Duplicate Code Detected: [Pattern Name]
 
-*Analysis of commit ${{ github.event.head_commit.id }}*
+_Analysis of commit ${{ github.event.head_commit.id }}_
 
 **Assignee**: @copilot
 
@@ -175,6 +184,7 @@ For each distinct duplication pattern found, create a separate issue using this 
 ## Duplication Details
 
 ### Pattern: [Description]
+
 - **Severity**: High/Medium/Low
 - **Occurrences**: [Number of instances]
 - **Locations**:
@@ -184,6 +194,7 @@ For each distinct duplication pattern found, create a separate issue using this 
   ```[language]
   [Example of duplicated code]
   ```
+````
 
 ## Impact Analysis
 
@@ -216,6 +227,7 @@ For each distinct duplication pattern found, create a separate issue using this 
 - **Detection Method**: Serena semantic code analysis
 - **Commit**: ${{ github.event.head_commit.id }}
 - **Analysis Date**: [timestamp]
+
 ```
 
 ## Operational Guidelines
@@ -258,3 +270,4 @@ For each distinct duplication pattern found, create a separate issue using this 
 7. **Reference Analysis**: `find_referencing_symbols` for usage patterns
 
 **Objective**: Improve code quality by identifying and reporting meaningful code duplication that impacts maintainability. Focus on actionable findings that enable automated or manual refactoring.
+```

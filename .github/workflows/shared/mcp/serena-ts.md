@@ -21,12 +21,14 @@ tools:
 ## Serena TypeScript/JavaScript Code Analysis
 
 The Serena MCP server is configured for TypeScript/JavaScript code analysis in this workspace:
+
 - **Workspace**: `${{ github.workspace }}`
 - **Memory**: `/tmp/gh-aw/cache-memory/serena/`
 
 ### Project Activation
 
 Before analyzing code, activate the Serena project:
+
 ```
 Tool: activate_project
 Args: { "path": "${{ github.workspace }}" }

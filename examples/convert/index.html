@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -192,7 +192,10 @@
         text-decoration: none;
         font-size: 0.875rem;
         font-weight: 500;
-        transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+        transition:
+          border-color 0.2s,
+          background 0.2s,
+          box-shadow 0.2s;
         white-space: nowrap;
         position: relative;
         overflow: hidden;
@@ -570,11 +573,7 @@
               placeholder="https://example.com/image.nii.gz or .ome.zarr"
               with-clear
             ></wa-input>
-            <wa-button
-              id="url-load-btn"
-              variant="neutral"
-              size="small"
-            >
+            <wa-button id="url-load-btn" variant="neutral" size="small">
               Load
             </wa-button>
           </div>
@@ -623,8 +622,7 @@
             <p
               id="progress-text"
               style="margin: 0.5rem 0 0 0; font-size: 0.875rem"
-            >
-            </p>
+            ></p>
             <div id="chunk-progress-container" style="display: none">
               <wa-progress-bar
                 id="chunk-progress-bar"
@@ -644,12 +642,7 @@
         </div>
 
         <div class="actions">
-          <wa-button
-            id="convert-btn"
-            variant="brand"
-            disabled
-            style="flex: 1"
-          >
+          <wa-button id="convert-btn" variant="brand" disabled style="flex: 1">
             Convert
           </wa-button>
           <wa-button
@@ -686,49 +679,129 @@
                   orientation="horizontal"
                 >
                   <wa-radio appearance="button" value="axial" title="Axial">
-                    <img src="./icons/redPlane.svg" alt="Axial" width="24" height="24">
+                    <img
+                      src="./icons/redPlane.svg"
+                      alt="Axial"
+                      width="24"
+                      height="24"
+                    />
                   </wa-radio>
                   <wa-radio appearance="button" value="coronal" title="Coronal">
-                    <img src="./icons/yellowPlane.svg" alt="Coronal" width="24" height="24">
+                    <img
+                      src="./icons/yellowPlane.svg"
+                      alt="Coronal"
+                      width="24"
+                      height="24"
+                    />
                   </wa-radio>
-                  <wa-radio appearance="button" value="sagittal" title="Sagittal">
-                    <img src="./icons/greenPlane.svg" alt="Sagittal" width="24" height="24">
+                  <wa-radio
+                    appearance="button"
+                    value="sagittal"
+                    title="Sagittal"
+                  >
+                    <img
+                      src="./icons/greenPlane.svg"
+                      alt="Sagittal"
+                      width="24"
+                      height="24"
+                    />
                   </wa-radio>
-                  <wa-radio appearance="button" value="multiplanar" title="Multiplanar">
-                    <img src="./icons/multiplanar.svg" alt="Multiplanar" width="24" height="24">
+                  <wa-radio
+                    appearance="button"
+                    value="multiplanar"
+                    title="Multiplanar"
+                  >
+                    <img
+                      src="./icons/multiplanar.svg"
+                      alt="Multiplanar"
+                      width="24"
+                      height="24"
+                    />
                   </wa-radio>
                   <wa-radio appearance="button" value="render" title="Render">
-                    <img src="./icons/volume.svg" alt="Render" width="24" height="24">
+                    <img
+                      src="./icons/volume.svg"
+                      alt="Render"
+                      width="24"
+                      height="24"
+                    />
                   </wa-radio>
                 </wa-radio-group>
               </fieldset>
-              <wa-select id="colormap" label="Colormap" value="fast" class="full-width">
+              <wa-select
+                id="colormap"
+                label="Colormap"
+                value="fast"
+                class="full-width"
+              >
                 <wa-option value="fast">
-                  <img slot="start" src="./icons/colormaps/fast.webp" width="64" height="12" alt="">
+                  <img
+                    slot="start"
+                    src="./icons/colormaps/fast.webp"
+                    width="64"
+                    height="12"
+                    alt=""
+                  />
                   Fast
                 </wa-option>
                 <wa-option value="gray">
-                  <img slot="start" src="./icons/colormaps/gray.webp" width="64" height="12" alt="">
+                  <img
+                    slot="start"
+                    src="./icons/colormaps/gray.webp"
+                    width="64"
+                    height="12"
+                    alt=""
+                  />
                   Gray
                 </wa-option>
                 <wa-option value="hot">
-                  <img slot="start" src="./icons/colormaps/hot.webp" width="64" height="12" alt="">
+                  <img
+                    slot="start"
+                    src="./icons/colormaps/hot.webp"
+                    width="64"
+                    height="12"
+                    alt=""
+                  />
                   Hot
                 </wa-option>
                 <wa-option value="cool">
-                  <img slot="start" src="./icons/colormaps/cool.webp" width="64" height="12" alt="">
+                  <img
+                    slot="start"
+                    src="./icons/colormaps/cool.webp"
+                    width="64"
+                    height="12"
+                    alt=""
+                  />
                   Cool
                 </wa-option>
                 <wa-option value="viridis">
-                  <img slot="start" src="./icons/colormaps/viridis.webp" width="64" height="12" alt="">
+                  <img
+                    slot="start"
+                    src="./icons/colormaps/viridis.webp"
+                    width="64"
+                    height="12"
+                    alt=""
+                  />
                   Viridis
                 </wa-option>
                 <wa-option value="plasma">
-                  <img slot="start" src="./icons/colormaps/plasma.webp" width="64" height="12" alt="">
+                  <img
+                    slot="start"
+                    src="./icons/colormaps/plasma.webp"
+                    width="64"
+                    height="12"
+                    alt=""
+                  />
                   Plasma
                 </wa-option>
                 <wa-option value="inferno">
-                  <img slot="start" src="./icons/colormaps/inferno.webp" width="64" height="12" alt="">
+                  <img
+                    slot="start"
+                    src="./icons/colormaps/inferno.webp"
+                    width="64"
+                    height="12"
+                    alt=""
+                  />
                   Inferno
                 </wa-option>
               </wa-select>
@@ -838,7 +911,9 @@
         rel="noopener noreferrer"
       >
         <svg viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.64 7.64 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z" />
+          <path
+            d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.64 7.64 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"
+          />
         </svg>
         Star on GitHub
       </a>
@@ -866,9 +941,7 @@
                 <path d="M 0,2000 H 2000 V 0 H 0 Z" />
               </clipPath>
             </defs>
-            <g
-              transform="matrix(1.3333333,0,0,-1.3333333,-434.8134,2460.3986)"
-            >
+            <g transform="matrix(1.3333333,0,0,-1.3333333,-434.8134,2460.3986)">
               <g
                 transform="matrix(2.6541397,0,0,2.6541397,-1655.2728,-1641.6978)"
               >
@@ -876,13 +949,23 @@
                   <g transform="translate(943.9064,700.0499)">
                     <path
                       d="M 0,0 C 11.872,18.157 18.294,46.894 19.062,86.358 H 18.573 V 342.199 H -25.86 v 15.163 h 44.433 v 119.829 c 0,46.349 9.985,79.418 29.983,99.192 15.869,15.703 39.553,25.279 70.978,28.784 -26.51,7.107 -54.739,10.011 -83.939,7.909 -125.881,-9.062 -224.827,-109.222 -232.496,-235.196 -4.592,-75.424 24.077,-144.2 72.721,-193.097 47.255,-47.501 72.89,-108.686 79.818,-174.336 2.359,-22.356 31.315,-29.8 43.886,-11.164 C -0.316,-0.48 -0.158,-0.241 0,0"
-                      style="fill:#0047ab;fill-opacity:1;fill-rule:nonzero;stroke:none"
+                      style="
+                        fill: #0047ab;
+                        fill-opacity: 1;
+                        fill-rule: nonzero;
+                        stroke: none;
+                      "
                     />
                   </g>
                   <g transform="translate(1104.4615,1292.5992)">
                     <path
                       d="m 0,0 c -25.39,11.17 -55.537,3.975 -71.675,-18.585 -0.48,-0.671 -0.949,-1.354 -1.408,-2.05 -12.764,-19.355 -19.145,-50.929 -19.145,-94.723 l 0.182,-119.829 h 44.824 v -15.163 h -44.812 l 0.084,-48.52 0.015,-15.431 0.279,-183.511 c 0,-46.349 -9.984,-79.418 -29.982,-99.192 -11.441,-11.321 -26.948,-19.455 -46.476,-24.434 H -4.579 v 0.859 c 0,80.427 29.947,158.419 85.463,216.613 43.057,45.134 69.499,106.249 69.499,173.559 C 150.383,-127.46 88.551,-38.958 0,0"
-                      style="fill:#808080;fill-opacity:1;fill-rule:nonzero;stroke:none"
+                      style="
+                        fill: #808080;
+                        fill-opacity: 1;
+                        fill-rule: nonzero;
+                        stroke: none;
+                      "
                     />
                   </g>
                 </g>
@@ -952,16 +1035,10 @@
               >MCP Server</a
             >
           </dt>
-          <dd>
-            AI agent integration for batch processing
-          </dd>
+          <dd>AI agent integration for batch processing</dd>
         </dl>
       </div>
-      <wa-button
-        slot="footer"
-        variant="brand"
-        size="small"
-        data-drawer="close"
+      <wa-button slot="footer" variant="brand" size="small" data-drawer="close"
         >Got it</wa-button
       >
     </wa-drawer>

@@ -1,12 +1,12 @@
 pre-commit:
   parallel: true
   commands:
-    biome-check:
+    check:
       glob: "*.{js,ts,tsx,json}"
-      run: bunx biome check --write --no-errors-on-unmatched --staged {staged_files}
+      run: vp check --fix {staged_files}
       stage_fixed: true
 
 commit-msg:
   commands:
     commitlint:
-      run: bunx commitlint --edit {1}
+      run: pnpm exec commitlint --edit {1}

@@ -1,40 +1,38 @@
 {
   "name": "@fideus-labs/fidnii-monorepo",
-  "packageManager": "bun@1.x",
-  "type": "module",
   "private": true,
-  "workspaces": [
-    "fidnii",
-    "examples/*"
-  ],
+  "type": "module",
   "scripts": {
-    "build": "bun run --filter '!./' build",
-    "check": "biome check .",
-    "dev": "bun run --filter '!./' dev",
-    "format": "biome format --write .",
-    "lint": "biome lint .",
+    "build": "vp run -r build",
+    "check": "vp check",
+    "dev": "vp run -r dev",
+    "format": "vp fmt --write",
+    "lint": "vp lint",
     "prepare": "lefthook install",
-    "test": "bun run --filter '!./' test"
+    "test": "vp run -r test"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.3.14",
     "@changesets/changelog-github": "^0.5.2",
     "@changesets/cli": "^2.29.8",
     "@commitlint/cli": "^20.4.1",
     "@commitlint/config-conventional": "^20.4.1",
     "@playwright/test": "^1.58.2",
     "lefthook": "^2.1.0",
-    "typescript": "^5.9.3"
-  },
-  "overrides": {
-    "@fideus-labs/fiff": "^0.7.0",
-    "zarrita": "^0.6.1",
-    "@fideus-labs/fizarrita": "^1.4.1",
-    "@fideus-labs/ngff-zarr": "^0.16.0",
-    "@fideus-labs/worker-pool": "^1.0.0",
-    "@playwright/test": "^1.58.2",
     "typescript": "^5.9.3",
-    "vite": "^7.3.1"
+    "vite-plus": "latest"
+  },
+  "packageManager": "pnpm@10.12.1",
+  "pnpm": {
+    "overrides": {
+      "vite": "npm:@voidzero-dev/vite-plus-core@latest",
+      "@fideus-labs/fiff": "^0.7.0",
+      "zarrita": "^0.6.1",
+      "@fideus-labs/fizarrita": "^1.4.1",
+      "@fideus-labs/ngff-zarr": "^0.16.0",
+      "@fideus-labs/worker-pool": "^1.0.0",
+      "@playwright/test": "^1.58.2",
+      "typescript": "^5.9.3"
+    }
   },
   "trustedDependencies": [
     "lefthook",

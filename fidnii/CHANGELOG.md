@@ -81,7 +81,6 @@
 
   This eliminates the need to save/restore previous callback handlers, supports
   multiple listeners per event, and uses `AbortController` for clean teardown.
-
   - `onClipPlaneChange` → `addEventListener("clipPlaneChange", ...)`
   - `onOptsChange` (sliceType filter) → `addEventListener("sliceTypeChange", ...)`
   - `onLocationChange` → `addEventListener("locationChange", ...)`
@@ -115,7 +114,6 @@
 ### Patch Changes
 
 - [#31](https://github.com/fideus-labs/fidnii/pull/31) [`9b036ae`](https://github.com/fideus-labs/fidnii/commit/9b036ae0e591a5f32d2a62f89bdacf8591f49a84) Thanks [@thewtex](https://github.com/thewtex)! - Eliminate blosc round-trip during OME-TIFF conversion
-
   - Use `bytesOnlyCodecs()` from ngff-zarr v0.12.0 to skip blosc compression
     during `toMultiscales()` when the output format is OME-TIFF, avoiding the
     wasteful compress→decompress cycle that blocked the main thread (~2 seconds)

@@ -6,28 +6,30 @@ Guidance for AI coding agents operating in this repository.
 
 Fidnii (`@fideus-labs/fidnii`) is a TypeScript library for rendering OME-Zarr
 (NGFF) medical/scientific images inside NiiVue with progressive multi-resolution
-loading. It is a **bun monorepo** with three workspace packages: `fidnii/`
-(the library), `examples/getting-started/`, and `examples/convert/`.
+loading. It is a **Vite+ monorepo** (pnpm workspaces) with three workspace
+packages: `fidnii/` (the library), `examples/getting-started/`, and
+`examples/convert/`.
 
 ## Build Commands
 
 ```bash
-bun run build             # Build all workspace packages
-bun run dev               # Start dev servers for all packages
+vp run -r build           # Build all workspace packages
+vp run -r dev             # Start dev servers for all packages
 ```
 
-The library (`fidnii/`) builds with plain `tsc` to `fidnii/dist/` (ESM `.js` +
-`.d.ts`). Examples use Vite for bundling. The dev server runs on port 5173 with
-COOP/COEP headers enabled for SharedArrayBuffer support.
+The library (`fidnii/`) builds with `vp pack` (tsdown) to `fidnii/dist/`
+(ESM `.mjs` + `.d.mts`). Examples use Vite for bundling. The dev server runs on
+port 5173 with COOP/COEP headers enabled for SharedArrayBuffer support.
 
 ## Linting & Formatting
 
-[Biome](https://biomejs.dev/) handles linting, formatting, and import sorting:
+[Vite+](https://viteplus.dev/) handles linting (Oxlint) and formatting (Oxfmt)
+— configured in the root `vite.config.ts`:
 
 ```bash
-bun run check             # Lint + format + import sorting (same as CI)
-bun run lint              # Lint only
-bun run format            # Auto-format all files
+vp check                  # Lint + format (same as CI)
+vp lint                   # Lint only
+vp fmt --write            # Auto-format all files
 ```
 
 ## Type Checking
@@ -35,7 +37,7 @@ bun run format            # Auto-format all files
 TypeScript strict mode is enforced. Run from `fidnii/`:
 
 ```bash
-bunx tsc --noEmit         # Type-check without emitting
+pnpm exec tsc --noEmit    # Type-check without emitting
 ```
 
 `tsconfig.json` enables `strict`, `noUnusedLocals`, `noUnusedParameters`, and
@@ -47,11 +49,11 @@ All tests are **Playwright** end-to-end browser tests (Chromium only, WebGL via
 EGL). Tests have a 120-second timeout because they load real data from S3.
 
 ```bash
-bun run test                                           # All tests (monorepo)
-bunx playwright test                                   # All tests (current pkg)
-bunx playwright test tests/basic-loading.spec.ts       # Single test file
-bunx playwright test -g "page loads"                   # Single test by grep
-bunx playwright test tests/clip-planes.spec.ts -g "add a clip plane"
+vp run -r test                                         # All tests (monorepo)
+pnpm exec playwright test                                    # All tests (current pkg)
+pnpm exec playwright test tests/basic-loading.spec.ts        # Single test file
+pnpm exec playwright test -g "page loads"                    # Single test by grep
+pnpm exec playwright test tests/clip-planes.spec.ts -g "add a clip plane"
 ```
 
 Test files live in `fidnii/tests/` and `examples/getting-started/tests/` using
@@ -63,17 +65,17 @@ Useful flags: `--headed` (visible browser), `--debug` (step-through),
 
 ## Git Hooks & Commit Messages
 
-Lefthook runs a pre-commit hook that auto-fixes staged files with `biome check`.
+Lefthook runs a pre-commit hook that auto-fixes staged files with `vp check`.
 Commit messages are validated by **commitlint** using Conventional Commits
 (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`, etc.).
 
 ## Code Style
 
-### Formatting (Biome)
+### Formatting (Oxfmt)
 
 - **Indentation**: 2 spaces, no tabs
-- **Semicolons**: None (Biome setting: `asNeeded`)
-- **Quotes**: Double quotes
+- **Semicolons**: None (`semi: false`)
+- **Quotes**: Double quotes (`singleQuote: false`)
 - **Line width**: 80 columns
 - **Trailing commas**: All (in multi-line constructs)
 
@@ -116,7 +118,7 @@ export type { ClipPlane, VolumeBounds } from "./types.js"
 ### Naming Conventions
 
 | Kind                  | Style           | Example                   |
-|-----------------------|-----------------|---------------------------|
+| --------------------- | --------------- | ------------------------- |
 | Variables, parameters | camelCase       | `levelIndex`, `maxPixels` |
 | Functions             | camelCase       | `selectResolution`        |
 | Classes               | PascalCase      | `OMEZarrNVImage`          |

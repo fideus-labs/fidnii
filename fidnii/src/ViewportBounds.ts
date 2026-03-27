@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) Fideus Labs LLC
 // SPDX-License-Identifier: MIT
 
+import type { vec3 } from "gl-matrix"
 import type { Niivue } from "@niivue/niivue"
 import { SLICE_TYPE } from "@niivue/niivue"
 
@@ -269,7 +270,7 @@ export function computeViewportBounds2D(
   const pan = nv.scene.pan2Dxyzmm // vec4: [panX, panY, panZ, zoom]
   // Swizzle the pan vector to match the current orientation
   const panSwizzled = nv.swizzleVec3MM(
-    [pan[0], pan[1], pan[2]] as unknown as import("gl-matrix").vec3,
+    [pan[0], pan[1], pan[2]] as unknown as vec3,
     sliceType,
   )
   const zoom = pan[3] || 1

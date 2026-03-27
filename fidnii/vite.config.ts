@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { resolve } from "node:path"
-import { createLogger, defineConfig } from "vite"
+import { createLogger, defineConfig } from "vite-plus"
 
 const logger = createLogger()
 const originalWarnOnce = logger.warnOnce.bind(logger)
@@ -60,5 +60,13 @@ export default defineConfig({
       "@fideus-labs/ngff-zarr",
       "@fideus-labs/ngff-zarr/browser",
     ],
+  },
+
+  // tsdown library packaging configuration
+  pack: {
+    entry: ["src/index.ts"],
+    format: ["esm"],
+    dts: true,
+    sourcemap: true,
   },
 })

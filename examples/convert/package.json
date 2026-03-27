@@ -1,12 +1,11 @@
 {
   "name": "@fideus-labs/fidnii-example-convert",
-  "packageManager": "bun@1.x",
   "version": "0.0.1",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "vite build",
     "generate:colormap-icons": "tsx generate-colormap-icons.ts",
     "preview": "vite preview"
   },
@@ -26,7 +25,7 @@
     "sharp": "^0.34.5",
     "tsx": "^4.8.1",
     "typescript": "^5.9.3",
-    "vite": "^7.3.1",
+    "vite": "^8.0.0",
     "vite-plugin-static-copy": "^3.2.0"
   }
 }
