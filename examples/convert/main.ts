@@ -1056,7 +1056,7 @@ function renderDatasetList(): void {
 
 // Open the More Samples dialog
 moreSamplesBtn.addEventListener("click", () => {
-  scivisSearch.value = ""
+  ;(scivisSearch as unknown as { value: string }).value = ""
   renderDatasetList()
   scivisDialog.open = true
 })
@@ -1064,7 +1064,7 @@ moreSamplesBtn.addEventListener("click", () => {
 // Re-render the list when the user types in the search input
 scivisSearch.addEventListener("input", () => renderDatasetList())
 scivisSearch.addEventListener("wa-clear", () => {
-  scivisSearch.value = ""
+  ;(scivisSearch as unknown as { value: string }).value = ""
   renderDatasetList()
 })
 
