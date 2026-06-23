@@ -1907,27 +1907,33 @@ export class OMEZarrNVImage {
   }
 
   /**
-   * Hook viewport events (mouseUp, zoom3DChange, wheel) on a NV instance.
-   * All listeners share a single AbortController so they can be torn down
-   * together via {@link _unhookViewportEvents}.
+   * Hook viewport events (pointerUp, azimuthElevationChange, wheel) on a NV
+   * instance. All listeners share a single AbortController so they can be torn
+   * down together via {@link _unhookViewportEvents}.
    */
   private _hookViewportEvents(nv: Niivue, state: AttachedNiivueState): void {
     const controller = new AbortController()
     state.viewportAbortController = controller
     const signal = controller.signal
 
-    // Detect end of mouse/touch interaction
+    // Detect end of mouse/touch interaction.
+    // 1.0 renamed `mouseUp` → `pointerUp` (NVEventMap); the handler ignores the
+    // event payload, so only the event name changes.
     nv.addEventListener(
-      "mouseUp",
+      "pointerUp",
       () => {
         this._handleViewportInteractionEnd(nv)
       },
       { signal },
     )
 
-    // Detect 3D zoom level changes
+    // Detect 3D render rotation.
+    // 1.0 removed `zoom3DChange`; the nearest surviving 3D-view event is
+    // `azimuthElevationChange` (camera rotation, not zoom). 3D *zoom* stays
+    // covered by the canvas `wheel` listener below and by `_hookZoomOverride`.
+    // Runtime parity (rotation- vs. zoom-driven firing) is flagged for Phase 04.
     nv.addEventListener(
-      "zoom3DChange",
+      "azimuthElevationChange",
       () => {
         this._handleViewportInteractionEnd(nv)
       },
@@ -2402,7 +2408,10 @@ export class OMEZarrNVImage {
     nv.addEventListener(
       "sliceTypeChange",
       (e) => {
-        this._handleSliceTypeChange(nv, e.detail.sliceType)
+        // 1.0 widened sliceTypeChange's detail.sliceType from SLICE_TYPE to
+        // `number`; the runtime value is still a valid SLICE_TYPE, so narrow it
+        // back to the SliceType union (same cast as _detectSliceType).
+        this._handleSliceTypeChange(nv, e.detail.sliceType as SliceType)
       },
       { signal },
     )
