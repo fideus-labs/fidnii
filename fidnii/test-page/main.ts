@@ -31,13 +31,19 @@ import {
   fromNgffZarr,
   setWorkerPoolSize,
 } from "@fideus-labs/ngff-zarr/browser"
-import { DRAG_MODE, Niivue, SLICE_TYPE } from "@niivue/niivue"
+import { DRAG_MODE, SLICE_TYPE } from "@niivue/niivue"
+// niivue 1.0 defaults to WebGPU; the dedicated /webgl2 subpath build hard-pins
+// the WebGL2 backend so the test page (and Playwright's EGL/Chromium) never
+// attempt WebGPU. SLICE_TYPE/DRAG_MODE are not re-exported from the subpath, so
+// the enums are imported from the package root above. See
+// docs/niivue-1.0-migration/changelog/rendering-backend.md.
+import NiiVueWebGL2 from "@niivue/niivue/webgl2"
 
 declare global {
   interface Window {
     image: OMEZarrNVImage
-    nv: Niivue
-    nv2: Niivue
+    nv: NiiVueWebGL2
+    nv2: NiiVueWebGL2
     fidnii: {
       OMEZarrNVImage: typeof OMEZarrNVImage
       getChannelInfo: typeof getChannelInfo
@@ -101,6 +107,17 @@ const DATA_URL =
 // Support ?tiff=<url> to load TIFF files via fromTiff()
 const urlParams = new URLSearchParams(window.location.search)
 const TIFF_URL = urlParams.get("tiff")
+
+// Human-readable labels for each SLICE_TYPE value. In niivue 1.0 SLICE_TYPE is an
+// `as const` object (name → number), so a numeric value cannot be reverse-indexed
+// directly; this map provides the number → label lookup the UI needs.
+const SLICE_TYPE_NAMES: Record<number, string> = {
+  [SLICE_TYPE.RENDER]: "Render",
+  [SLICE_TYPE.AXIAL]: "Axial",
+  [SLICE_TYPE.CORONAL]: "Coronal",
+  [SLICE_TYPE.SAGITTAL]: "Sagittal",
+  [SLICE_TYPE.MULTIPLANAR]: "Multiplanar",
+}
 
 // DOM elements — info panel
 const statusEl = document.getElementById("status")!
@@ -287,19 +304,17 @@ function updateInfoPanel(image: OMEZarrNVImage): void {
 // ---------------------------------------------------------------------------
 
 async function loadImage(
-  nv: Niivue,
-  nv2: Niivue,
+  nv: NiiVueWebGL2,
+  nv2: NiiVueWebGL2,
   maxPixels: number,
 ): Promise<OMEZarrNVImage> {
   statusEl.textContent = "Loading..."
 
-  // Remove existing volumes from both NV instances
-  while (nv.volumes.length > 0) {
-    nv.removeVolume(nv.volumes[0])
-  }
-  while (nv2.volumes.length > 0) {
-    nv2.removeVolume(nv2.volumes[0])
-  }
+  // Remove existing volumes from both NV instances. niivue 1.0 dropped the
+  // controller-level removeVolume(volume); removeAllVolumes() clears every
+  // volume and is async.
+  await nv.removeAllVolumes()
+  await nv2.removeAllVolumes()
 
   const multiscales = TIFF_URL
     ? await fromTiff(TIFF_URL)
@@ -312,7 +327,9 @@ async function loadImage(
     autoLoad: false,
   })
 
-  nv.addVolume(image)
+  // niivue 1.0: addVolume is async — await so the volume is registered and the
+  // GL textures are updated before progressive loading starts.
+  await nv.addVolume(image)
 
   // Attach the second NV instance for slice-type-aware rendering
   image.attachNiivue(nv2)
@@ -333,7 +350,7 @@ async function loadImage(
   image.addEventListener("slabLoadingComplete", (event) => {
     const detail = event.detail
     const sliceTypeName =
-      SLICE_TYPE[detail.sliceType] ?? String(detail.sliceType)
+      SLICE_TYPE_NAMES[detail.sliceType] ?? String(detail.sliceType)
     slabLevelEl.textContent = `${detail.levelIndex} (${sliceTypeName})`
     slabRangeEl.textContent = `[${detail.slabStart}, ${detail.slabEnd})`
   })
@@ -390,17 +407,11 @@ sliceTypeSelect.addEventListener("change", () => {
   if (!nv2) return
 
   const value = parseInt(sliceTypeSelect.value, 10)
-  nv2.setSliceType(value)
+  // niivue 1.0: setSliceType(v) was demoted to the `sliceType` setter.
+  nv2.sliceType = value
 
   // Update the canvas label
-  const labels: Record<number, string> = {
-    [SLICE_TYPE.RENDER]: "Render",
-    [SLICE_TYPE.AXIAL]: "Axial",
-    [SLICE_TYPE.CORONAL]: "Coronal",
-    [SLICE_TYPE.SAGITTAL]: "Sagittal",
-    [SLICE_TYPE.MULTIPLANAR]: "Multiplanar",
-  }
-  gl2LabelEl.textContent = labels[value] ?? "Unknown"
+  gl2LabelEl.textContent = SLICE_TYPE_NAMES[value] ?? "Unknown"
 })
 
 // --- Viewport-aware checkbox ---
@@ -414,7 +425,8 @@ viewportAwareCheckbox.addEventListener("change", () => {
 scrollZoomCheckbox.addEventListener("change", () => {
   const nv2 = window.nv2
   if (!nv2) return
-  nv2.opts.dragMode = scrollZoomCheckbox.checked
+  // niivue 1.0: nv.opts.dragMode moved to the primaryDragMode getter/setter.
+  nv2.primaryDragMode = scrollZoomCheckbox.checked
     ? DRAG_MODE.pan
     : DRAG_MODE.contrast
 })
@@ -436,26 +448,30 @@ async function main() {
   const canvas = document.getElementById("gl") as HTMLCanvasElement
   const canvas2 = document.getElementById("gl2") as HTMLCanvasElement
 
-  // Create primary NV instance (3D render mode)
-  const nv = new Niivue({
-    backColor: [0, 0, 0, 1],
-    isOrientCube: false,
+  // Create primary NV instance (3D render mode). niivue 1.0 renamed the
+  // backColor / isOrientCube options to backgroundColor / isOrientCubeVisible.
+  const nv = new NiiVueWebGL2({
+    backgroundColor: [0, 0, 0, 1],
+    isOrientCubeVisible: false,
     isOrientationTextVisible: false,
   })
   await nv.attachToCanvas(canvas)
-  nv.setSliceType(nv.sliceTypeRender)
+  // niivue 1.0: setSliceType(v) → `sliceType` setter, and the sliceTypeRender /
+  // sliceTypeAxial instance properties were removed in favor of SLICE_TYPE.
+  nv.sliceType = SLICE_TYPE.RENDER
 
   // Create secondary NV instance (2D slice mode, no crosshairs)
-  const nv2 = new Niivue({
-    backColor: [0, 0, 0, 1],
+  const nv2 = new NiiVueWebGL2({
+    backgroundColor: [0, 0, 0, 1],
     crosshairWidth: 0,
-    isOrientCube: false,
+    isOrientCubeVisible: false,
     isOrientationTextVisible: false,
   })
   await nv2.attachToCanvas(canvas2)
-  nv2.setSliceType(nv2.sliceTypeAxial)
+  nv2.sliceType = SLICE_TYPE.AXIAL
 
-  // Sync crosshair between the two NV instances (bidirectional)
+  // Sync crosshair between the two NV instances (bidirectional). In niivue 1.0
+  // broadcastTo registers a persistent sync subscription (not a one-shot push).
   nv.broadcastTo(nv2, { "2d": true, "3d": true })
   nv2.broadcastTo(nv, { "2d": true, "3d": true })
 

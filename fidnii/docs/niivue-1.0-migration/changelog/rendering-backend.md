@@ -491,3 +491,64 @@ shrinks the bundle (no WebGPU/WGSL code).
   internals (line numbers cited are `main`). Package-level facts (exports, entry
   files) are verified against the published artifact; deep method bodies are
   verified against `main` SOURCE only.
+
+---
+
+## 9. Applied in Phase 04 — test page (confirmed outcome, 2026-06-23)
+
+Records what was actually applied in `test-page/main.ts` so Phase 5 (test
+verification) relies on a single, confirmed backend decision.
+
+**Backend forced to WebGL2 via the subpath build** (recommendation §5 / §2.6 #1).
+The test page constructs the viewer from the WebGL2-only distribution:
+
+```ts
+import { DRAG_MODE, SLICE_TYPE } from "@niivue/niivue"   // enums only (no value ctor)
+import NiiVueWebGL2 from "@niivue/niivue/webgl2"         // WebGL2-only controller (default)
+
+const nv = new NiiVueWebGL2({ backgroundColor: [0, 0, 0, 1], isOrientCubeVisible: false, … })
+await nv.attachToCanvas(canvas)   // unchanged: the only async init gate (§3)
+```
+
+Confirmed against the installed `@niivue/niivue@1.0.0-rc.9`:
+
+- `package.json` `exports["./webgl2"]` → `dist/niivuegpu.webgl2.js` (types
+  `dist/index.webgl2.d.ts`); dist file present. Its default export is
+  `NVControlWebGL2` (`export { default, default as NiiVueGPU } from
+  './NVControlWebGL2'`).
+- `NVControlWebGL2` and the default `.` `NVControl` are the **identical**
+  declaration (`class NiiVueGPU extends NiiVueGPUBase`, same ctor) over the
+  **same** `NVControlBase`, so a `NiiVueWebGL2` instance is assignment-compatible
+  with the library's `NiiVueGPU`-typed params (`OMEZarrNVImage.create({ niivue })`,
+  `attachNiivue`, `broadcastTo`). **Verified by a clean `tsc` typecheck of
+  `test-page/main.ts`.**
+- **`SLICE_TYPE` is NOT re-exported from `./webgl2`** (only `DRAG_MODE` is), so the
+  enums are imported from the package root. Value-import-safe: pulls in enum
+  constants only, never constructs a WebGPU-defaulting viewer (the library already
+  imports `SLICE_TYPE` from the root).
+
+**fidnii's WebGL2 texture / clip-plane path still applies** — the backend is
+hard-pinned to WebGL2, so the library's existing WebGL2-oriented texture upload
+and clip-plane code is the live (and only) path; no WebGPU path is exercised.
+
+**COOP/COEP headers confirmed unchanged and sufficient.** `vite.config.ts` still
+serves with `Cross-Origin-Opener-Policy: same-origin` +
+`Cross-Origin-Embedder-Policy: require-corp`, establishing the cross-origin
+isolation that fidnii's SharedArrayBuffer (worker-pool / ngff-zarr WASM) usage
+needs. niivue 1.0 (WebGL2) adds no new SAB/WASM header requirement.
+
+### For Phase 5 (Playwright headless) — the exact decision
+
+- **Keep `playwright.config.ts` launch args as-is** (`--use-gl=egl` on Linux). The
+  WebGL2-only build has **no `navigator.gpu` dependence** and never inits WebGPU,
+  so the `--enable-unsafe-webgpu` / SwiftShader-Vulkan flags (§4.1) are **not**
+  needed.
+- Tests need **no** `?backend=` param or option — WebGL2 is un-bypassable in the
+  build. Failure signal to watch is a rejected `await attachToCanvas(...)`, which
+  under WebGL2-only can only mean an EGL/GL context problem (not a WebGPU device).
+
+> Phase 3 (dev server) note: `optimizeDeps.include` lists `@niivue/niivue` but not
+> the `@niivue/niivue/webgl2` subpath. Vite auto-discovers and pre-bundles the
+> subpath on first dev load (a one-time "optimized dependency, reloading" — not an
+> error). Add `"@niivue/niivue/webgl2"` to `optimizeDeps.include` if that reload
+> is undesirable.
