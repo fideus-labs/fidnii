@@ -4,7 +4,7 @@
 import type { Niivue } from "@niivue/niivue"
 import { SLICE_TYPE } from "@niivue/niivue"
 
-import type { VolumeBounds } from "./types.js"
+import type { SliceType, VolumeBounds } from "./types.js"
 
 /**
  * Intersect two axis-aligned bounding boxes.
@@ -184,7 +184,7 @@ export function computeViewportBounds3D(
  */
 export function computeViewportBounds2D(
   nv: Niivue,
-  sliceType: SLICE_TYPE,
+  sliceType: SliceType,
   volumeBounds: VolumeBounds,
   normalizationScale: number = 1.0,
 ): VolumeBounds {

@@ -14,6 +14,7 @@ related:
   - '[[nvimage-api]]'
   - '[[events]]'
   - '[[enums-and-exports]]'
+  - '[[breakage-inventory]]'
 ---
 
 # Niivue 1.0 Migration — Knowledge Base

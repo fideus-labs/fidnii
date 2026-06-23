@@ -51,6 +51,7 @@ import type {
   PixelRegion,
   SlabBufferState,
   SlabSliceType,
+  SliceType,
   TimeAxisInfo,
   TimeUnit,
   TypedArray,
@@ -2394,7 +2395,7 @@ export class OMEZarrNVImage extends NVImage {
   /**
    * Detect the current slice type of a Niivue instance.
    */
-  private _detectSliceType(nv: Niivue): SLICE_TYPE {
+  private _detectSliceType(nv: Niivue): SliceType {
     // Access the opts.sliceType via the scene data or fall back to checking
     // the convenience properties. Niivue stores the current sliceType in opts.
     // We can read it from the NV instance's internal opts.
@@ -2409,7 +2410,7 @@ export class OMEZarrNVImage extends NVImage {
   /**
    * Check if a slice type is one of the 2D slab types.
    */
-  private _isSlabSliceType(st: SLICE_TYPE): st is SlabSliceType {
+  private _isSlabSliceType(st: SliceType): st is SlabSliceType {
     return (
       st === SLICE_TYPE.AXIAL ||
       st === SLICE_TYPE.CORONAL ||
@@ -2460,7 +2461,7 @@ export class OMEZarrNVImage extends NVImage {
   /**
    * Handle a slice type change on an attached Niivue instance.
    */
-  private _handleSliceTypeChange(nv: Niivue, newSliceType: SLICE_TYPE): void {
+  private _handleSliceTypeChange(nv: Niivue, newSliceType: SliceType): void {
     const state = this._attachedNiivues.get(nv)
     if (!state) return
 

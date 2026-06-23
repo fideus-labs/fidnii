@@ -247,6 +247,16 @@ export type SlabSliceType =
   | typeof SLICE_TYPE.SAGITTAL
 
 /**
+ * Any Niivue slice type value — the full set, including the 3D render and
+ * multiplanar views.
+ *
+ * In niivue 1.0 `SLICE_TYPE` became a frozen `as const` object (value-only),
+ * so it can no longer be used in type position. This value-union is the
+ * type-side equivalent of the former `SLICE_TYPE` enum-as-type.
+ */
+export type SliceType = (typeof SLICE_TYPE)[keyof typeof SLICE_TYPE]
+
+/**
  * State for a per-slice-type slab buffer.
  *
  * Each 2D slice view (axial, coronal, sagittal) gets its own NVImage buffer
@@ -295,7 +305,7 @@ export interface AttachedNiivueState {
   /** The Niivue instance */
   nv: Niivue
   /** The current slice type of this NV instance */
-  currentSliceType: SLICE_TYPE
+  currentSliceType: SliceType
   /** AbortController for niivue addEventListener listeners (sliceTypeChange, locationChange) */
   eventAbortController: AbortController
   /** AbortController for viewport-aware event listeners (wheel, etc.) */
