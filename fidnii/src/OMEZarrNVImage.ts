@@ -7,8 +7,8 @@ import {
   computeOmeroFromNgffImage,
   GLASBEY_COLORS,
 } from "@fideus-labs/ngff-zarr/browser"
-import type { NiiVueGPU as Niivue } from "@niivue/niivue"
-import { NVImage, SLICE_TYPE } from "@niivue/niivue"
+import type { NiiVueGPU as Niivue, NVImage } from "@niivue/niivue"
+import { SLICE_TYPE } from "@niivue/niivue"
 import { LRUCache } from "lru-cache"
 import { NIFTI1 } from "nifti-reader-js"
 
@@ -87,8 +87,24 @@ import {
 const DEFAULT_MAX_PIXELS = 50_000_000
 const DEFAULT_MAX_CACHE_ENTRIES = 200
 
+// 1.0: `SLICE_TYPE` changed from a TS `enum` to `Object.freeze({...})`, so it has
+// no reverse (number→name) entries — `SLICE_TYPE[2]` is now `undefined`. This map
+// restores the reverse lookup used for display strings and slab buffer keys (the
+// buffer key especially must stay unique per orientation, not `slab-undefined-N`).
+const SLICE_TYPE_NAMES = new Map<number, string>(
+  Object.entries(SLICE_TYPE).map(([name, value]): [number, string] => [
+    value as number,
+    name,
+  ]),
+)
+
+/** Reverse-lookup a `SLICE_TYPE` numeric value to its name (1.0-safe). */
+const sliceTypeName = (sliceType: number): string =>
+  SLICE_TYPE_NAMES.get(sliceType) ?? String(sliceType)
+
 /**
- * OMEZarrNVImage extends NVImage to support rendering OME-Zarr images in NiiVue.
+ * OMEZarrNVImage is structurally an NVImage volume for rendering OME-Zarr
+ * images in NiiVue.
  *
  * Features:
  * - Progressive loading: quick preview from lowest resolution, then target resolution
@@ -97,7 +113,19 @@ const DEFAULT_MAX_CACHE_ENTRIES = 200
  * - Request coalescing for efficient chunk fetching
  * - Automatic metadata updates to reflect OME-Zarr coordinate transforms
  */
-export class OMEZarrNVImage extends NVImage {
+// 1.0: `NVImage` is a plain object type (no longer a constructable class), so
+// `extends NVImage` is impossible. We declaration-merge the `NVImage` object
+// type onto the class instead (interface + class with the same name): the class
+// instance structurally *is* an `NVImage` — satisfying `nv.addVolume(this)`,
+// `nv.volumes.indexOf(this)`, and the volume-list APIs — while NiiVue derives
+// the geometry / min-max fields on `addVolume` / `setVolumeAffine`. The derivation
+// helpers (`nii2volume`, `calculateRAS`, `calMinMax`) are NOT in rc.9's public
+// `exports` map, so this structural-merge + controller-method approach replaces
+// the (infeasible) "compose over nii2volume()" plan. See docs/niivue-1.0-migration.
+export interface OMEZarrNVImage extends NVImage {}
+
+// biome-ignore lint/suspicious/noUnsafeDeclarationMerging: intentional — the class is structurally an NVImage (1.0 removed the NVImage class); NiiVue populates the derived geometry/min-max fields at addVolume()/setVolumeAffine() time, so they are deliberately not all initialized on the class.
+export class OMEZarrNVImage {
   /** The OME-Zarr multiscales data */
   readonly multiscales: Multiscales
 
@@ -118,25 +146,38 @@ export class OMEZarrNVImage extends NVImage {
   // ============================================================
 
   /**
+   * Backing field for the {@link colormap} accessor. In 1.0 NVImage no longer
+   * provides a `colormap` accessor (with calMinMax/onColormapChange side
+   * effects), so this class owns the value and exposes it via the accessor
+   * below; NiiVue reads `colormap` (the getter) on each GL update.
+   */
+  private _colormap = "gray"
+
+  /**
    * The continuous colormap name used for rendering.
    *
-   * Overrides the NVImage setter so that changing the colormap on this
-   * image automatically propagates to all slab (2D slice) NVImages.
-   * Label images are unaffected — they use `setColormapLabel()` instead.
+   * A custom accessor (1.0: NVImage no longer provides one) so that changing the
+   * colormap on this image automatically propagates to all slab (2D slice)
+   * NVImages. Label images are unaffected — they use `setColormapLabel()` instead.
    */
-  override get colormap(): string {
+  get colormap(): string {
     return this._colormap
   }
 
-  override set colormap(cm: string) {
-    // Use NVImage's setter (calls calMinMax + onColormapChange)
-    super.colormap = cm
+  set colormap(cm: string) {
+    // 1.0: NVImage's `colormap` accessor (which ran calMinMax + onColormapChange)
+    // is gone — `colormap` is now a plain data field NiiVue reads on the next GL
+    // update. Own the value and drive the side effects through the controller.
+    this._colormap = cm
     // Propagate to all existing slab NVImages
     if (!this.isLabelImage) {
       for (const slab of this._slabBuffers.values()) {
         slab.nvImage.colormap = cm
       }
     }
+    // Re-render so the new colormap takes effect (replaces NVImage's old
+    // onColormapChange side effect). Fire-and-forget; may no-op pre-attach.
+    void this.niivue.updateGLVolume()
   }
 
   /** Reference to NiiVue instance */
@@ -349,8 +390,10 @@ export class OMEZarrNVImage extends NVImage {
    * Private constructor. Use OMEZarrNVImage.create() for instantiation.
    */
   private constructor(options: OMEZarrNVImageOptions) {
-    // Call NVImage constructor with no data buffer
-    super()
+    // 1.0: NVImage is no longer a class — there is no base constructor to call.
+    // The volume's data fields (hdr/img/name/colormap/opacity) are set in
+    // initializeNVImageProperties(); NiiVue derives the geometry / min-max fields
+    // when this volume is added via addVolume() / setVolumeAffine().
 
     this.multiscales = options.multiscales
     this.maxPixels = options.maxPixels ?? DEFAULT_MAX_PIXELS
@@ -583,11 +626,29 @@ export class OMEZarrNVImage extends NVImage {
     // We need at least 1 element to avoid issues
     this.img = this.bufferManager.resize([1, 1, 1]) as NVImage["img"]
 
-    // Set default colormap (label images use setColormapLabel() instead)
+    // 1.0: super() (the NVImage ctor) no longer exists to seed the derived
+    // geometry / min-max fields. Seed safe placeholders; NiiVue recomputes them
+    // when this volume is added (addVolume) and its affine applied
+    // (setVolumeAffine, in updateHeaderForRegion). RUNTIME-VERIFY (migration §8).
+    this.dims = [1, 1, 1]
+    this.nVox3D = 1
+    this.extentsMin = [0, 0, 0]
+    this.extentsMax = [0, 0, 0]
+    this.calMin = 0
+    this.calMax = 0
+    this.robustMin = 0
+    this.robustMax = 0
+    this.globalMin = 0
+    this.globalMax = 0
+
+    // Set default colormap (label images use setColormapLabel() instead).
+    // _colormap is the backing field for the colormap accessor (1.0: NVImage no
+    // longer provides a colormap accessor; NiiVue reads `colormap` = our getter).
     if (!this.isLabelImage) {
       this._colormap = "gray"
     }
-    this._opacity = 1.0
+    // 1.0: _opacity (NVImage private backing) → opacity (public data field).
+    this.opacity = 1.0
   }
 
   /**
@@ -846,12 +907,12 @@ export class OMEZarrNVImage extends NVImage {
       await this.ensureOmeroMetadata(ngffImage, levelIndex)
     }
 
-    // Reset global_min so NiiVue's refreshLayers() re-runs calMinMax() on real data.
-    // Without this, if calMinMax() was previously called on placeholder/empty data
-    // (e.g., when setting colormap before loading), global_min would already be set
-    // and NiiVue would skip recalculating intensity ranges, leaving cal_min/cal_max
-    // at stale values (typically 0/0), causing an all-white render.
-    this.global_min = undefined
+    // 1.0: the "reset global_min = undefined to force refreshLayers() → calMinMax()"
+    // trick is gone — globalMin is now a required number and calMinMax is not in the
+    // public API. NiiVue recomputes intensity ranges inside updateGLVolume() below;
+    // explicit windowing still comes from OMERO + _widenCalRangeIfNeeded().
+    // RUNTIME-VERIFY (migration §8, H5): confirm real-data min/max on first load
+    // (the old all-white-on-stale-range failure mode).
 
     // Update NiiVue clip planes
     this.updateNiivueClipPlanes()
@@ -994,8 +1055,9 @@ export class OMEZarrNVImage extends NVImage {
     const srows = affineToNiftiSrows(affine)
     this.hdr.affine = [srows.srow_x, srows.srow_y, srows.srow_z, [0, 0, 0, 1]]
 
-    // Recalculate RAS orientation
-    this.calculateRAS()
+    // Recalculate RAS orientation. 1.0: NVImage.calculateRAS() was removed (now a
+    // non-exported free function); the public path is setVolumeAffine(index, affine).
+    this._recomputeVolumeRAS(this)
   }
 
   /**
@@ -1187,8 +1249,13 @@ export class OMEZarrNVImage extends NVImage {
       }
     }
 
-    // NiiVue's setColormapLabel expects a ColorMap-shaped object
-    nvImage.setColormapLabel({ R, G, B, A, I, labels })
+    // 1.0: NVImage.setColormapLabel() was removed; the label LUT is now registered
+    // through the controller, keyed by volume index. It accepts the same
+    // ColorMap-shaped object.
+    const found = this._findAttachedVolume(nvImage)
+    if (found) {
+      void found.nv.setColormapLabel(found.index, { R, G, B, A, I, labels })
+    }
   }
 
   /**
@@ -1636,7 +1703,8 @@ export class OMEZarrNVImage extends NVImage {
         cached.region,
         cached.shape,
       )
-      this.global_min = undefined
+      // 1.0: the global_min = undefined force-recompute trick is gone (globalMin
+      // is a required number); updateGLVolume() handles the refresh.
       // 1.0: updateGLVolume is async; fire-and-forget.
       void this.niivue.updateGLVolume()
 
@@ -2655,7 +2723,7 @@ export class OMEZarrNVImage extends NVImage {
 
     void this._loadSlab(sliceType, worldCoord, "initial").catch((err) => {
       console.error(
-        `[fidnii] Error loading slab for ${SLICE_TYPE[sliceType]}:`,
+        `[fidnii] Error loading slab for ${sliceTypeName(sliceType)}:`,
         err,
       )
     })
@@ -2671,11 +2739,8 @@ export class OMEZarrNVImage extends NVImage {
       this.dtype,
       componentsPerVoxel,
     )
-    const nvImage = new NVImage()
-
     // Initialize with placeholder NIfTI header (same as main image setup)
     const hdr = new NIFTI1()
-    nvImage.hdr = hdr
     hdr.dims = [3, 1, 1, 1, 1, 1, 1, 1]
     if (this._channelInfo && isRGBImage(this.multiscales.images[0])) {
       const rgbCode = getRGBNiftiDataType(this._channelInfo)
@@ -2693,12 +2758,32 @@ export class OMEZarrNVImage extends NVImage {
       [0, 0, 0, 1],
     ]
     hdr.sform_code = 1
-    nvImage.name = `${this.name ?? "OME-Zarr"} [${SLICE_TYPE[sliceType]}]`
-    nvImage.img = bufferManager.resize([1, 1, 1]) as NVImage["img"]
-    if (!this.isLabelImage) {
-      nvImage._colormap = this._colormap || "gray"
+    // 1.0: NVImage is a plain object type (no constructable class). Build the slab
+    // volume as a plain NVImage object with a placeholder header + data; NiiVue
+    // derives the geometry / min-max fields when it is added (addVolume) and its
+    // affine is applied (setVolumeAffine, in _updateSlabHeader). _colormap/_opacity
+    // (NVImage private backings) become the public colormap/opacity data fields.
+    const nvImage: NVImage = {
+      name: `${this.name} [${sliceTypeName(sliceType)}]`,
+      hdr,
+      img: bufferManager.resize([1, 1, 1]) as NVImage["img"],
+      // Placeholder geometry / min-max; NiiVue derives the real values when the
+      // volume is added (addVolume) and its affine applied (setVolumeAffine, in
+      // _updateSlabHeader). RUNTIME-VERIFY (migration §8): geometry completion.
+      dims: [1, 1, 1],
+      nVox3D: 1,
+      extentsMin: [0, 0, 0],
+      extentsMax: [0, 0, 0],
+      calMin: 0,
+      calMax: 0,
+      robustMin: 0,
+      robustMax: 0,
+      globalMin: 0,
+      globalMax: 0,
+      // 1.0: _colormap/_opacity (NVImage private backings) → colormap/opacity.
+      opacity: 1.0,
+      ...(this.isLabelImage ? {} : { colormap: this._colormap || "gray" }),
     }
-    nvImage._opacity = 1.0
 
     // Select initial resolution using 2D pixel budget
     const orthAxis = this._getOrthogonalAxis(sliceType)
@@ -2988,7 +3073,7 @@ export class OMEZarrNVImage extends NVImage {
       ngffImage,
       levelIndex,
       fetchRegion,
-      `slab-${SLICE_TYPE[sliceType]}-${levelIndex}`,
+      `slab-${sliceTypeName(sliceType)}-${levelIndex}`,
       this._timeIndex,
     )
 
@@ -3049,8 +3134,10 @@ export class OMEZarrNVImage extends NVImage {
       this._applyOmeroToSlabHeader(slabState.nvImage)
     }
 
-    // Reset global_min so NiiVue recalculates intensity ranges
-    slabState.nvImage.global_min = undefined
+    // 1.0: the global_min = undefined force-recompute trick is gone (globalMin is a
+    // required number; calMinMax is not public). NiiVue recomputes ranges inside
+    // updateGLVolume(); _widenCalRangeIfNeeded() still widens to the data extremes.
+    // RUNTIME-VERIFY (migration §8, H5).
 
     // Compute the normalization scale used by _updateSlabHeader so we can
     // convert the world coordinate into the slab's normalized mm space.
@@ -3194,7 +3281,8 @@ export class OMEZarrNVImage extends NVImage {
     ]
 
     nvImage.hdr.sform_code = 1
-    nvImage.calculateRAS()
+    // 1.0: NVImage.calculateRAS() removed → controller setVolumeAffine(index, affine).
+    this._recomputeVolumeRAS(nvImage)
   }
 
   /**
@@ -3238,26 +3326,66 @@ export class OMEZarrNVImage extends NVImage {
    * @returns true if the display range was widened
    */
   private _widenCalRangeIfNeeded(nvImage: NVImage): boolean {
-    if (nvImage.global_min === undefined || nvImage.global_max === undefined) {
-      return false
-    }
-
     let widened = false
 
-    // Widen the runtime display range (cal_min/cal_max) to encompass the
-    // actual data extremes (global_min/global_max) at this resolution level.
-    // The hdr values are NOT modified so the original OMERO window is
-    // preserved for next reload.
-    if (nvImage.cal_max !== undefined && nvImage.global_max > nvImage.cal_max) {
-      nvImage.cal_max = nvImage.global_max
+    // 1.0: volume-level global_min/global_max/cal_min/cal_max → globalMin/globalMax/
+    // calMin/calMax (required numbers; the undefined guards are gone). Widen the
+    // runtime display range (calMin/calMax) to encompass the actual data extremes
+    // (globalMin/globalMax) at this resolution level. The header values
+    // (hdr.cal_min/cal_max) are NOT modified so the original OMERO window is
+    // preserved for the next reload.
+    if (nvImage.globalMax > nvImage.calMax) {
+      nvImage.calMax = nvImage.globalMax
       widened = true
     }
-    if (nvImage.cal_min !== undefined && nvImage.global_min < nvImage.cal_min) {
-      nvImage.cal_min = nvImage.global_min
+    if (nvImage.globalMin < nvImage.calMin) {
+      nvImage.calMin = nvImage.globalMin
       widened = true
     }
 
     return widened
+  }
+
+  /**
+   * Find the attached Niivue instance that currently holds `nvImage`, plus the
+   * volume's index in that instance's `volumes` array.
+   *
+   * 1.0 reworked volume mutation around index-keyed controller methods
+   * (`setVolume`, `setVolumeAffine`, `setColormapLabel`), so call sites that used
+   * to mutate the volume object directly now need its `(nv, index)` pair.
+   *
+   * @returns the `{ nv, index }` pair, or `null` if the volume is not attached.
+   */
+  private _findAttachedVolume(
+    nvImage: NVImage,
+  ): { nv: Niivue; index: number } | null {
+    const seen = new Set<Niivue>()
+    for (const nv of [this.niivue, ...this._attachedNiivues.keys()]) {
+      if (seen.has(nv)) continue
+      seen.add(nv)
+      const index = nv.volumes.indexOf(nvImage)
+      if (index >= 0) return { nv, index }
+    }
+    return null
+  }
+
+  /**
+   * Recompute a volume's RAS orientation / geometry after its `hdr.affine`
+   * changed.
+   *
+   * 1.0 removed `NVImage.calculateRAS()` (now a non-exported free function). The
+   * public replacement is the controller's `setVolumeAffine(index, affine)`, which
+   * re-runs the same recompute (`updateVolumeAffineOnly` → `calculateRAS`).
+   *
+   * RUNTIME-VERIFY (migration §8.8): `setVolumeAffine` is async and requires the
+   * volume to already be attached, whereas the old method was synchronous and ran
+   * on a detached object. Phase 04 must confirm the placeholder→real-data and
+   * slab-reload transitions still orient correctly.
+   */
+  private _recomputeVolumeRAS(nvImage: NVImage): void {
+    const found = this._findAttachedVolume(nvImage)
+    if (!found) return
+    void found.nv.setVolumeAffine(found.index, nvImage.hdr.affine)
   }
 
   // ============================================================
