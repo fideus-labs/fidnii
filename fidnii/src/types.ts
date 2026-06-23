@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import type { Multiscales, NgffImage } from "@fideus-labs/ngff-zarr"
-import type { Niivue, NVImage } from "@niivue/niivue"
+// niivue 1.0 renamed the `Niivue` controller to `NiiVueGPU` (default export);
+// alias it back to keep fidnii's internal `Niivue` naming.
+import type { NiiVueGPU as Niivue, NVImage } from "@niivue/niivue"
 import { SLICE_TYPE } from "@niivue/niivue"
 
 import type { BufferManager } from "./BufferManager.js"

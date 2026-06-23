@@ -113,6 +113,7 @@ export type {
   ResolutionSelection,
   SlabBufferState,
   SlabSliceType,
+  SliceType,
   TimeAxisInfo,
   TimeUnit,
   TypedArray,
