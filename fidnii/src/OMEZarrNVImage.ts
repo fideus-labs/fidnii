@@ -73,6 +73,10 @@ import {
   calculateWorldBounds,
   createAffineFromOMEZarr,
 } from "./utils/affine.js"
+import {
+  calculateRAS,
+  computeBoundingBoxExtents,
+} from "./utils/calculateRAS.js"
 import { pixelToWorldAffine, worldToPixelAffine } from "./utils/coordinates.js"
 import {
   applyOrientationToAffine,
@@ -561,9 +565,15 @@ export class OMEZarrNVImage {
         const idx = image.niivue.volumes.indexOf(v)
         if (idx >= 0) image.niivue.model.removeVolume(idx)
       }
-      // 1.0: addVolume is async; fire-and-forget (matches populateVolume below).
-      void image.niivue.addVolume(image)
-      void image.populateVolume() // Fire-and-forget, returns immediately
+      // 1.0: addVolume is async and stores a decoupled copy — addToNiivue adds
+      // then re-seats this instance into nv.volumes. Add before populating so the
+      // first GL update targets our object. Fire-and-forget (progressive load).
+      void (async () => {
+        await image.addToNiivue(image.niivue)
+        await image.populateVolume()
+      })().catch((err: unknown) => {
+        console.error("[fidnii] autoLoad failed:", err)
+      })
     }
 
     return image
@@ -627,9 +637,10 @@ export class OMEZarrNVImage {
     this.img = this.bufferManager.resize([1, 1, 1]) as NVImage["img"]
 
     // 1.0: super() (the NVImage ctor) no longer exists to seed the derived
-    // geometry / min-max fields. Seed safe placeholders; NiiVue recomputes them
-    // when this volume is added (addVolume) and its affine applied
-    // (setVolumeAffine, in updateHeaderForRegion). RUNTIME-VERIFY (migration §8).
+    // min-max fields. Seed safe placeholders; NiiVue recomputes the intensity
+    // ranges inside updateGLVolume() once real data is present. (The RAS geometry
+    // fields are NOT deferred — they are computed explicitly via calculateRAS()
+    // below, because 1.0 requires them before addVolume.)
     this.dims = [1, 1, 1]
     this.nVox3D = 1
     this.extentsMin = [0, 0, 0]
@@ -649,6 +660,18 @@ export class OMEZarrNVImage {
     }
     // 1.0: _opacity (NVImage private backing) → opacity (public data field).
     this.opacity = 1.0
+
+    // 1.0: NiiVue's GL bind path requires precomputed RAS geometry (mm000…,
+    // matRAS, pixDimsRAS, frac2mm) *before* the volume is added, and throws
+    // "Missing moving image mm corner coordinates" otherwise. NiiVue 0.68
+    // computed this synchronously via NVImage.calculateRAS(); 1.0 removed that
+    // method and does not export its replacement, so we compute it from the
+    // placeholder header here. It is recomputed from the real affine once data
+    // loads (updateHeaderForRegion → _recomputeVolumeRAS).
+    calculateRAS(this)
+    // Seed the mm bounding box so NiiVue's scene pivot / location formatter have
+    // a non-degenerate extent before the first data load (recomputed on load).
+    computeBoundingBoxExtents(this)
   }
 
   /**
@@ -996,6 +1019,13 @@ export class OMEZarrNVImage {
       1,
     ]
 
+    // 1.0: NiiVue no longer derives these for hand-built volumes (the NVImage
+    // constructor that set them is gone). nVox3D drives the intensity scan in
+    // recalculateCalMinMax(); dims mirrors the loaded voxel size. (The 3D texture
+    // itself is sized from dimsRAS, which calculateRAS sets.)
+    this.dims = [fetchedShape[2], fetchedShape[1], fetchedShape[0]]
+    this.nVox3D = fetchedShape[0] * fetchedShape[1] * fetchedShape[2]
+
     // Compute buffer bounds in un-oriented OME-Zarr world space.
     // These drive clip-plane / viewport math and must stay un-oriented.
     const regionStart = region.chunkAlignedStart
@@ -1202,7 +1232,42 @@ export class OMEZarrNVImage {
 
       if (calMin !== undefined) this.hdr.cal_min = calMin
       if (calMax !== undefined) this.hdr.cal_max = calMax
+      this._applyIntensityWindow(this, calMin, calMax)
     }
+  }
+
+  /**
+   * Seed a volume's runtime intensity fields (`calMin`/`calMax` display window,
+   * `globalMin`/`globalMax` data range, `robustMin`/`robustMax`) from an OMERO
+   * window.
+   *
+   * 1.0: NiiVue's `NVImage.calMinMax()` — which used to copy `hdr.cal_min`/
+   * `cal_max` into the runtime display window and compute the data range — was
+   * removed, and NiiVue does not recompute these for a hand-built volume. Left at
+   * their `0` placeholders, the shader maps everything through an empty `0..0`
+   * window and the volume renders solid black. We therefore seed them from the
+   * OMERO window fidnii already resolved.
+   *
+   * @param nvImage - The volume to seed.
+   * @param displayMin - Display-window low (`window.start`), the rendered black point.
+   * @param displayMax - Display-window high (`window.end`), the rendered white point.
+   */
+  private _applyIntensityWindow(
+    nvImage: NVImage,
+    displayMin: number | undefined,
+    displayMax: number | undefined,
+  ): void {
+    if (displayMin === undefined || displayMax === undefined) return
+    nvImage.calMin = displayMin
+    nvImage.calMax = displayMax
+    nvImage.robustMin = displayMin
+    nvImage.robustMax = displayMax
+    // Seed the data range AT the display window, not the full OMERO data range:
+    // `_widenCalRangeIfNeeded` widens the display window out to global min/max, so
+    // seeding global = full data range would blow the tight OMERO window back out
+    // to the raw extremes and wash out contrast.
+    nvImage.globalMin = displayMin
+    nvImage.globalMax = displayMax
   }
 
   /**
@@ -2776,9 +2841,11 @@ export class OMEZarrNVImage {
       name: `${this.name} [${sliceTypeName(sliceType)}]`,
       hdr,
       img: bufferManager.resize([1, 1, 1]) as NVImage["img"],
-      // Placeholder geometry / min-max; NiiVue derives the real values when the
-      // volume is added (addVolume) and its affine applied (setVolumeAffine, in
-      // _updateSlabHeader). RUNTIME-VERIFY (migration §8): geometry completion.
+      // Placeholder min-max; NiiVue recomputes intensity ranges in updateGLVolume()
+      // once real slab data is present. The RAS geometry is computed explicitly by
+      // calculateRAS() below (1.0 requires it before this slab is added via
+      // _swapVolumeInNiivue → addVolume); it is recomputed from the real affine on
+      // each slab load (_updateSlabHeader → _recomputeVolumeRAS).
       dims: [1, 1, 1],
       nVox3D: 1,
       extentsMin: [0, 0, 0],
@@ -2793,6 +2860,12 @@ export class OMEZarrNVImage {
       opacity: 1.0,
       ...(this.isLabelImage ? {} : { colormap: this._colormap || "gray" }),
     }
+
+    // Seed the RAS geometry from the placeholder header so this slab volume can
+    // be added to a NiiVue instance before its first data load (see the main
+    // image's initializeNVImageProperties for the full rationale).
+    calculateRAS(nvImage)
+    computeBoundingBoxExtents(nvImage)
 
     // Select initial resolution using 2D pixel budget
     const orthAxis = this._getOrthogonalAxis(sliceType)
@@ -2844,14 +2917,30 @@ export class OMEZarrNVImage {
     }
 
     // Add the target volume if not already present.
-    // 1.0: addVolume is async; fire-and-forget (logging failures) preserves the
-    // previous non-blocking behavior.
+    // 1.0: addVolume is async AND stores a decoupled copy (prepareVolume), so we
+    // re-seat our object via _adoptAddedVolume, then refresh GL once the volume
+    // is actually registered. Fire-and-forget preserves non-blocking behavior.
     if (!nv.volumes.includes(targetVolume)) {
-      void nv.addVolume(targetVolume).catch((err) => {
-        console.warn("[fidnii] Failed to add volume to NV:", err)
-      })
+      void nv
+        .addVolume(targetVolume)
+        .then(() => {
+          this._adoptAddedVolume(nv, targetVolume)
+          return nv.updateGLVolume()
+        })
+        .then(() => {
+          try {
+            this._widenCalRangeIfNeeded(targetVolume)
+          } catch {
+            // May fail if GL context not ready
+          }
+        })
+        .catch((err) => {
+          console.warn("[fidnii] Failed to add volume to NV:", err)
+        })
+      return
     }
 
+    // Already present: refresh GL directly.
     // 1.0: updateGLVolume is async; fire-and-forget. The cal-range widening
     // depends on the recomputed min/max — that await ordering (H6) is handled
     // with the volume-layer rewrite (Phase 03 Task 3).
@@ -3240,6 +3329,12 @@ export class OMEZarrNVImage {
       1,
     ]
 
+    // 1.0: seed the derived voxel-count/size fields NiiVue no longer computes for
+    // hand-built volumes (see updateHeaderForRegion). nVox3D drives the intensity
+    // scan; the 2D texture is sized from dimsRAS (calculateRAS).
+    nvImage.dims = [fetchedShape[2], fetchedShape[1], fetchedShape[0]]
+    nvImage.nVox3D = fetchedShape[0] * fetchedShape[1] * fetchedShape[2]
+
     // Build the fully oriented affine (including orientation permutation
     // and sign flips), then apply the region offset in world space.
     //
@@ -3312,6 +3407,7 @@ export class OMEZarrNVImage {
       const calMax = window.end ?? window.max
       if (calMin !== undefined) nvImage.hdr.cal_min = calMin
       if (calMax !== undefined) nvImage.hdr.cal_max = calMax
+      this._applyIntensityWindow(nvImage, calMin, calMax)
     }
   }
 
@@ -3379,22 +3475,90 @@ export class OMEZarrNVImage {
   }
 
   /**
+   * Add this volume to a NiiVue instance such that the instance renders THIS
+   * object — not a decoupled copy.
+   *
+   * NiiVue 1.0's `addVolume()` does **not** store the passed volume by
+   * reference: it pushes `{ ...volumeDefaults, ...volume }` (a shallow spread
+   * built by `prepareVolume`). That copy shares the `hdr` object but freezes
+   * `img`, `dims`, `dimsRAS`, and the RAS geometry at their add-time
+   * (placeholder) values, so fidnii's progressive `img`/geometry updates — which
+   * *reassign* those fields on this instance — never reach the rendered volume,
+   * and `nv.volumes.indexOf(this)` fails everywhere fidnii looks itself up. We
+   * therefore add, then re-seat this instance into `nv.volumes`, restoring the
+   * by-reference contract fidnii relied on in 0.68.
+   *
+   * Use this instead of calling `nv.addVolume(image)` directly.
+   *
+   * @param nv - The NiiVue instance to add this volume to.
+   */
+  async addToNiivue(nv: Niivue): Promise<void> {
+    await nv.addVolume(this)
+    this._adoptAddedVolume(nv, this)
+  }
+
+  /**
+   * Re-seat a fidnii-owned volume into `nv.volumes` after `nv.addVolume()`,
+   * replacing the shallow copy NiiVue 1.0 created (see {@link addToNiivue} for
+   * the rationale). NiiVue-managed default fields that fidnii does not set (e.g.
+   * `colormapNegative`, `calMinNeg`, `colormapType`) are carried over from the
+   * copy first so the render path sees a complete volume. No-op if the volume is
+   * already seated by reference, or if the last-added volume is not our copy.
+   */
+  private _adoptAddedVolume(nv: Niivue, volume: NVImage): void {
+    const volumes = nv.volumes
+    const index = volumes.length - 1
+    const prepared = volumes[index]
+    if (!prepared || prepared === volume) return
+    // The spread copy shares our hdr by reference; use that to confirm the
+    // last-added volume really is the copy of `volume` before replacing it.
+    if (prepared.hdr !== volume.hdr) return
+    const target = volume as unknown as Record<string, unknown>
+    const source = prepared as unknown as Record<string, unknown>
+    for (const key of Object.keys(prepared)) {
+      // `key in volume` (not Object.hasOwn) so we also skip accessor-backed
+      // properties on the prototype — e.g. `colormap`, whose getter is not an own
+      // property, so the spread copy carries the NiiVue default ("Gray") rather
+      // than fidnii's value. Copying that back through the setter would clobber a
+      // user-set colormap. We only adopt genuinely-absent NiiVue defaults.
+      if (!(key in volume)) {
+        target[key] = source[key]
+      }
+    }
+    volumes[index] = volume
+  }
+
+  /**
    * Recompute a volume's RAS orientation / geometry after its `hdr.affine`
-   * changed.
+   * changed (placeholder → real data, slab reloads, clip-plane region shifts).
    *
-   * 1.0 removed `NVImage.calculateRAS()` (now a non-exported free function). The
-   * public replacement is the controller's `setVolumeAffine(index, affine)`, which
-   * re-runs the same recompute (`updateVolumeAffineOnly` → `calculateRAS`).
+   * Two paths, because 1.0 removed the synchronous `NVImage.calculateRAS()`:
    *
-   * RUNTIME-VERIFY (migration §8.8): `setVolumeAffine` is async and requires the
-   * volume to already be attached, whereas the old method was synchronous and ran
-   * on a detached object. Phase 04 must confirm the placeholder→real-data and
-   * slab-reload transitions still orient correctly.
+   * - **Attached** (the volume is in `nv.volumes`, after {@link addToNiivue}):
+   *   delegate to the controller's `setVolumeAffine(index, affine)`, which reruns
+   *   NiiVue's own `calculateRAS` AND derives the fields the bare function does
+   *   not — `extentsMin`/`extentsMax` and the 3D scene pivot (`_setupPivot3D`) —
+   *   so the render camera frames the volume. This is the path that failed in the
+   *   original 1.0 port: `setVolumeAffine` looks the volume up by index, which
+   *   only works now that {@link addToNiivue} re-seats this instance into
+   *   `nv.volumes` instead of NiiVue's decoupled copy.
+   * - **Detached** (initial bootstrap, before the first `addVolume`): run the
+   *   vendored {@link calculateRAS} directly so the RAS corners exist and the
+   *   subsequent `addVolume` does not throw.
+   *
+   * Callers refresh GL via `updateGLVolume()` afterwards.
    */
   private _recomputeVolumeRAS(nvImage: NVImage): void {
     const found = this._findAttachedVolume(nvImage)
-    if (!found) return
-    void found.nv.setVolumeAffine(found.index, nvImage.hdr.affine)
+    if (!found) {
+      calculateRAS(nvImage)
+      return
+    }
+    void found.nv
+      .setVolumeAffine(found.index, nvImage.hdr.affine)
+      .catch((err: unknown) => {
+        console.error("[fidnii] setVolumeAffine failed:", err)
+      })
   }
 
   // ============================================================

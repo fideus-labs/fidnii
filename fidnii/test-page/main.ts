@@ -327,9 +327,11 @@ async function loadImage(
     autoLoad: false,
   })
 
-  // niivue 1.0: addVolume is async — await so the volume is registered and the
-  // GL textures are updated before progressive loading starts.
-  await nv.addVolume(image)
+  // niivue 1.0: addVolume is async AND stores a decoupled copy, so use
+  // addToNiivue (adds, then re-seats the OMEZarrNVImage into nv.volumes) instead
+  // of nv.addVolume — otherwise progressive img/geometry updates never reach the
+  // rendered volume. Await so the volume is registered before loading starts.
+  await image.addToNiivue(nv)
 
   // Attach the second NV instance for slice-type-aware rendering
   image.attachNiivue(nv2)
