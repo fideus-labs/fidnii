@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) Fideus Labs LLC
 // SPDX-License-Identifier: MIT
 
-import type { Niivue } from "@niivue/niivue"
+import type { NiiVueGPU as Niivue } from "@niivue/niivue"
 import { SLICE_TYPE } from "@niivue/niivue"
 
 import type { SliceType, VolumeBounds } from "./types.js"
@@ -57,7 +57,8 @@ export function computeViewportBounds3D(
   volumeBounds: VolumeBounds,
 ): VolumeBounds {
   // Get scene extents: [min, max, range]
-  const extents = nv.sceneExtentsMinMax(true)
+  // 1.0: sceneExtentsMinMax moved to NVModel and dropped the isSliceMM arg.
+  const extents = nv.model.sceneExtentsMinMax()
   const mn = extents[0] // vec3
   const mx = extents[1] // vec3
   const range = extents[2] // vec3
@@ -73,7 +74,8 @@ export function computeViewportBounds3D(
     0.5
 
   // NiiVue's orthographic scale (matches calculateMvpMatrix)
-  const scale = (0.8 * furthest) / (nv.scene.volScaleMultiplier || 1)
+  // 1.0: scene.volScaleMultiplier → controller getter scaleMultiplier.
+  const scale = (0.8 * furthest) / (nv.scaleMultiplier || 1)
 
   // Canvas aspect ratio
   const canvas = nv.canvas
@@ -106,8 +108,9 @@ export function computeViewportBounds3D(
   // NiiVue applies: rotateX(270 - elevation) then rotateZ(azimuth - 180)
   // Also mirrors X (modelMatrix[0] = -1).
   // We need the inverse rotation to go from view space back to world space.
-  const azimuth = nv.scene.renderAzimuth ?? 0
-  const elevation = nv.scene.renderElevation ?? 0
+  // 1.0: scene.renderAzimuth/renderElevation → controller getters azimuth/elevation.
+  const azimuth = nv.azimuth
+  const elevation = nv.elevation
   const azRad = ((azimuth - 180) * Math.PI) / 180
   const elRad = ((270 - elevation) * Math.PI) / 180
 
@@ -266,19 +269,35 @@ export function computeViewportBounds2D(
   }
 
   // Apply pan and zoom (matching NiiVue's draw2DMain logic)
-  const pan = nv.scene.pan2Dxyzmm // vec4: [panX, panY, panZ, zoom]
-  // Swizzle the pan vector to match the current orientation
-  const panSwizzled = nv.swizzleVec3MM(
-    [pan[0], pan[1], pan[2]] as unknown as import("gl-matrix").vec3,
-    sliceType,
-  )
+  // 1.0: scene.pan2Dxyzmm → controller getter pan2Dxyzmm (still the same vec4).
+  const pan = nv.pan2Dxyzmm // vec4: [panX, panY, panZ, zoom]
+  // Swizzle the pan vector to screen axes for the current orientation.
+  // NiiVue 1.0 removed swizzleVec3MM with no exported replacement, so we inline
+  // the same mapping used for the FOV switch above — identical to 0.68's
+  // swizzleVec3MM: AXIAL → [x, y], CORONAL → [x, z], SAGITTAL → [y, z].
+  let panSwizzled0: number
+  let panSwizzled1: number
+  switch (sliceType) {
+    case SLICE_TYPE.CORONAL:
+      panSwizzled0 = pan[0]
+      panSwizzled1 = pan[2]
+      break
+    case SLICE_TYPE.SAGITTAL:
+      panSwizzled0 = pan[1]
+      panSwizzled1 = pan[2]
+      break
+    default: // AXIAL
+      panSwizzled0 = pan[0]
+      panSwizzled1 = pan[1]
+      break
+  }
   const zoom = pan[3] || 1
 
   // Apply pan: shift visible window
-  mnMM0 -= panSwizzled[0]
-  mxMM0 -= panSwizzled[0]
-  mnMM1 -= panSwizzled[1]
-  mxMM1 -= panSwizzled[1]
+  mnMM0 -= panSwizzled0
+  mxMM0 -= panSwizzled0
+  mnMM1 -= panSwizzled1
+  mxMM1 -= panSwizzled1
 
   // Apply zoom: divide by zoom factor (zoom > 1 = zoomed in = smaller FOV)
   mnMM0 /= zoom
