@@ -91,8 +91,10 @@ image.addEventListener("populateComplete", () => {
   console.log("Loading complete!");
 });
 
-// Manually add to NiiVue and start loading
-nv.addVolume(image);
+// Manually add to NiiVue and start loading.
+// Use image.addToNiivue(nv) rather than nv.addVolume(image): NiiVue stores a
+// copy on addVolume, which would decouple it from progressive updates.
+await image.addToNiivue(nv);
 await image.populateVolume();
 ```
 
