@@ -87,7 +87,7 @@
   "overrides": {
     "@fideus-labs/fiff": "^0.7.0",
     "@fideus-labs/fizarrita": "^1.4.1",
-    "@fideus-labs/ngff-zarr": "^0.16.0",
+    "@fideus-labs/ngff-zarr": "^0.20.0",
     "@fideus-labs/worker-pool": "^1.0.0",
     "@playwright/test": "^1.60.0",
     "typescript": "^5.9.3",
@@ -263,7 +263,7 @@
 
     "@fideus-labs/fizarrita": ["@fideus-labs/fizarrita@1.4.1", "", { "dependencies": { "@fideus-labs/worker-pool": "^1.0.0" }, "peerDependencies": { "zarrita": ">=0.6.0" } }, "sha512-71HTW4cTDeUnm2f3MU3352MMlpzUAFHhDmEajaASpUywVDe7RdY8ImjeXwRllKjvfPcukfz/aEmdPs67esSngA=="],
 
-    "@fideus-labs/ngff-zarr": ["@fideus-labs/ngff-zarr@0.16.0", "", { "dependencies": { "@fideus-labs/fizarrita": "^1.3.0", "@fideus-labs/worker-pool": "^1.0.0", "@itk-wasm/downsample": "^1.8.1", "@zarrita/storage": "^0.1.4", "itk-wasm": "^1.0.0-b.196", "zarrita": "^0.6.1", "zod": "^4.0.2" } }, "sha512-rJ7f2Qw6GFTe1DBCPG5eW2sEALRYcTx9ScB06NFjM+8CzeYYCyFL4u4kc1XzZQYbpjn1Od0ycHtZwt48+N8jWQ=="],
+    "@fideus-labs/ngff-zarr": ["@fideus-labs/ngff-zarr@0.20.0", "", { "dependencies": { "@fideus-labs/fizarrita": "^1.3.0", "@fideus-labs/worker-pool": "^1.0.0", "@itk-wasm/downsample": "^1.8.1", "@zarrita/storage": "^0.1.4", "itk-wasm": "^1.0.0-b.196", "zarrita": "^0.6.1", "zod": "^4.0.2" } }, "sha512-dDPYS/0imprcATyF2iHwYtOMaS44Zho3Kb8jZA96TiAEPa+CuGvVUVBKU0KSf0QpLkncTCCw3DaHUd1SfN3zjQ=="],
 
     "@fideus-labs/worker-pool": ["@fideus-labs/worker-pool@1.0.0", "", {}, "sha512-Mwx8fFKKpTUcEtR7w45MQJ/RnZFUPBtefEvGTZGlZMAVSfD7W61rpB8ZdgS4V0CXfppwcb90BF7F/aANWvupnA=="],
 
