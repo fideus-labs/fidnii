@@ -27,7 +27,7 @@ test.describe("Slice Mode", () => {
   test("second NV starts in axial slice mode", async ({ page }) => {
     const sliceType = await page.evaluate(() => {
       const nv2 = (window as any).nv2
-      return nv2.opts.sliceType
+      return nv2.sliceType
     })
     // SLICE_TYPE.AXIAL = 0
     expect(sliceType).toBe(0)
@@ -39,7 +39,7 @@ test.describe("Slice Mode", () => {
 
     const sliceType = await page.evaluate(() => {
       const nv2 = (window as any).nv2
-      return nv2.opts.sliceType
+      return nv2.sliceType
     })
     // SLICE_TYPE.CORONAL = 1
     expect(sliceType).toBe(1)
@@ -53,7 +53,7 @@ test.describe("Slice Mode", () => {
 
     const primarySliceType = await page.evaluate(() => {
       const nv = (window as any).nv
-      return nv.opts.sliceType
+      return nv.sliceType
     })
     // SLICE_TYPE.RENDER = 4
     expect(primarySliceType).toBe(4)
@@ -298,7 +298,7 @@ test.describe("Slice Mode", () => {
 
         // Switch NV2 to coronal to trigger slab load
         const nv2 = (window as any).nv2
-        nv2.setSliceType(1) // CORONAL
+        nv2.sliceType = 1 // CORONAL
 
         // Timeout fallback (slab loading at level 0 can take 30s+ for large datasets)
         setTimeout(() => resolve(false), 60000)
@@ -375,7 +375,7 @@ test.describe("Slice Mode", () => {
       const nv2 = (window as any).nv2
       await image.waitForIdle()
 
-      const crosshairPos = nv2.scene?.crosshairPos
+      const crosshairPos = nv2.crosshairPos
       if (!crosshairPos) return null
 
       return {
@@ -515,8 +515,8 @@ test.describe("Slice Mode", () => {
         const nv2 = (window as any).nv2
         await image.waitForIdle()
 
-        const crosshairPos = nv2.scene?.crosshairPos
-        const slabState = image.getSlabBufferState(nv2.opts.sliceType)
+        const crosshairPos = nv2.crosshairPos
+        const slabState = image.getSlabBufferState(nv2.sliceType)
         const img = slabState?.nvImage?.img
 
         let nonZeroCount = 0

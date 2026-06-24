@@ -27,6 +27,27 @@ produced in **Phase 01** of the upgrade playbook — entirely from source: the
 and fidnii's own code — **before any code changes**. Start at [[migration-map]];
 use the others as evidence.
 
+## Outcome — ✅ migration complete (2026-06-23)
+
+- **Shipped version:** `@niivue/niivue@1.0.0-rc.9` — `fidnii/package.json`
+  `dependencies` pinned exactly to `1.0.0-rc.9`, `peerDependencies` `^1.0.0-rc.9`.
+- **Backend:** WebGL2, forced via the `@niivue/niivue/webgl2` subpath build (no
+  `navigator.gpu` dependence; headless-CI safe under `--use-gl=egl`). →
+  [[rendering-backend]] §9–§10.
+- **Suite status:** full Playwright suite **green** (176 tests; 175 pass + 1
+  environmental real-S3 slab-timing flake that passes on retry, absorbed by CI's
+  `retries: 2`). Library gates all green: `tsc --noEmit`, `bun run build`
+  (library), `bun run check`. The six 0.68-only `slice-mode` specs were updated to
+  the 1.0 `sliceType`/`crosshairPos` accessors; one genuine regression
+  (`create()` autoLoad re-seat timing) was fixed in fidnii code. → [[migration-map]] §0.
+- **Known out-of-scope gap:** the example apps (`examples/convert`,
+  `examples/getting-started`) are **not** migrated (still niivue 0.68), so the
+  repo-root `bun run build` is red on `examples/convert`. They are outside the
+  migration's scope and the agent's write boundary; a follow-up should apply the
+  same `NiiVueWebGL2` swap used for the test page.
+- **Every row of [[migration-map]] §§1–6, all hotspots (§7), and all
+  runtime-verification items (§8) are marked resolved** in [[migration-map]] §0.
+
 ## Read in this order
 
 1. **[[api-surface]]** — *reference.* Every `@niivue/niivue` symbol, method, prop,
@@ -85,6 +106,7 @@ Verified programmatically at the close of Phase 01.
   this index, the API surface, the cross-referenced migration map, and five
   source-cited changelog topic docs, fully cross-linked for DocGraph/Obsidian.
 
-The migration is **fully mapped**; no code has changed. Later phases execute the
-[[migration-map]] in its suggested sequence, starting by forcing WebGL2 and
-rebuilding the volume layer.
+> The text above describes the **Phase 01** state (mapping only, before any code
+> changes). Phases 02–05 executed that map; the upgrade is now **complete** — see
+> the **Outcome** section near the top of this page for the final version, backend,
+> and suite status.

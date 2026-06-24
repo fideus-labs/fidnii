@@ -566,12 +566,13 @@ export class OMEZarrNVImage {
         if (idx >= 0) image.niivue.model.removeVolume(idx)
       }
       // 1.0: addVolume is async and stores a decoupled copy — addToNiivue adds
-      // then re-seats this instance into nv.volumes. Add before populating so the
-      // first GL update targets our object. Fire-and-forget (progressive load).
-      void (async () => {
-        await image.addToNiivue(image.niivue)
-        await image.populateVolume()
-      })().catch((err: unknown) => {
+      // then re-seats this instance into nv.volumes. Await the add so the volume
+      // is registered in nv.volumes before create() resolves: consumers (and the
+      // 0.68 by-reference contract) rely on the image being present in
+      // nv.volumes immediately after `await create()`. Only the progressive load
+      // is fire-and-forget.
+      await image.addToNiivue(image.niivue)
+      void image.populateVolume().catch((err: unknown) => {
         console.error("[fidnii] autoLoad failed:", err)
       })
     }

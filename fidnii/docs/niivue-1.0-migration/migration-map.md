@@ -36,6 +36,33 @@ required action**, and a `[[…]]` link to the supporting changelog evidence.
 
 ---
 
+## 0. Resolution status — ✅ RESOLVED (Phase 05 close-out, 2026-06-23)
+
+**Every API row in §§1–6 below is resolved**, every Risk Hotspot (§7) is closed,
+and every runtime-verification item (§8) is verified. Final target shipped:
+`@niivue/niivue@1.0.0-rc.9` (exact `dependencies` pin; `peerDependencies`
+`^1.0.0-rc.9`). The `fidnii` library passes all four gates — `tsc --noEmit`,
+`bun run build` (library), `bun run check` (Biome), and the full Playwright suite
+(175 passed + 1 environmental real-S3 slab-timing flake that passes on retry, the
+condition CI's `retries: 2` exists for). The only red is the un-migrated
+`examples/convert` app (still niivue 0.68, outside the migration's scope and the
+agent's write boundary).
+
+| Section | Rows | Status | Resolved in | How verified |
+|---|---|---|---|---|
+| §1 Imports/exports/enums | all | ✅ resolved | P02 (type-position `SliceType`), P03 (enum/import repoint), P04 (test-page enum import from root) | `tsc` 0; `SLICE_TYPE` forward values + `SLICE_TYPE_NAMES` reverse-map exercised by `slice-mode` specs |
+| §2 `Niivue`→`NiiVueGPU` methods | all | ✅ resolved | P03 (`setSliceType`→setter, `setScale`/`frac2mm`/`swizzleVec3MM`/`inRenderTile`/`sceneExtentsMinMax` repointed, async `addVolume`/`updateGLVolume`) | `coordinate-system` + `orientation` + `clip-planes` specs (geometry-critical) all green |
+| §3 `scene` property renames | all | ✅ resolved | P03 (`crosshairPos`, indexed `setClipPlaneDepthAziElev`, `scaleMultiplier`/`azimuth`/`elevation`/`pan2Dxyzmm`) | live clip-plane render (P04) + `clip-planes` specs; `nv.crosshairPos` used by `slice-mode` specs |
+| §4 `opts`/`uiData`/`canvas`/`volumes` | all | ✅ resolved | P03 (`sliceType`, `primaryDragMode`, `devicePixelRatio`, `activeClipPlaneIndex`); P04 (test-page `sliceType`/`primaryDragMode`) | `slice-mode` specs read `nv.sliceType`; `auto-load-replacement` exercises `nv.volumes` |
+| §5 Events | all | ✅ resolved | P03 (`mouseUp`→`pointerUp`; `zoom3DChange` via existing `wheel`); 3 unchanged | event wiring compiles + live interaction in P04 smoke |
+| §6 `NVImage` subclass → composition | all | ✅ resolved | P03 (composition; field renames `_colormap`/`_opacity`/`globalMin`/`globalMax`/`calMin`/`calMax`); P04 (vendored `calculateRAS`, `addToNiivue` re-seat, voxel/extent/intensity seeding); **P05** (`create()` awaits `addToNiivue` so the instance is in `nv.volumes` after `await create()`) | `auto-load-replacement` (re-seat/replacement), `coordinate-system` (affine/dims), `slice-mode` (colormap propagation) all green |
+
+**Risk Hotspots (§7):** H1 (subclass→composition) ✅, H2 (headless backend → WebGL2 subpath) ✅, H3 (scene renames / clip-plane indexed API) ✅, H4 (event renames) ✅, H5 (silent field-rename no-ops + `SLICE_TYPE[n]` reverse-lookup) ✅ (name-based audit + `SLICE_TYPE_NAMES` map + render smoke), H6 (new async methods awaited) ✅.
+
+**Runtime-verification checklist (§8) — all verified:** (1) coordinate parity — `coordinate-system`/`orientation` specs green; (2) hit-test / tile path — render + clip specs green; (3) multi-plane clip set/clear — `clip-planes` 6-plane + clear specs green; (4) `devicePixelRatio` default `-1` guarded; (5) scene-extent units — extents seeded, `toFixed` throw gone; (6) `broadcastTo` persistent sync — bidirectional crosshair sync works in P04; (7) `removeVolume` via `model.removeVolume(index)` — `auto-load-replacement` green; (8) RAS recompute — vendored `calculateRAS` (`src/utils/calculateRAS.ts`); (9) 3D zoom via `wheel` — verified in P04 smoke. Detail: `[[smoke-render]]`, `[[breakage-inventory]]`.
+
+---
+
 ## 1. Imports, exports & enums → see [[enums-and-exports]], [[niivue-class-api]], [[nvimage-api]]
 
 | API (api-surface §1/§8) | Status | Required action | Evidence |

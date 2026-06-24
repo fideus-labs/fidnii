@@ -551,4 +551,40 @@ needs. niivue 1.0 (WebGL2) adds no new SAB/WASM header requirement.
 > the `@niivue/niivue/webgl2` subpath. Vite auto-discovers and pre-bundles the
 > subpath on first dev load (a one-time "optimized dependency, reloading" — not an
 > error). Add `"@niivue/niivue/webgl2"` to `optimizeDeps.include` if that reload
-> is undesirable.
+> is undesirable. **(Applied in Phase 05 — see §10.)**
+
+---
+
+## 10. Phase 05 — Playwright harness review (confirmed, 2026-06-23)
+
+Phase 05 reviewed `fidnii/playwright.config.ts` and the headless-Chromium launch
+flags against this document. **Decision: no launch-flag change — the existing
+`--use-gl=egl` (Linux) is correct and sufficient.** Rationale, now empirically
+backed by a full suite run:
+
+- The test page hard-pins **WebGL2** via the `@niivue/niivue/webgl2` subpath
+  (`new NiiVueWebGL2(...)`, §9). That build has **zero `navigator.gpu`
+  dependence** and never initializes WebGPU, so the headless-WebGPU flags from
+  §4.1 (`--enable-unsafe-webgpu`, `--enable-features=Vulkan`,
+  `--use-vulkan=swiftshader`) are **not needed** and were **not added**.
+- `--use-gl=egl` already provisions the ANGLE/EGL GL context the WebGL2 renderer
+  uses. The full Playwright suite ran green under exactly this config (see the
+  Phase-05 run log `Working/rc9-playwright.txt`), and the Phase-04 smoke run
+  reported `WebGL2 ANGLE (… SwiftShader …)` with `attachToCanvas` succeeding —
+  the renderer initializes in CI with no flag change.
+- `playwright.config.ts` `projects`/`webServer`/`timeout`/`workers` are
+  backend-agnostic and unaffected by the niivue major; left unchanged.
+
+**One harness change was required, and it is a Vite (not Playwright) change:** the
+new-in-1.0 `@niivue/niivue/webgl2` subpath was added to `vite.config.ts`
+`optimizeDeps.include`. Previously Vite discovered and pre-bundled it on the
+*first* page load (a one-time "optimized dependency, reloading"); in a suite that
+navigates to `/` on every test that mid-run reload is a flakiness source.
+Pre-bundling at server startup removes it. This is the concrete config item this
+phase's task called for — the renderer's *initialization in CI* is now
+deterministic from the first navigation.
+
+**Net:** WebGL2 forced (un-bypassable) + EGL provisioned + subpath pre-bundled ⇒
+the harness renders under 1.0 with no Chromium-flag change. Failure signal to
+watch remains a rejected `await attachToCanvas(...)`, which under the WebGL2-only
+build can only indicate an EGL/GL context problem, never a WebGPU device.

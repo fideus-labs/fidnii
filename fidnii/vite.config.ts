@@ -43,6 +43,12 @@ export default defineConfig({
     // Force Vite to pre-bundle these dependencies
     include: [
       "@niivue/niivue",
+      // niivue 1.0's WebGL2-only subpath build (the test page hard-pins this
+      // to avoid WebGPU under headless Chromium). Pre-bundle it at server
+      // startup so it isn't discovered on first page load — that mid-run
+      // "optimized dependency, reloading" would otherwise flake the
+      // Playwright suite.
+      "@niivue/niivue/webgl2",
       "gl-matrix",
       "zarrita",
       "zod",

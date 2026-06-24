@@ -1,5 +1,6 @@
 node_modules/
 .opencode/
+.serena/
 
 # Test data
 *.nii.gz
