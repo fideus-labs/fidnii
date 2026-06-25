@@ -82,8 +82,8 @@ Commit messages are validated by **commitlint** using Conventional Commits
 Separate `import type` from value imports, even from the same module:
 
 ```typescript
-import { NVImage, SLICE_TYPE } from "@niivue/niivue"
-import type { Niivue } from "@niivue/niivue"
+import type { NiiVueGPU as Niivue, NVImage } from "@niivue/niivue"
+import { SLICE_TYPE } from "@niivue/niivue"
 ```
 
 Group imports: (1) external packages, (2) blank line, (3) internal relative.
