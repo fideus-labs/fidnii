@@ -1,9 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) Fideus Labs LLC
 // SPDX-License-Identifier: MIT
 
-import type { SLICE_TYPE } from "@niivue/niivue"
-
-import type { ClipPlanes } from "./types.js"
+import type { ClipPlanes, SliceType } from "./types.js"
 
 /**
  * Identifies what triggered a volume population.
@@ -97,7 +95,7 @@ export interface OMEZarrNVImageEventMap {
    * This event is specific to slab-based loading for 2D slice views.
    */
   slabLoadingComplete: {
-    sliceType: SLICE_TYPE
+    sliceType: SliceType
     levelIndex: number
     slabStart: number
     slabEnd: number
@@ -108,7 +106,7 @@ export interface OMEZarrNVImageEventMap {
    * Fired when a slab starts loading.
    */
   slabLoadingStart: {
-    sliceType: SLICE_TYPE
+    sliceType: SliceType
     levelIndex: number
     trigger: PopulateTrigger
   }

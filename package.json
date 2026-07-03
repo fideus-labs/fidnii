@@ -22,7 +22,7 @@
     "@changesets/cli": "^2.29.8",
     "@commitlint/cli": "^20.4.1",
     "@commitlint/config-conventional": "^20.4.1",
-    "@playwright/test": "^1.58.2",
+    "@playwright/test": "^1.60.0",
     "lefthook": "^2.1.0",
     "typescript": "^5.9.3"
   },
@@ -30,11 +30,11 @@
     "@fideus-labs/fiff": "^0.7.0",
     "zarrita": "^0.6.1",
     "@fideus-labs/fizarrita": "^1.4.1",
-    "@fideus-labs/ngff-zarr": "^0.16.0",
+    "@fideus-labs/ngff-zarr": "^0.20.0",
     "@fideus-labs/worker-pool": "^1.0.0",
-    "@playwright/test": "^1.58.2",
-    "typescript": "^5.9.3",
-    "vite": "^7.3.1"
+    "@playwright/test": "^1.60.0",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.16"
   },
   "trustedDependencies": [
     "lefthook",

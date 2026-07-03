@@ -74,4 +74,43 @@ test.describe("autoLoad volume replacement", () => {
     // The clip-plane listener on the old image must be torn down
     expect(result.firstClipPlaneControllerActive).toBe(false)
   })
+
+  test("create() with autoLoad registers the volume synchronously, before progressive load", async ({
+    page,
+  }) => {
+    const result = await page.evaluate(async () => {
+      const nv = (window as any).nv
+      const firstImage = (window as any).image
+      const OMEZarrNVImage = (window as any).fidnii.OMEZarrNVImage
+
+      // Start from an empty host so this exercises the first-create path (the
+      // tests above always replace an existing fidnii volume; here nothing is
+      // replaced). removeAllVolumes is async in niivue 1.0.
+      await nv.removeAllVolumes()
+      const countBefore = nv.volumes.length
+
+      // Default autoLoad: true. create() awaits addToNiivue, so the image must
+      // be present in nv.volumes the instant the promise resolves — before the
+      // fire-and-forget progressive load (populateVolume) runs. Assert
+      // immediately, with no waitForIdle()/populateComplete wait, to pin that
+      // synchronous registration contract (the 0.68 by-reference behaviour).
+      const image = await OMEZarrNVImage.create({
+        multiscales: firstImage.multiscales,
+        niivue: nv,
+      })
+
+      return {
+        countBefore,
+        includedImmediately: nv.volumes.includes(image),
+        countAfter: nv.volumes.length,
+      }
+    })
+
+    // Host was empty before the create
+    expect(result.countBefore).toBe(0)
+    // The freshly created image is registered the moment `await create()` resolves
+    expect(result.includedImmediately).toBe(true)
+    // Exactly one volume — the new image, added without waiting for the load
+    expect(result.countAfter).toBe(1)
+  })
 })

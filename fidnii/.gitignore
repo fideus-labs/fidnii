@@ -5,3 +5,7 @@ public/
 
 test-results/
 playwright-report/
+
+# Maestro playbook working area (Auto Run scratch: logs, probe scripts,
+# screenshots). Ephemeral — not source, must not be tracked or linted.
+.maestro/

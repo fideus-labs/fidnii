@@ -23,13 +23,17 @@ npm install @fideus-labs/fidnii @fideus-labs/ngff-zarr @niivue/niivue
 ## Quick Start
 
 ```typescript
-import { Niivue } from "@niivue/niivue";
+import NiiVueWebGL2 from "@niivue/niivue/webgl2";
+import { SLICE_TYPE } from "@niivue/niivue";
 import { fromNgffZarr } from "@fideus-labs/ngff-zarr";
 import { OMEZarrNVImage } from "@fideus-labs/fidnii";
 
-const nv = new Niivue();
+// niivue 1.0's default build is WebGPU-first (it falls back to WebGL2 only when
+// the WebGPU API is entirely absent). fidnii's rendering is validated on WebGL2,
+// so construct from the dedicated WebGL2-only subpath build.
+const nv = new NiiVueWebGL2();
 await nv.attachToCanvas(document.getElementById("canvas"));
-nv.setSliceType(nv.sliceTypeRender);
+nv.sliceType = SLICE_TYPE.RENDER;
 
 const multiscales = await fromNgffZarr("/path/to/data.ome.zarr");
 
@@ -42,7 +46,7 @@ await OMEZarrNVImage.create({ multiscales, niivue: nv });
 | Option                | Type          | Default      | Description                                     |
 | --------------------- | ------------- | ------------ | ----------------------------------------------- |
 | `multiscales`         | `Multiscales` | required     | OME-Zarr multiscales data from `fromNgffZarr()` |
-| `niivue`              | `Niivue`      | required     | NiiVue instance                                 |
+| `niivue`              | `NiiVueGPU`   | required     | NiiVue instance (e.g. `new NiiVueWebGL2()`)     |
 | `maxPixels`           | `number`      | `50_000_000` | Maximum pixels to load (controls resolution)    |
 | `autoLoad`            | `boolean`     | `true`       | Auto-add to NiiVue and start loading            |
 | `clipPlaneDebounceMs` | `number`      | `300`        | Debounce delay for clip plane updates           |
@@ -91,8 +95,10 @@ image.addEventListener("populateComplete", () => {
   console.log("Loading complete!");
 });
 
-// Manually add to NiiVue and start loading
-nv.addVolume(image);
+// Manually add to NiiVue and start loading.
+// Use image.addToNiivue(nv) rather than nv.addVolume(image): NiiVue stores a
+// copy on addVolume, which would decouple it from progressive updates.
+await image.addToNiivue(nv);
 await image.populateVolume();
 ```
 

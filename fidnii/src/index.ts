@@ -29,7 +29,9 @@
  * //   niivue: nv,
  * //   autoLoad: false,
  * // });
- * // nv.addVolume(image);
+ * // // Use image.addToNiivue(nv) — NOT nv.addVolume(image): niivue 1.0 stores a
+ * // // copy on addVolume, which would decouple it from progressive updates.
+ * // await image.addToNiivue(nv);
  * // await image.populateVolume();
  * ```
  */
@@ -113,6 +115,7 @@ export type {
   ResolutionSelection,
   SlabBufferState,
   SlabSliceType,
+  SliceType,
   TimeAxisInfo,
   TimeUnit,
   TypedArray,

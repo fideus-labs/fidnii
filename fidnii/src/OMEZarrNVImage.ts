@@ -7,8 +7,8 @@ import {
   computeOmeroFromNgffImage,
   GLASBEY_COLORS,
 } from "@fideus-labs/ngff-zarr/browser"
-import type { Niivue } from "@niivue/niivue"
-import { NVImage, SLICE_TYPE } from "@niivue/niivue"
+import type { NiiVueGPU as Niivue, NVImage } from "@niivue/niivue"
+import { SLICE_TYPE } from "@niivue/niivue"
 import { LRUCache } from "lru-cache"
 import { NIFTI1 } from "nifti-reader-js"
 
@@ -51,6 +51,7 @@ import type {
   PixelRegion,
   SlabBufferState,
   SlabSliceType,
+  SliceType,
   TimeAxisInfo,
   TimeUnit,
   TypedArray,
@@ -72,6 +73,10 @@ import {
   calculateWorldBounds,
   createAffineFromOMEZarr,
 } from "./utils/affine.js"
+import {
+  calculateRAS,
+  computeBoundingBoxExtents,
+} from "./utils/calculateRAS.js"
 import { pixelToWorldAffine, worldToPixelAffine } from "./utils/coordinates.js"
 import {
   applyOrientationToAffine,
@@ -86,8 +91,24 @@ import {
 const DEFAULT_MAX_PIXELS = 50_000_000
 const DEFAULT_MAX_CACHE_ENTRIES = 200
 
+// 1.0: `SLICE_TYPE` changed from a TS `enum` to `Object.freeze({...})`, so it has
+// no reverse (number→name) entries — `SLICE_TYPE[2]` is now `undefined`. This map
+// restores the reverse lookup used for display strings and slab buffer keys (the
+// buffer key especially must stay unique per orientation, not `slab-undefined-N`).
+const SLICE_TYPE_NAMES = new Map<number, string>(
+  Object.entries(SLICE_TYPE).map(([name, value]): [number, string] => [
+    value as number,
+    name,
+  ]),
+)
+
+/** Reverse-lookup a `SLICE_TYPE` numeric value to its name (1.0-safe). */
+const sliceTypeName = (sliceType: number): string =>
+  SLICE_TYPE_NAMES.get(sliceType) ?? String(sliceType)
+
 /**
- * OMEZarrNVImage extends NVImage to support rendering OME-Zarr images in NiiVue.
+ * OMEZarrNVImage is structurally an NVImage volume for rendering OME-Zarr
+ * images in NiiVue.
  *
  * Features:
  * - Progressive loading: quick preview from lowest resolution, then target resolution
@@ -96,7 +117,19 @@ const DEFAULT_MAX_CACHE_ENTRIES = 200
  * - Request coalescing for efficient chunk fetching
  * - Automatic metadata updates to reflect OME-Zarr coordinate transforms
  */
-export class OMEZarrNVImage extends NVImage {
+// 1.0: `NVImage` is a plain object type (no longer a constructable class), so
+// `extends NVImage` is impossible. We declaration-merge the `NVImage` object
+// type onto the class instead (interface + class with the same name): the class
+// instance structurally *is* an `NVImage` — satisfying `nv.addVolume(this)`,
+// `nv.volumes.indexOf(this)`, and the volume-list APIs — while NiiVue derives
+// the geometry / min-max fields on `addVolume` / `setVolumeAffine`. The derivation
+// helpers (`nii2volume`, `calculateRAS`, `calMinMax`) are NOT in rc.9's public
+// `exports` map, so this structural-merge + controller-method approach replaces
+// the (infeasible) "compose over nii2volume()" plan. See docs/niivue-1.0-migration.
+export interface OMEZarrNVImage extends NVImage {}
+
+// biome-ignore lint/suspicious/noUnsafeDeclarationMerging: intentional — the class is structurally an NVImage (1.0 removed the NVImage class); NiiVue populates the derived geometry/min-max fields at addVolume()/setVolumeAffine() time, so they are deliberately not all initialized on the class.
+export class OMEZarrNVImage {
   /** The OME-Zarr multiscales data */
   readonly multiscales: Multiscales
 
@@ -117,25 +150,38 @@ export class OMEZarrNVImage extends NVImage {
   // ============================================================
 
   /**
+   * Backing field for the {@link colormap} accessor. In 1.0 NVImage no longer
+   * provides a `colormap` accessor (with calMinMax/onColormapChange side
+   * effects), so this class owns the value and exposes it via the accessor
+   * below; NiiVue reads `colormap` (the getter) on each GL update.
+   */
+  private _colormap = "gray"
+
+  /**
    * The continuous colormap name used for rendering.
    *
-   * Overrides the NVImage setter so that changing the colormap on this
-   * image automatically propagates to all slab (2D slice) NVImages.
-   * Label images are unaffected — they use `setColormapLabel()` instead.
+   * A custom accessor (1.0: NVImage no longer provides one) so that changing the
+   * colormap on this image automatically propagates to all slab (2D slice)
+   * NVImages. Label images are unaffected — they use `setColormapLabel()` instead.
    */
-  override get colormap(): string {
+  get colormap(): string {
     return this._colormap
   }
 
-  override set colormap(cm: string) {
-    // Use NVImage's setter (calls calMinMax + onColormapChange)
-    super.colormap = cm
+  set colormap(cm: string) {
+    // 1.0: NVImage's `colormap` accessor (which ran calMinMax + onColormapChange)
+    // is gone — `colormap` is now a plain data field NiiVue reads on the next GL
+    // update. Own the value and drive the side effects through the controller.
+    this._colormap = cm
     // Propagate to all existing slab NVImages
     if (!this.isLabelImage) {
       for (const slab of this._slabBuffers.values()) {
         slab.nvImage.colormap = cm
       }
     }
+    // Re-render so the new colormap takes effect (replaces NVImage's old
+    // onColormapChange side effect). Fire-and-forget; may no-op pre-attach.
+    void this.niivue.updateGLVolume()
   }
 
   /** Reference to NiiVue instance */
@@ -348,8 +394,10 @@ export class OMEZarrNVImage extends NVImage {
    * Private constructor. Use OMEZarrNVImage.create() for instantiation.
    */
   private constructor(options: OMEZarrNVImageOptions) {
-    // Call NVImage constructor with no data buffer
-    super()
+    // 1.0: NVImage is no longer a class — there is no base constructor to call.
+    // The volume's data fields (hdr/img/name/colormap/opacity) are set in
+    // initializeNVImageProperties(); NiiVue derives the geometry / min-max fields
+    // when this volume is added via addVolume() / setVolumeAffine().
 
     this.multiscales = options.multiscales
     this.maxPixels = options.maxPixels ?? DEFAULT_MAX_PIXELS
@@ -513,10 +561,20 @@ export class OMEZarrNVImage extends NVImage {
       for (const v of volumesToRemove) {
         // Detach listeners and abort in-flight work before removing
         v.detachNiivue(image.niivue)
-        image.niivue.removeVolume(v)
+        // 1.0: removeVolume moved to the model and takes an index, not the volume.
+        const idx = image.niivue.volumes.indexOf(v)
+        if (idx >= 0) image.niivue.model.removeVolume(idx)
       }
-      image.niivue.addVolume(image)
-      void image.populateVolume() // Fire-and-forget, returns immediately
+      // 1.0: addVolume is async and stores a decoupled copy — addToNiivue adds
+      // then re-seats this instance into nv.volumes. Await the add so the volume
+      // is registered in nv.volumes before create() resolves: consumers (and the
+      // 0.68 by-reference contract) rely on the image being present in
+      // nv.volumes immediately after `await create()`. Only the progressive load
+      // is fire-and-forget.
+      await image.addToNiivue(image.niivue)
+      void image.populateVolume().catch((err: unknown) => {
+        console.error("[fidnii] autoLoad failed:", err)
+      })
     }
 
     return image
@@ -579,11 +637,42 @@ export class OMEZarrNVImage extends NVImage {
     // We need at least 1 element to avoid issues
     this.img = this.bufferManager.resize([1, 1, 1]) as NVImage["img"]
 
-    // Set default colormap (label images use setColormapLabel() instead)
+    // 1.0: super() (the NVImage ctor) no longer exists to seed the derived
+    // min-max fields. Seed safe placeholders; NiiVue recomputes the intensity
+    // ranges inside updateGLVolume() once real data is present. (The RAS geometry
+    // fields are NOT deferred — they are computed explicitly via calculateRAS()
+    // below, because 1.0 requires them before addVolume.)
+    this.dims = [1, 1, 1]
+    this.nVox3D = 1
+    this.extentsMin = [0, 0, 0]
+    this.extentsMax = [0, 0, 0]
+    this.calMin = 0
+    this.calMax = 0
+    this.robustMin = 0
+    this.robustMax = 0
+    this.globalMin = 0
+    this.globalMax = 0
+
+    // Set default colormap (label images use setColormapLabel() instead).
+    // _colormap is the backing field for the colormap accessor (1.0: NVImage no
+    // longer provides a colormap accessor; NiiVue reads `colormap` = our getter).
     if (!this.isLabelImage) {
       this._colormap = "gray"
     }
-    this._opacity = 1.0
+    // 1.0: _opacity (NVImage private backing) → opacity (public data field).
+    this.opacity = 1.0
+
+    // 1.0: NiiVue's GL bind path requires precomputed RAS geometry (mm000…,
+    // matRAS, pixDimsRAS, frac2mm) *before* the volume is added, and throws
+    // "Missing moving image mm corner coordinates" otherwise. NiiVue 0.68
+    // computed this synchronously via NVImage.calculateRAS(); 1.0 removed that
+    // method and does not export its replacement, so we compute it from the
+    // placeholder header here. It is recomputed from the real affine once data
+    // loads (updateHeaderForRegion → _recomputeVolumeRAS).
+    calculateRAS(this)
+    // Seed the mm bounding box so NiiVue's scene pivot / location formatter have
+    // a non-degenerate extent before the first data load (recomputed on load).
+    computeBoundingBoxExtents(this)
   }
 
   /**
@@ -842,18 +931,18 @@ export class OMEZarrNVImage extends NVImage {
       await this.ensureOmeroMetadata(ngffImage, levelIndex)
     }
 
-    // Reset global_min so NiiVue's refreshLayers() re-runs calMinMax() on real data.
-    // Without this, if calMinMax() was previously called on placeholder/empty data
-    // (e.g., when setting colormap before loading), global_min would already be set
-    // and NiiVue would skip recalculating intensity ranges, leaving cal_min/cal_max
-    // at stale values (typically 0/0), causing an all-white render.
-    this.global_min = undefined
+    // 1.0: the "reset global_min = undefined to force refreshLayers() → calMinMax()"
+    // trick is gone — globalMin is now a required number and calMinMax is not in the
+    // public API. NiiVue recomputes intensity ranges inside updateGLVolume() below;
+    // explicit windowing still comes from OMERO + _widenCalRangeIfNeeded().
+    // RUNTIME-VERIFY (migration §8, H5): confirm real-data min/max on first load
+    // (the old all-white-on-stale-range failure mode).
 
     // Update NiiVue clip planes
     this.updateNiivueClipPlanes()
 
-    // Refresh NiiVue
-    this.niivue.updateGLVolume()
+    // Refresh NiiVue. 1.0: updateGLVolume is async; fire-and-forget.
+    void this.niivue.updateGLVolume()
 
     if (!this.isLabelImage) {
       // Widen the display window if actual data exceeds the OMERO range.
@@ -931,6 +1020,13 @@ export class OMEZarrNVImage extends NVImage {
       1,
     ]
 
+    // 1.0: NiiVue no longer derives these for hand-built volumes (the NVImage
+    // constructor that set them is gone). nVox3D drives the intensity scan in
+    // recalculateCalMinMax(); dims mirrors the loaded voxel size. (The 3D texture
+    // itself is sized from dimsRAS, which calculateRAS sets.)
+    this.dims = [fetchedShape[2], fetchedShape[1], fetchedShape[0]]
+    this.nVox3D = fetchedShape[0] * fetchedShape[1] * fetchedShape[2]
+
     // Compute buffer bounds in un-oriented OME-Zarr world space.
     // These drive clip-plane / viewport math and must stay un-oriented.
     const regionStart = region.chunkAlignedStart
@@ -990,8 +1086,9 @@ export class OMEZarrNVImage extends NVImage {
     const srows = affineToNiftiSrows(affine)
     this.hdr.affine = [srows.srow_x, srows.srow_y, srows.srow_z, [0, 0, 0, 1]]
 
-    // Recalculate RAS orientation
-    this.calculateRAS()
+    // Recalculate RAS orientation. 1.0: NVImage.calculateRAS() was removed (now a
+    // non-exported free function); the public path is setVolumeAffine(index, affine).
+    this._recomputeVolumeRAS(this)
   }
 
   /**
@@ -1095,11 +1192,20 @@ export class OMEZarrNVImage extends NVImage {
 
     const niivueClipPlanes = clipPlanesToNiivue(orientedPlanes, orientedBounds)
 
+    // 1.0: scene.clipPlaneDepthAziElevs (whole-array write) was replaced by the
+    // per-plane indexed setter. Apply each plane by index; the "disabled"
+    // sentinel (depth > 1.8) clears plane 0.
+    // NOTE: multi-plane set/clear semantics across reloads are UNVERIFIED
+    // (migration-map §8.3) — verify at runtime that shrinking the active plane
+    // count does not leave stale higher-index planes in effect.
     if (niivueClipPlanes.length > 0) {
-      this.niivue.scene.clipPlaneDepthAziElevs = niivueClipPlanes
+      for (let i = 0; i < niivueClipPlanes.length; i++) {
+        const [depth, azimuth, elevation] = niivueClipPlanes[i]
+        this.niivue.setClipPlaneDepthAziElev(depth, azimuth, elevation, i)
+      }
     } else {
       // Clear clip planes - set to "disabled" state (depth > 1.8)
-      this.niivue.scene.clipPlaneDepthAziElevs = [[2, 0, 0]]
+      this.niivue.setClipPlaneDepthAziElev(2, 0, 0)
     }
   }
 
@@ -1127,7 +1233,42 @@ export class OMEZarrNVImage extends NVImage {
 
       if (calMin !== undefined) this.hdr.cal_min = calMin
       if (calMax !== undefined) this.hdr.cal_max = calMax
+      this._applyIntensityWindow(this, calMin, calMax)
     }
+  }
+
+  /**
+   * Seed a volume's runtime intensity fields (`calMin`/`calMax` display window,
+   * `globalMin`/`globalMax` data range, `robustMin`/`robustMax`) from an OMERO
+   * window.
+   *
+   * 1.0: NiiVue's `NVImage.calMinMax()` — which used to copy `hdr.cal_min`/
+   * `cal_max` into the runtime display window and compute the data range — was
+   * removed, and NiiVue does not recompute these for a hand-built volume. Left at
+   * their `0` placeholders, the shader maps everything through an empty `0..0`
+   * window and the volume renders solid black. We therefore seed them from the
+   * OMERO window fidnii already resolved.
+   *
+   * @param nvImage - The volume to seed.
+   * @param displayMin - Display-window low (`window.start`), the rendered black point.
+   * @param displayMax - Display-window high (`window.end`), the rendered white point.
+   */
+  private _applyIntensityWindow(
+    nvImage: NVImage,
+    displayMin: number | undefined,
+    displayMax: number | undefined,
+  ): void {
+    if (displayMin === undefined || displayMax === undefined) return
+    nvImage.calMin = displayMin
+    nvImage.calMax = displayMax
+    nvImage.robustMin = displayMin
+    nvImage.robustMax = displayMax
+    // Seed the data range AT the display window, not the full OMERO data range:
+    // `_widenCalRangeIfNeeded` widens the display window out to global min/max, so
+    // seeding global = full data range would blow the tight OMERO window back out
+    // to the raw extremes and wash out contrast.
+    nvImage.globalMin = displayMin
+    nvImage.globalMax = displayMax
   }
 
   /**
@@ -1174,8 +1315,13 @@ export class OMEZarrNVImage extends NVImage {
       }
     }
 
-    // NiiVue's setColormapLabel expects a ColorMap-shaped object
-    nvImage.setColormapLabel({ R, G, B, A, I, labels })
+    // 1.0: NVImage.setColormapLabel() was removed; the label LUT is now registered
+    // through the controller, keyed by volume index. It accepts the same
+    // ColorMap-shaped object.
+    const found = this._findAttachedVolume(nvImage)
+    if (found) {
+      void found.nv.setColormapLabel(found.index, { R, G, B, A, I, labels })
+    }
   }
 
   /**
@@ -1623,8 +1769,10 @@ export class OMEZarrNVImage extends NVImage {
         cached.region,
         cached.shape,
       )
-      this.global_min = undefined
-      this.niivue.updateGLVolume()
+      // 1.0: the global_min = undefined force-recompute trick is gone (globalMin
+      // is a required number); updateGLVolume() handles the refresh.
+      // 1.0: updateGLVolume is async; fire-and-forget.
+      void this.niivue.updateGLVolume()
 
       this._emitEvent("timeChange", {
         index,
@@ -1825,27 +1973,33 @@ export class OMEZarrNVImage extends NVImage {
   }
 
   /**
-   * Hook viewport events (mouseUp, zoom3DChange, wheel) on a NV instance.
-   * All listeners share a single AbortController so they can be torn down
-   * together via {@link _unhookViewportEvents}.
+   * Hook viewport events (pointerUp, azimuthElevationChange, wheel) on a NV
+   * instance. All listeners share a single AbortController so they can be torn
+   * down together via {@link _unhookViewportEvents}.
    */
   private _hookViewportEvents(nv: Niivue, state: AttachedNiivueState): void {
     const controller = new AbortController()
     state.viewportAbortController = controller
     const signal = controller.signal
 
-    // Detect end of mouse/touch interaction
+    // Detect end of mouse/touch interaction.
+    // 1.0 renamed `mouseUp` → `pointerUp` (NVEventMap); the handler ignores the
+    // event payload, so only the event name changes.
     nv.addEventListener(
-      "mouseUp",
+      "pointerUp",
       () => {
         this._handleViewportInteractionEnd(nv)
       },
       { signal },
     )
 
-    // Detect 3D zoom level changes
+    // Detect 3D render rotation.
+    // 1.0 removed `zoom3DChange`; the nearest surviving 3D-view event is
+    // `azimuthElevationChange` (camera rotation, not zoom). 3D *zoom* stays
+    // covered by the canvas `wheel` listener below and by `_hookZoomOverride`.
+    // Runtime parity (rotation- vs. zoom-driven firing) is flagged for Phase 04.
     nv.addEventListener(
-      "zoom3DChange",
+      "azimuthElevationChange",
       () => {
         this._handleViewportInteractionEnd(nv)
       },
@@ -1883,7 +2037,7 @@ export class OMEZarrNVImage extends NVImage {
    * NiiVue's hardcoded 3D render zoom clamp ([0.5, 2.0]).
    *
    * The listener intercepts scroll events over 3D render tiles and applies
-   * zoom via `nv.setScale()` (which has no internal clamp), using the
+   * zoom via `nv.scaleMultiplier` (which has no internal clamp), using the
    * configurable `_min3DZoom` / `_max3DZoom` bounds instead.
    *
    * Clip-plane scrolling is preserved: when a clip plane is active
@@ -1902,22 +2056,27 @@ export class OMEZarrNVImage extends NVImage {
         const canvas = nv.canvas
         if (!canvas) return
         const rect = canvas.getBoundingClientRect()
-        const dpr = nv.uiData.dpr ?? 1
+        // 1.0: uiData removed; devicePixelRatio defaults to -1 when unforced, so
+        // fall back to the live window ratio (then 1) for canvas coordinate math.
+        const dpr =
+          nv.devicePixelRatio > 0
+            ? nv.devicePixelRatio
+            : (window.devicePixelRatio ?? 1)
         const x = (e.clientX - rect.left) * dpr
         const y = (e.clientY - rect.top) * dpr
 
-        // Only intercept if mouse is over a 3D render tile
-        if (nv.inRenderTile(x, y) < 0) return
+        // Only intercept if mouse is over a 3D render tile.
+        // 1.0: inRenderTile was removed; use the view hit-test instead.
+        const hit = nv.view?.hitTest(x, y)
+        if (!hit?.isRender) return
 
         // Preserve clip-plane scrolling: when a clip plane is active
         // (depth < 1.8), let NiiVue handle the event normally.
-        const clips = nv.scene.clipPlaneDepthAziElevs
-        const activeIdx = nv.uiData.activeClipPlaneIndex
-        if (
-          nv.volumes.length > 0 &&
-          clips?.[activeIdx]?.[0] !== undefined &&
-          clips[activeIdx][0] < 1.8
-        ) {
+        // 1.0: uiData/scene.clipPlaneDepthAziElevs → activeClipPlaneIndex +
+        // the indexed getClipPlaneDepthAziElev (returns [depth, azi, elev]).
+        const activeIdx = nv.activeClipPlaneIndex
+        const activeDepth = nv.getClipPlaneDepthAziElev(activeIdx)[0]
+        if (nv.volumes.length > 0 && activeDepth < 1.8) {
           return
         }
 
@@ -1932,12 +2091,14 @@ export class OMEZarrNVImage extends NVImage {
         // Round to 2 decimal places (NiiVue rounds to 1, which causes the
         // zoom to get stuck at small values like 0.5 where ×0.9 rounds back).
         const zoomDir = e.deltaY < 0 ? 1 : -1
-        const current = nv.scene.volScaleMultiplier
+        // 1.0: scene.volScaleMultiplier → controller getter scaleMultiplier.
+        const current = nv.scaleMultiplier
         let newZoom = current * (zoomDir > 0 ? 1.1 : 0.9)
         newZoom = Math.round(newZoom * 100) / 100
         newZoom = Math.max(this._min3DZoom, Math.min(this._max3DZoom, newZoom))
 
-        nv.setScale(newZoom)
+        // 1.0: setScale(z) was removed → scaleMultiplier setter (no clamp).
+        nv.scaleMultiplier = newZoom
 
         // Notify the viewport-aware system. Since we stopped propagation,
         // the passive wheel listener from _hookViewportEvents won't fire,
@@ -2090,15 +2251,16 @@ export class OMEZarrNVImage extends NVImage {
           this._isSlabSliceType(attachedState.currentSliceType) &&
           (attachedState.currentSliceType as SlabSliceType) === sliceType
         ) {
-          const crosshairPos = nv.scene?.crosshairPos
+          const crosshairPos = nv.crosshairPos
           if (!crosshairPos || nv.volumes.length === 0) continue
           try {
-            const mm = nv.frac2mm([
+            // 1.0: frac2mm (controller) → NVModel.scene2mm (scene fraction → mm).
+            const mm = nv.model.scene2mm([
               crosshairPos[0],
               crosshairPos[1],
               crosshairPos[2],
             ])
-            // frac2mm returns values in the slab NVImage's mm space, which
+            // scene2mm returns values in the slab NVImage's mm space, which
             // is normalized (world * normalizationScale). Convert back to
             // physical world coordinates for worldToPixel and other callers.
             const ns = slabState.normalizationScale
@@ -2273,7 +2435,8 @@ export class OMEZarrNVImage extends NVImage {
     }
     this._activeChannel = index
     this.applyOmeroToHeader()
-    this.niivue.updateGLVolume()
+    // 1.0: updateGLVolume is async; fire-and-forget.
+    void this.niivue.updateGLVolume()
     this._widenCalRangeIfNeeded(this)
   }
 
@@ -2311,7 +2474,10 @@ export class OMEZarrNVImage extends NVImage {
     nv.addEventListener(
       "sliceTypeChange",
       (e) => {
-        this._handleSliceTypeChange(nv, e.detail.sliceType)
+        // 1.0 widened sliceTypeChange's detail.sliceType from SLICE_TYPE to
+        // `number`; the runtime value is still a valid SLICE_TYPE, so narrow it
+        // back to the SliceType union (same cast as _detectSliceType).
+        this._handleSliceTypeChange(nv, e.detail.sliceType as SliceType)
       },
       { signal },
     )
@@ -2394,22 +2560,17 @@ export class OMEZarrNVImage extends NVImage {
   /**
    * Detect the current slice type of a Niivue instance.
    */
-  private _detectSliceType(nv: Niivue): SLICE_TYPE {
-    // Access the opts.sliceType via the scene data or fall back to checking
-    // the convenience properties. Niivue stores the current sliceType in opts.
-    // We can read it from the NV instance's internal opts.
-    const { sliceType } = nv.opts
-    if (typeof sliceType === "number") {
-      return sliceType
-    }
-    // Default to Render
-    return SLICE_TYPE.RENDER
+  private _detectSliceType(nv: Niivue): SliceType {
+    // 1.0: the current slice type is exposed directly on the controller (was
+    // nv.opts.sliceType in 0.68; opts is now an infra-only bag). The getter
+    // returns the numeric SLICE_TYPE value, narrowed here to the SliceType union.
+    return nv.sliceType as SliceType
   }
 
   /**
    * Check if a slice type is one of the 2D slab types.
    */
-  private _isSlabSliceType(st: SLICE_TYPE): st is SlabSliceType {
+  private _isSlabSliceType(st: SliceType): st is SlabSliceType {
     return (
       st === SLICE_TYPE.AXIAL ||
       st === SLICE_TYPE.CORONAL ||
@@ -2460,7 +2621,7 @@ export class OMEZarrNVImage extends NVImage {
   /**
    * Handle a slice type change on an attached Niivue instance.
    */
-  private _handleSliceTypeChange(nv: Niivue, newSliceType: SLICE_TYPE): void {
+  private _handleSliceTypeChange(nv: Niivue, newSliceType: SliceType): void {
     const state = this._attachedNiivues.get(nv)
     if (!state) return
 
@@ -2491,13 +2652,18 @@ export class OMEZarrNVImage extends NVImage {
     if (!slabState || slabState.slabStart < 0) return // Slab not yet created or loaded
 
     // Get the current crosshair position in fractional coordinates [0..1]
-    const crosshairPos = nv.scene?.crosshairPos
+    const crosshairPos = nv.crosshairPos
     if (!crosshairPos || nv.volumes.length === 0) return
 
     let worldCoord: [number, number, number]
     try {
-      const mm = nv.frac2mm([crosshairPos[0], crosshairPos[1], crosshairPos[2]])
-      // frac2mm returns values in the slab NVImage's normalized mm space
+      // 1.0: frac2mm (controller) → NVModel.scene2mm (scene fraction → mm).
+      const mm = nv.model.scene2mm([
+        crosshairPos[0],
+        crosshairPos[1],
+        crosshairPos[2],
+      ])
+      // scene2mm returns values in the slab NVImage's normalized mm space
       // (world * normalizationScale). Convert back to physical world.
       const ns = slabState.normalizationScale
       worldCoord = [mm[0] / ns, mm[1] / ns, mm[2] / ns]
@@ -2543,11 +2709,12 @@ export class OMEZarrNVImage extends NVImage {
           clampedWorld[1] * ns,
           clampedWorld[2] * ns,
         ]
-        const frac = nv.mm2frac(normalizedMM)
+        // 1.0: mm2frac (controller) → NVModel.mm2scene (mm → scene fraction).
+        const frac = nv.model.mm2scene(normalizedMM)
         frac[0] = Math.max(0, Math.min(1, frac[0]))
         frac[1] = Math.max(0, Math.min(1, frac[1]))
         frac[2] = Math.max(0, Math.min(1, frac[2]))
-        nv.scene.crosshairPos = frac
+        nv.crosshairPos = frac
         nv.drawScene()
         return // Repositioning fires a new locationChange event
       }
@@ -2594,15 +2761,16 @@ export class OMEZarrNVImage extends NVImage {
     }
 
     // Capture the crosshair world position BEFORE swapping volumes.
-    // frac2mm() uses the current volume's affine, so it must run while
-    // the 3D (or previous slab) NVImage is still attached. After the swap,
-    // the 1×1×1 placeholder's identity affine would produce incorrect
-    // coordinates.
+    // scene2mm() uses the current scene extents (the attached volume's affine),
+    // so it must run while the 3D (or previous slab) NVImage is still attached.
+    // After the swap, the 1×1×1 placeholder's identity affine would produce
+    // incorrect coordinates.
     let worldCoord: [number, number, number]
     try {
-      const crosshairPos = nv.scene?.crosshairPos
+      const crosshairPos = nv.crosshairPos
       if (crosshairPos && nv.volumes.length > 0) {
-        const mm = nv.frac2mm([
+        // 1.0: frac2mm (controller) → NVModel.scene2mm (scene fraction → mm).
+        const mm = nv.model.scene2mm([
           crosshairPos[0],
           crosshairPos[1],
           crosshairPos[2],
@@ -2617,7 +2785,7 @@ export class OMEZarrNVImage extends NVImage {
         ]
       }
     } catch {
-      // Fall back to volume center if frac2mm fails
+      // Fall back to volume center if scene2mm fails
       worldCoord = [
         (this._volumeBounds.min[0] + this._volumeBounds.max[0]) / 2,
         (this._volumeBounds.min[1] + this._volumeBounds.max[1]) / 2,
@@ -2630,7 +2798,7 @@ export class OMEZarrNVImage extends NVImage {
 
     void this._loadSlab(sliceType, worldCoord, "initial").catch((err) => {
       console.error(
-        `[fidnii] Error loading slab for ${SLICE_TYPE[sliceType]}:`,
+        `[fidnii] Error loading slab for ${sliceTypeName(sliceType)}:`,
         err,
       )
     })
@@ -2646,11 +2814,8 @@ export class OMEZarrNVImage extends NVImage {
       this.dtype,
       componentsPerVoxel,
     )
-    const nvImage = new NVImage()
-
     // Initialize with placeholder NIfTI header (same as main image setup)
     const hdr = new NIFTI1()
-    nvImage.hdr = hdr
     hdr.dims = [3, 1, 1, 1, 1, 1, 1, 1]
     if (this._channelInfo && isRGBImage(this.multiscales.images[0])) {
       const rgbCode = getRGBNiftiDataType(this._channelInfo)
@@ -2668,12 +2833,40 @@ export class OMEZarrNVImage extends NVImage {
       [0, 0, 0, 1],
     ]
     hdr.sform_code = 1
-    nvImage.name = `${this.name ?? "OME-Zarr"} [${SLICE_TYPE[sliceType]}]`
-    nvImage.img = bufferManager.resize([1, 1, 1]) as NVImage["img"]
-    if (!this.isLabelImage) {
-      nvImage._colormap = this._colormap || "gray"
+    // 1.0: NVImage is a plain object type (no constructable class). Build the slab
+    // volume as a plain NVImage object with a placeholder header + data; NiiVue
+    // derives the geometry / min-max fields when it is added (addVolume) and its
+    // affine is applied (setVolumeAffine, in _updateSlabHeader). _colormap/_opacity
+    // (NVImage private backings) become the public colormap/opacity data fields.
+    const nvImage: NVImage = {
+      name: `${this.name} [${sliceTypeName(sliceType)}]`,
+      hdr,
+      img: bufferManager.resize([1, 1, 1]) as NVImage["img"],
+      // Placeholder min-max; NiiVue recomputes intensity ranges in updateGLVolume()
+      // once real slab data is present. The RAS geometry is computed explicitly by
+      // calculateRAS() below (1.0 requires it before this slab is added via
+      // _swapVolumeInNiivue → addVolume); it is recomputed from the real affine on
+      // each slab load (_updateSlabHeader → _recomputeVolumeRAS).
+      dims: [1, 1, 1],
+      nVox3D: 1,
+      extentsMin: [0, 0, 0],
+      extentsMax: [0, 0, 0],
+      calMin: 0,
+      calMax: 0,
+      robustMin: 0,
+      robustMax: 0,
+      globalMin: 0,
+      globalMax: 0,
+      // 1.0: _colormap/_opacity (NVImage private backings) → colormap/opacity.
+      opacity: 1.0,
+      ...(this.isLabelImage ? {} : { colormap: this._colormap || "gray" }),
     }
-    nvImage._opacity = 1.0
+
+    // Seed the RAS geometry from the placeholder header so this slab volume can
+    // be added to a NiiVue instance before its first data load (see the main
+    // image's initializeNVImageProperties for the full rationale).
+    calculateRAS(nvImage)
+    computeBoundingBoxExtents(nvImage)
 
     // Select initial resolution using 2D pixel budget
     const orthAxis = this._getOrthogonalAxis(sliceType)
@@ -2710,28 +2903,52 @@ export class OMEZarrNVImage extends NVImage {
       ourVolumes.add(slab.nvImage)
     }
 
-    // Remove our volumes from nv (in reverse to avoid index shifting issues)
+    // Remove our volumes from nv. 1.0: the controller has no removeVolume;
+    // remove by index via the model, recomputing the index each iteration
+    // because removal mutates the live volumes array.
     const toRemove = nv.volumes.filter((v) => ourVolumes.has(v))
     for (const vol of toRemove) {
+      const idx = nv.volumes.indexOf(vol)
+      if (idx < 0) continue
       try {
-        nv.removeVolume(vol)
+        nv.model.removeVolume(idx)
       } catch {
         // Ignore errors during removal (volume may not be fully initialized)
       }
     }
 
-    // Add the target volume if not already present
+    // Add the target volume if not already present.
+    // 1.0: addVolume is async AND stores a decoupled copy (prepareVolume), so we
+    // re-seat our object via _adoptAddedVolume, then refresh GL once the volume
+    // is actually registered. Fire-and-forget preserves non-blocking behavior.
     if (!nv.volumes.includes(targetVolume)) {
-      try {
-        nv.addVolume(targetVolume)
-      } catch (err) {
-        console.warn("[fidnii] Failed to add volume to NV:", err)
-        return
-      }
+      void nv
+        .addVolume(targetVolume)
+        .then(() => {
+          this._adoptAddedVolume(nv, targetVolume)
+          return nv.updateGLVolume()
+        })
+        .then(() => {
+          try {
+            this._widenCalRangeIfNeeded(targetVolume)
+          } catch {
+            // May fail if GL context not ready
+          }
+        })
+        .catch((err) => {
+          console.warn("[fidnii] Failed to add volume to NV:", err)
+        })
+      return
     }
 
+    // Already present: refresh GL directly.
+    // 1.0: updateGLVolume is async; fire-and-forget. The cal-range widening
+    // depends on the recomputed min/max — that await ordering (H6) is handled
+    // with the volume-layer rewrite (Phase 03 Task 3).
+    void nv.updateGLVolume().catch(() => {
+      // May fail if GL context not ready
+    })
     try {
-      nv.updateGLVolume()
       this._widenCalRangeIfNeeded(targetVolume)
     } catch {
       // May fail if GL context not ready
@@ -2955,7 +3172,7 @@ export class OMEZarrNVImage extends NVImage {
       ngffImage,
       levelIndex,
       fetchRegion,
-      `slab-${SLICE_TYPE[sliceType]}-${levelIndex}`,
+      `slab-${sliceTypeName(sliceType)}-${levelIndex}`,
       this._timeIndex,
     )
 
@@ -3016,8 +3233,10 @@ export class OMEZarrNVImage extends NVImage {
       this._applyOmeroToSlabHeader(slabState.nvImage)
     }
 
-    // Reset global_min so NiiVue recalculates intensity ranges
-    slabState.nvImage.global_min = undefined
+    // 1.0: the global_min = undefined force-recompute trick is gone (globalMin is a
+    // required number; calMinMax is not public). NiiVue recomputes ranges inside
+    // updateGLVolume(); _widenCalRangeIfNeeded() still widens to the data extremes.
+    // RUNTIME-VERIFY (migration §8, H5).
 
     // Compute the normalization scale used by _updateSlabHeader so we can
     // convert the world coordinate into the slab's normalized mm space.
@@ -3043,7 +3262,8 @@ export class OMEZarrNVImage extends NVImage {
       ) {
         // Ensure this NV has the slab volume
         if (attachedNv.volumes.includes(slabState.nvImage)) {
-          attachedNv.updateGLVolume()
+          // 1.0: updateGLVolume is async; fire-and-forget.
+          void attachedNv.updateGLVolume()
 
           if (!this.isLabelImage) {
             // Widen the display window if actual data exceeds the OMERO range.
@@ -3054,14 +3274,15 @@ export class OMEZarrNVImage extends NVImage {
           // Position the crosshair at the correct slice within this slab.
           // Without this, NiiVue defaults to the center of the slab which
           // corresponds to different physical positions at each resolution level.
-          const frac = attachedNv.mm2frac(normalizedMM)
+          // 1.0: mm2frac (controller) → NVModel.mm2scene (mm → scene fraction).
+          const frac = attachedNv.model.mm2scene(normalizedMM)
           // Clamp to [0,1] — when viewport-aware mode constrains the slab to
           // a subregion, the crosshair world position may be outside the slab's
-          // spatial extent, causing mm2frac to return out-of-range values.
+          // spatial extent, causing mm2scene to return out-of-range values.
           frac[0] = Math.max(0, Math.min(1, frac[0]))
           frac[1] = Math.max(0, Math.min(1, frac[1]))
           frac[2] = Math.max(0, Math.min(1, frac[2]))
-          attachedNv.scene.crosshairPos = frac
+          attachedNv.crosshairPos = frac
           attachedNv.drawScene()
         }
       }
@@ -3108,6 +3329,12 @@ export class OMEZarrNVImage extends NVImage {
       1,
       1,
     ]
+
+    // 1.0: seed the derived voxel-count/size fields NiiVue no longer computes for
+    // hand-built volumes (see updateHeaderForRegion). nVox3D drives the intensity
+    // scan; the 2D texture is sized from dimsRAS (calculateRAS).
+    nvImage.dims = [fetchedShape[2], fetchedShape[1], fetchedShape[0]]
+    nvImage.nVox3D = fetchedShape[0] * fetchedShape[1] * fetchedShape[2]
 
     // Build the fully oriented affine (including orientation permutation
     // and sign flips), then apply the region offset in world space.
@@ -3159,7 +3386,8 @@ export class OMEZarrNVImage extends NVImage {
     ]
 
     nvImage.hdr.sform_code = 1
-    nvImage.calculateRAS()
+    // 1.0: NVImage.calculateRAS() removed → controller setVolumeAffine(index, affine).
+    this._recomputeVolumeRAS(nvImage)
   }
 
   /**
@@ -3180,6 +3408,7 @@ export class OMEZarrNVImage extends NVImage {
       const calMax = window.end ?? window.max
       if (calMin !== undefined) nvImage.hdr.cal_min = calMin
       if (calMax !== undefined) nvImage.hdr.cal_max = calMax
+      this._applyIntensityWindow(nvImage, calMin, calMax)
     }
   }
 
@@ -3203,26 +3432,134 @@ export class OMEZarrNVImage extends NVImage {
    * @returns true if the display range was widened
    */
   private _widenCalRangeIfNeeded(nvImage: NVImage): boolean {
-    if (nvImage.global_min === undefined || nvImage.global_max === undefined) {
-      return false
-    }
-
     let widened = false
 
-    // Widen the runtime display range (cal_min/cal_max) to encompass the
-    // actual data extremes (global_min/global_max) at this resolution level.
-    // The hdr values are NOT modified so the original OMERO window is
-    // preserved for next reload.
-    if (nvImage.cal_max !== undefined && nvImage.global_max > nvImage.cal_max) {
-      nvImage.cal_max = nvImage.global_max
+    // 1.0: volume-level global_min/global_max/cal_min/cal_max → globalMin/globalMax/
+    // calMin/calMax (required numbers; the undefined guards are gone). Widen the
+    // runtime display range (calMin/calMax) to encompass the actual data extremes
+    // (globalMin/globalMax) at this resolution level. The header values
+    // (hdr.cal_min/cal_max) are NOT modified so the original OMERO window is
+    // preserved for the next reload.
+    if (nvImage.globalMax > nvImage.calMax) {
+      nvImage.calMax = nvImage.globalMax
       widened = true
     }
-    if (nvImage.cal_min !== undefined && nvImage.global_min < nvImage.cal_min) {
-      nvImage.cal_min = nvImage.global_min
+    if (nvImage.globalMin < nvImage.calMin) {
+      nvImage.calMin = nvImage.globalMin
       widened = true
     }
 
     return widened
+  }
+
+  /**
+   * Find the attached Niivue instance that currently holds `nvImage`, plus the
+   * volume's index in that instance's `volumes` array.
+   *
+   * 1.0 reworked volume mutation around index-keyed controller methods
+   * (`setVolume`, `setVolumeAffine`, `setColormapLabel`), so call sites that used
+   * to mutate the volume object directly now need its `(nv, index)` pair.
+   *
+   * @returns the `{ nv, index }` pair, or `null` if the volume is not attached.
+   */
+  private _findAttachedVolume(
+    nvImage: NVImage,
+  ): { nv: Niivue; index: number } | null {
+    const seen = new Set<Niivue>()
+    for (const nv of [this.niivue, ...this._attachedNiivues.keys()]) {
+      if (seen.has(nv)) continue
+      seen.add(nv)
+      const index = nv.volumes.indexOf(nvImage)
+      if (index >= 0) return { nv, index }
+    }
+    return null
+  }
+
+  /**
+   * Add this volume to a NiiVue instance such that the instance renders THIS
+   * object — not a decoupled copy.
+   *
+   * NiiVue 1.0's `addVolume()` does **not** store the passed volume by
+   * reference: it pushes `{ ...volumeDefaults, ...volume }` (a shallow spread
+   * built by `prepareVolume`). That copy shares the `hdr` object but freezes
+   * `img`, `dims`, `dimsRAS`, and the RAS geometry at their add-time
+   * (placeholder) values, so fidnii's progressive `img`/geometry updates — which
+   * *reassign* those fields on this instance — never reach the rendered volume,
+   * and `nv.volumes.indexOf(this)` fails everywhere fidnii looks itself up. We
+   * therefore add, then re-seat this instance into `nv.volumes`, restoring the
+   * by-reference contract fidnii relied on in 0.68.
+   *
+   * Use this instead of calling `nv.addVolume(image)` directly.
+   *
+   * @param nv - The NiiVue instance to add this volume to.
+   */
+  async addToNiivue(nv: Niivue): Promise<void> {
+    await nv.addVolume(this)
+    this._adoptAddedVolume(nv, this)
+  }
+
+  /**
+   * Re-seat a fidnii-owned volume into `nv.volumes` after `nv.addVolume()`,
+   * replacing the shallow copy NiiVue 1.0 created (see {@link addToNiivue} for
+   * the rationale). NiiVue-managed default fields that fidnii does not set (e.g.
+   * `colormapNegative`, `calMinNeg`, `colormapType`) are carried over from the
+   * copy first so the render path sees a complete volume. No-op if the volume is
+   * already seated by reference, or if the last-added volume is not our copy.
+   */
+  private _adoptAddedVolume(nv: Niivue, volume: NVImage): void {
+    const volumes = nv.volumes
+    const index = volumes.length - 1
+    const prepared = volumes[index]
+    if (!prepared || prepared === volume) return
+    // The spread copy shares our hdr by reference; use that to confirm the
+    // last-added volume really is the copy of `volume` before replacing it.
+    if (prepared.hdr !== volume.hdr) return
+    const target = volume as unknown as Record<string, unknown>
+    const source = prepared as unknown as Record<string, unknown>
+    for (const key of Object.keys(prepared)) {
+      // `key in volume` (not Object.hasOwn) so we also skip accessor-backed
+      // properties on the prototype — e.g. `colormap`, whose getter is not an own
+      // property, so the spread copy carries the NiiVue default ("Gray") rather
+      // than fidnii's value. Copying that back through the setter would clobber a
+      // user-set colormap. We only adopt genuinely-absent NiiVue defaults.
+      if (!(key in volume)) {
+        target[key] = source[key]
+      }
+    }
+    volumes[index] = volume
+  }
+
+  /**
+   * Recompute a volume's RAS orientation / geometry after its `hdr.affine`
+   * changed (placeholder → real data, slab reloads, clip-plane region shifts).
+   *
+   * Two paths, because 1.0 removed the synchronous `NVImage.calculateRAS()`:
+   *
+   * - **Attached** (the volume is in `nv.volumes`, after {@link addToNiivue}):
+   *   delegate to the controller's `setVolumeAffine(index, affine)`, which reruns
+   *   NiiVue's own `calculateRAS` AND derives the fields the bare function does
+   *   not — `extentsMin`/`extentsMax` and the 3D scene pivot (`_setupPivot3D`) —
+   *   so the render camera frames the volume. This is the path that failed in the
+   *   original 1.0 port: `setVolumeAffine` looks the volume up by index, which
+   *   only works now that {@link addToNiivue} re-seats this instance into
+   *   `nv.volumes` instead of NiiVue's decoupled copy.
+   * - **Detached** (initial bootstrap, before the first `addVolume`): run the
+   *   vendored {@link calculateRAS} directly so the RAS corners exist and the
+   *   subsequent `addVolume` does not throw.
+   *
+   * Callers refresh GL via `updateGLVolume()` afterwards.
+   */
+  private _recomputeVolumeRAS(nvImage: NVImage): void {
+    const found = this._findAttachedVolume(nvImage)
+    if (!found) {
+      calculateRAS(nvImage)
+      return
+    }
+    void found.nv
+      .setVolumeAffine(found.index, nvImage.hdr.affine)
+      .catch((err: unknown) => {
+        console.error("[fidnii] setVolumeAffine failed:", err)
+      })
   }
 
   // ============================================================
